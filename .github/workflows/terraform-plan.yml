@@ -1,0 +1,179 @@
+# =============================================================================
+# Reusable Workflow: Terraform Plan
+# =============================================================================
+# Runs `terraform plan` on a pull request using a read-only AWS role via OIDC.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     plan:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@main
+#       with:
+#         working-directory: live/prod
+#         aws-region: us-east-1
+#         plan-role-arn-secret: AWS_PLAN_ROLE_ARN
+#
+# Required GitHub Secret in caller repo: <plan-role-arn-secret>
+# Required AWS: IAM Role with OIDC trust policy for this repo
+# =============================================================================
+
+name: Terraform Plan
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing the Terraform configuration (relative to repo root).'
+        type: string
+        required: true
+        default: '.'
+      aws-region:
+        description: 'AWS region to deploy to.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      plan-role-arn-secret:
+        description: 'Name of the GitHub Secret containing the OIDC role ARN for plan.'
+        type: string
+        required: false
+        default: 'AWS_PLAN_ROLE_ARN'
+      terraform-version:
+        description: 'Terraform version to use.'
+        type: string
+        required: false
+        default: '1.10.0'
+      backend-bucket:
+        description: 'S3 bucket name for Terraform state.'
+        type: string
+        required: false
+        default: ''
+      backend-key:
+        description: 'S3 key (path) for the Terraform state file.'
+        type: string
+        required: false
+        default: 'terraform.tfstate'
+      comment-on-pr:
+        description: 'Post plan summary as a sticky comment on the PR.'
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      plan-exit-code:
+        description: 'Exit code from terraform plan (0 = success, 1 = error, 2 = changes).'
+        value: ${{ jobs.plan.outputs.plan-exit-code }}
+      has-changes:
+        description: 'Whether the plan has resource changes.'
+        value: ${{ jobs.plan.outputs.has-changes }}
+
+permissions:
+  id-token: write          # For OIDC
+  contents: read
+  pull-requests: write     # For posting comments
+
+jobs:
+  plan:
+    name: Plan (${{ inputs.working-directory }})
+    runs-on: ubuntu-latest
+    outputs:
+      plan-exit-code: ${{ steps.plan.outputs.plan-exit-code }}
+      has-changes: ${{ steps.plan.outputs.has-changes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform ${{ inputs.terraform-version }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Configure AWS credentials (OIDC, plan role)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets[inputs.plan-role-arn-secret] }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Create plugin cache directory
+        run: mkdir -p ${{ github.workspace }}/.terraform.d/plugin-cache
+
+      - name: Terraform init
+        run: |
+          INIT_ARGS="-input=false"
+          if [ -n "${{ inputs.backend-bucket }}" ]; then
+            INIT_ARGS="$INIT_ARGS \
+              -backend-config=bucket=${{ inputs.backend-bucket }} \
+              -backend-config=key=${{ inputs.backend-key }} \
+              -backend-config=region=${{ inputs.aws-region }} \
+              -backend-config=use_lockfile=true"
+          else
+            INIT_ARGS="$INIT_ARGS -backend=false"
+          fi
+          echo "Running: terraform init $INIT_ARGS"
+          terraform init $INIT_ARGS
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -no-color -lock=false -out=tfplan
+          EXIT_CODE=$?
+          set -e
+          echo "plan-exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" = "2" ]; then
+            # Exit code 2 = "changes present" (plan succeeded, resources to add/change/destroy)
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
+            echo "plan-exit-code=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Convert plan to JSON
+        if: steps.plan.outputs.has-changes == 'true'
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Generate plan summary
+        if: steps.plan.outputs.has-changes == 'true'
+        run: |
+          echo "## Terraform Plan Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Change |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|:---|:---|" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '
+            .resource_changes[]
+            | "| \(.address) | \(.change.actions | tostring | gsub("[\"\\[\\]]"; "")) |"
+          ' tfplan.json >> "$GITHUB_STEP_SUMMARY" || echo "_(no resource changes)_" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artifact
+        if: steps.plan.outputs.has-changes == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: terraform-plan-pr-${{ github.event.pull_request.number }}
+          path: ${{ inputs.working-directory }}/tfplan
+          retention-days: 7
+
+      - name: Comment PR with plan summary
+        if: steps.plan.outputs.has-changes == 'true' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: terraform-plan
+          message: |
+            ## Terraform Plan
+
+            Working directory: `${{ inputs.working-directory }}`
+            Plan artifact: `terraform-plan-pr-${{ github.event.pull_request.number }}`
+
+            See [Job Summary](../../actions/runs/${{ github.run_id }}) for the resource change table.
+
+            Run `terraform show tfplan` locally (after downloading the artifact) for full details.

@@ -1,0 +1,79 @@
+# =============================================================================
+# Reusable Workflow: LaTeX Build
+# =============================================================================
+# Compiles a LaTeX document (typically an academic paper or report) and
+# uploads the resulting PDF as an artifact.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     build:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/latex-build.yml@main
+#       with:
+#         root-file: main.tex
+#         artifact-name: spark-match-paper-pr-${{ github.event.pull_request.number }}
+#
+# Recommended trigger: on pull_request in caller workflow file.
+# =============================================================================
+
+name: LaTeX Build
+
+on:
+  workflow_call:
+    inputs:
+      root-file:
+        description: 'LaTeX root file to compile (e.g. main.tex, paper.tex).'
+        type: string
+        required: true
+        default: 'main.tex'
+      artifact-name:
+        description: 'Name for the uploaded PDF artifact.'
+        type: string
+        required: false
+        default: 'latex-build'
+      retention-days:
+        description: 'Days to keep the artifact before deletion.'
+        type: number
+        required: false
+        default: 14
+      use-lualatex:
+        description: 'Use LuaLaTeX instead of pdfLaTeX (default pdfLaTeX).'
+        type: boolean
+        required: false
+        default: false
+      shell-escape:
+        description: 'Enable LaTeX shell-escape (needed for some packages, security risk).'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact.'
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile LaTeX
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ inputs.artifact-name }}
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Compile LaTeX document
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: ${{ inputs.root-file }}
+          latexmk_use_lualatex: ${{ inputs.use-lualatex }}
+          latexmk_shell_escape: ${{ inputs.shell-escape }}
+
+      - name: Upload PDF as artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.root-file | regex_replace('\.tex$', '') }}.pdf
+          retention-days: ${{ inputs.retention-days }}
+          if-no-files-found: error

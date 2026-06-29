@@ -1,0 +1,31 @@
+# Terraform state
+.terraform/
+.terraform.lock.hcl
+.terraform.d/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Build artifacts
+*.pdf
+*.aux
+*.log
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.synctex.gz
+*.run.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
