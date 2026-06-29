@@ -1,1 +1,8 @@
-test content
+# CODEOWNERS - Spark Match
+# Aprobaciones requeridas para PRs en este repositorio.
+
+# Propietarios por defecto (Product Owners aprueban cualquier cambio)
+*       @spark-match/product-owners
+
+# Equipo principal responsable de este repositorio
+/*      @spark-match/devops
