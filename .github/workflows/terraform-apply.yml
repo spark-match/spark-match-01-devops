@@ -1,0 +1,216 @@
+# =============================================================================
+# Reusable Workflow: Terraform Apply
+# =============================================================================
+# Runs `terraform apply` on push to main or manual trigger using a write-role
+# AWS role via OIDC. Uses GitHub Environment as approval gate.
+#
+# USAGE (in caller repo):
+#   on:
+#     push:
+#       branches: [main]
+#   jobs:
+#     apply:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-apply.yml@main
+#       with:
+#         working-directory: live/prod
+#         aws-region: us-east-1
+#         apply-role-arn-secret: AWS_APPLY_ROLE_ARN
+#         environment: production
+#
+# Required GitHub Secret in caller repo: <apply-role-arn-secret>
+# Required GitHub Environment: <environment> (configured by repo admin)
+# =============================================================================
+
+name: Terraform Apply
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing the Terraform configuration.'
+        type: string
+        required: true
+        default: '.'
+      aws-region:
+        description: 'AWS region to deploy to.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      apply-role-arn-secret:
+        description: 'Name of the GitHub Secret containing the OIDC role ARN for apply.'
+        type: string
+        required: false
+        default: 'AWS_APPLY_ROLE_ARN'
+      terraform-version:
+        description: 'Terraform version to use.'
+        type: string
+        required: false
+        default: '1.10.0'
+      backend-bucket:
+        description: 'S3 bucket name for Terraform state.'
+        type: string
+        required: false
+        default: ''
+      backend-key:
+        description: 'S3 key (path) for the Terraform state file.'
+        type: string
+        required: false
+        default: 'terraform.tfstate'
+      environment:
+        description: 'GitHub Environment name (used as approval gate).'
+        type: string
+        required: false
+        default: 'production'
+    outputs:
+      apply-success:
+        description: 'Whether the apply succeeded.'
+        value: ${{ jobs.apply.outputs.apply-success }}
+      has-changes:
+        description: 'Whether the plan had resource changes.'
+        value: ${{ jobs.apply.outputs.has-changes }}
+      commit-message:
+        description: 'Commit message that triggered the apply (push events only).'
+        value: ${{ github.event.head_commit.message }}
+
+concurrency:
+  group: ${{ inputs.environment }}-apply-${{ inputs.working-directory }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write          # For OIDC
+  contents: read
+  pull-requests: write
+
+jobs:
+  apply:
+    name: Apply (${{ inputs.working-directory }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      apply-success: ${{ steps.apply.outputs.apply-success }}
+      has-changes: ${{ steps.plan.outputs.has-changes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform ${{ inputs.terraform-version }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Configure AWS credentials (OIDC, apply role)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets[inputs.apply-role-arn-secret] }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Create plugin cache directory
+        run: mkdir -p ${{ github.workspace }}/.terraform.d/plugin-cache
+
+      - name: Terraform init
+        run: |
+          INIT_ARGS="-input=false"
+          if [ -n "${{ inputs.backend-bucket }}" ]; then
+            INIT_ARGS="$INIT_ARGS \
+              -backend-config=bucket=${{ inputs.backend-bucket }} \
+              -backend-config=key=${{ inputs.backend-key }} \
+              -backend-config=region=${{ inputs.aws-region }} \
+              -backend-config=use_lockfile=true"
+          else
+            INIT_ARGS="$INIT_ARGS -backend=false"
+          fi
+          echo "Running: terraform init $INIT_ARGS"
+          terraform init $INIT_ARGS
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -no-color -out=tfplan
+          EXIT_CODE=$?
+          set -e
+          echo "plan-exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if [ "${EXIT_CODE}" = "2" ]; then
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Convert plan to JSON
+        if: steps.plan.outputs.has-changes == 'true'
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Generate plan summary
+        if: steps.plan.outputs.has-changes == 'true'
+        run: |
+          echo "## Terraform Apply Plan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Change |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|:---|:---|" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '
+            .resource_changes[]
+            | "| \(.address) | \(.change.actions | tostring | gsub("[\"\\[\\]]"; "")) |"
+          ' tfplan.json >> "$GITHUB_STEP_SUMMARY" || echo "_(no resource changes)_" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform apply
+        id: apply
+        if: steps.plan.outputs.has-changes == 'true'
+        run: |
+          set +e
+          terraform apply -input=false tfplan
+          EXIT_CODE=$?
+          set -e
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "apply-success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply-success=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply result summary
+        if: always()
+        run: |
+          echo "## Terraform Apply Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.apply.outputs.apply-success }}" = "true" ]; then
+            echo "Status: **Success**" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Triggered by: @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Commit: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Environment: ${{ inputs.environment }}" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.has-changes }}" = "true" ]; then
+            echo "Status: **Failed** (apply error)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Status: **No changes** (nothing to apply)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Notify on failure
+        if: failure() && steps.apply.outputs.apply-success != 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: terraform-apply-failed
+          message: |
+            ## Terraform Apply Failed
+
+            Working directory: `${{ inputs.working-directory }}`
+            Commit: ${{ github.sha }}
+            Author: @${{ github.actor }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Please investigate. The state file may have partial changes if apply was interrupted.
+
+            To recover:
+            1. Check CloudTrail for what was created/modified
+            2. Run `terraform plan` locally to see the drift
+            3. Decide whether to manually fix or re-run this workflow
