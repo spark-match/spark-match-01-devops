@@ -70,10 +70,16 @@ jobs:
           latexmk_use_lualatex: ${{ inputs.use-lualatex }}
           latexmk_shell_escape: ${{ inputs.shell-escape }}
 
+      - name: Determine PDF output filename
+        id: pdf
+        run: |
+          BASENAME=$(echo "${{ inputs.root-file }}" | sed 's/\.tex$//')
+          echo "filename=${BASENAME}.pdf" >> "$GITHUB_OUTPUT"
+
       - name: Upload PDF as artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact-name }}
-          path: ${{ inputs.root-file | regex_replace('\.tex$', '') }}.pdf
+          path: ${{ steps.pdf.outputs.filename }}
           retention-days: ${{ inputs.retention-days }}
           if-no-files-found: error
