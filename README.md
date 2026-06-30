@@ -13,10 +13,12 @@ spark-match-01-devops/
 ├── .github/
 │   ├── CODEOWNERS              # devops + product-owners aprueban cambios
 │   └── workflows/
+│       ├── ci.yml                # CI: lint + security checks (en PR)
 │       ├── terraform-plan.yml    # Plan de Terraform (read-only, en PR)
 │       ├── terraform-apply.yml   # Apply de Terraform (write, en merge)
 │       ├── latex-build.yml       # Compilar LaTeX → PDF (en PR)
 │       └── latex-release.yml     # Compilar + tag + release (en merge)
+├── .yamllint.yml                 # Config de yamllint
 ├── .gitignore
 ├── LICENSE
 └── README.md
@@ -202,6 +204,34 @@ Para que un caller use los workflows de Terraform, necesita:
 - Los workflows validan formato (`fmt -check`) y config (`validate`) antes de plan/apply
 
 ---
+
+## 🛡️ CI Lint & Security Checks
+
+Este repo tiene su propio CI (`.github/workflows/ci.yml`) que corre en cada PR con **3 checks requeridos**:
+
+| Check | Qué valida | Herramienta |
+|---|---|---|
+| **actionlint** | Sintaxis de workflows de GitHub Actions | `rhysd/actionlint` |
+| **gitleaks** | Secretos commiteados por error | `gitleaks/gitleaks-action@v1` |
+| **yamllint** | Sintaxis de archivos YAML genéricos | `yamllint` + `.yamllint.yml` |
+
+Estos checks están configurados como **required status checks** en la branch protection de `main`. Cualquier PR debe pasar los 3 antes de poder mergearse.
+
+### Configuración yamllint
+
+El archivo `.yamllint.yml` configura reglas permisivas para evitar fricción:
+- Líneas hasta 160 caracteres (workflows tienen líneas largas)
+- Truthy values como `on`/`off` permitidos
+- Comentarios flexibles
+
+### Configuración gitleaks
+
+Usa la versión `v1` (no requiere licencia para organizaciones).
+Detecta access keys de AWS, tokens de GitHub, API keys, etc.
+
+---
+
+## 📝 Versionado
 
 ## 📝 Versionado
 
