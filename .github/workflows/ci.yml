@@ -1,0 +1,74 @@
+# =============================================================================
+# CI - Lint and Security Checks
+# =============================================================================
+# Trigger: Pull Request opened, synchronized or reopened targeting 'main'.
+# Action:  Run 3 parallel checks on the repository:
+#          1. actionlint - validates GitHub Actions workflow syntax
+#          2. gitleaks   - detects accidentally-committed secrets
+#          3. yamllint   - validates generic YAML files (policies, configs)
+# Required: All 3 must pass before merge (registered as required status checks).
+# =============================================================================
+
+name: CI - Lint & Security
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/**'
+      - '**.yml'
+      - '**.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download actionlint binary
+        id: get_actionlint
+        run: bash <(curl --fail --silent --show-error --location https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        shell: bash
+
+      - name: Run actionlint
+        run: ${{ steps.get_actionlint.outputs.executable }} -color
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install yamllint
+        run: pip install --quiet yamllint==1.35.1
+
+      - name: Run yamllint
+        run: |
+          # Exclude .github/workflows (validated by actionlint) and .git
+          yamllint \
+            --ignore '.github/workflows' \
+            --ignore '.git' \
+            --ignore '.terraform' \
+            .
