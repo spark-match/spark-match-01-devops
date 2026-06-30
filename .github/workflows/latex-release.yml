@@ -27,7 +27,7 @@ on:
       root-file:
         description: 'LaTeX root file to compile.'
         type: string
-        required: true
+        required: false
         default: 'main.tex'
       release-name-prefix:
         description: 'Prefix for the GitHub Release name (version is appended).'

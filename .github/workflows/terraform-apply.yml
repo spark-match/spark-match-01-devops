@@ -29,7 +29,7 @@ on:
       working-directory:
         description: 'Directory containing the Terraform configuration.'
         type: string
-        required: true
+        required: false
         default: '.'
       aws-region:
         description: 'AWS region to deploy to.'

@@ -4,6 +4,12 @@
 
 extends: default
 
+ignore: |
+  .git/
+  .terraform/
+  node_modules/
+  .github/workflows/
+
 rules:
   # Allow longer lines (workflow files often have long input names + URLs)
   line-length:

@@ -49,10 +49,9 @@ jobs:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
 
   yamllint:
     name: yamllint
@@ -65,10 +64,4 @@ jobs:
         run: pip install --quiet yamllint==1.35.1
 
       - name: Run yamllint
-        run: |
-          # Exclude .github/workflows (validated by actionlint) and .git
-          yamllint \
-            --ignore '.github/workflows' \
-            --ignore '.git' \
-            --ignore '.terraform' \
-            .
+        run: yamllint .

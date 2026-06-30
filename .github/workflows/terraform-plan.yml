@@ -24,7 +24,7 @@ on:
       working-directory:
         description: 'Directory containing the Terraform configuration (relative to repo root).'
         type: string
-        required: true
+        required: false
         default: '.'
       aws-region:
         description: 'AWS region to deploy to.'

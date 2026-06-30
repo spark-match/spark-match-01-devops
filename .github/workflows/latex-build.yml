@@ -23,7 +23,7 @@ on:
       root-file:
         description: 'LaTeX root file to compile (e.g. main.tex, paper.tex).'
         type: string
-        required: true
+        required: false
         default: 'main.tex'
       artifact-name:
         description: 'Name for the uploaded PDF artifact.'
