@@ -24,7 +24,7 @@ on:
       working-directory:
         description: 'Directory containing the Terraform configuration (relative to repo root).'
         type: string
-        required: true
+        required: false
         default: '.'
       aws-region:
         description: 'AWS region to deploy to.'
@@ -114,6 +114,7 @@ jobs:
             INIT_ARGS="$INIT_ARGS -backend=false"
           fi
           echo "Running: terraform init $INIT_ARGS"
+          # shellcheck disable=SC2086
           terraform init $INIT_ARGS
         env:
           TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
@@ -146,14 +147,16 @@ jobs:
       - name: Generate plan summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
-          echo "## Terraform Plan Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Resource | Change |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|:---|:---|" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '
-            .resource_changes[]
-            | "| \(.address) | \(.change.actions | tostring | gsub("[\"\\[\\]]"; "")) |"
-          ' tfplan.json >> "$GITHUB_STEP_SUMMARY" || echo "_(no resource changes)_" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Terraform Plan Summary"
+            echo ""
+            echo "| Resource | Change |"
+            echo "|:---|:---|"
+            jq -r '
+              .resource_changes[]
+              | "| \(.address) | \(.change.actions | tostring | gsub("[\"\\[\\]]"; "")) |"
+            ' tfplan.json || echo "_(no resource changes)_"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload plan artifact
         if: steps.plan.outputs.has-changes == 'true'
