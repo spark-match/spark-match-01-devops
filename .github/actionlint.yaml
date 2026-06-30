@@ -4,14 +4,16 @@
 #
 # We disable specific shellcheck rules that produce false positives due to
 # GitHub Actions template expansion (${{ ... }}) inside shell scripts.
+#
+# Place this file at .github/actionlint.yaml to be auto-loaded by actionlint.
 # =============================================================================
 
+self-hosted-runner:
+  # Don't check for self-hosted runner labels (we only use GitHub-hosted)
+  labels: []
+
 shellcheck:
-  # SC2086: Double quote to prevent globbing/word splitting
-  # False positive: GitHub already expands ${{ inputs.* }} before shell runs.
-  disable-errors:
-    - SC2086
-  # SC2129: Consider using { cmd1; cmd2; } >> file instead of individual redirects
-  # Style preference, not an error.
-  exclude:
-    - SC2129
+  # Disable specific ShellCheck rules (treats them as warnings instead of errors)
+  disable:
+    - SC2086  # Double quote to prevent globbing - false positive due to GitHub template expansion
+    - SC2129  # Consider using { cmd1; cmd2; } >> file - style preference, not an error
