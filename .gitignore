@@ -1,31 +1,71 @@
-# Terraform state
+# =============================================================================
+# Spark Match DevOps (01-devops) - .gitignore
+# =============================================================================
+# Stack: GitHub Actions reusable workflows + Shell scripts + YAML
+# NO usa Terraform (eso es 02-infrastructure)
+# NO usa LaTeX (eso es 07-article)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# GitHub Actions local tooling
+# -----------------------------------------------------------------------------
+# act (local runner)
+.act/
+.actrc.local
+
+# actionlint cache
+.actionlint.cache
+.actionlint.json.local
+
+# -----------------------------------------------------------------------------
+# Shell scripts
+# -----------------------------------------------------------------------------
+# shellcheck
+.shellcheckrc.local
+*.shellcheck
+
+# -----------------------------------------------------------------------------
+# Node.js (actionlint, gitleaks, yamllint via npx)
+# -----------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -----------------------------------------------------------------------------
+# YAML / secrets locales
+# -----------------------------------------------------------------------------
+*.local.yaml
+*.local.yml
+secrets/
+*.env
+.env
+.env.local
+!.env.example
+
+# -----------------------------------------------------------------------------
+# Terraform (referencia, NO se usa aqui pero por si se copia)
+# -----------------------------------------------------------------------------
 .terraform/
-.terraform.lock.hcl
-.terraform.d/
 *.tfstate
 *.tfstate.*
 crash.log
 crash.*.log
 
-# Build artifacts
-*.pdf
-*.aux
-*.log
-*.bbl
-*.bcf
-*.blg
-*.fdb_latexmk
-*.fls
-*.out
-*.toc
-*.synctex.gz
-*.run.xml
-
+# -----------------------------------------------------------------------------
 # OS
+# -----------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
+# -----------------------------------------------------------------------------
 # IDE
+# -----------------------------------------------------------------------------
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
