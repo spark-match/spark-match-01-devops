@@ -1,8 +1,10 @@
-# CODEOWNERS - Spark Match
+# CODEOWNERS - Spark Match DevOps
 # Aprobaciones requeridas para PRs en este repositorio.
 
-# Propietarios por defecto (Product Owners aprueban cualquier cambio)
-*       @spark-match/product-owners
+# Catch-all: cualquier cambio es aprobado por el team DevOps
+*       @spark-match/devops
 
-# Equipo principal responsable de este repositorio
-/*      @spark-match/devops
+# Configuración crítica: CI/CD workflows y CODEOWNERS requieren devops
+/.github/workflows/      @spark-match/devops
+/.github/workflows/**/*  @spark-match/devops
+/.github/CODEOWNERS               @spark-match/devops
