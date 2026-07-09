@@ -1,10 +1,12 @@
-# CODEOWNERS - Spark Match DevOps
-# Aprobaciones requeridas para PRs en este repositorio.
+﻿# CODEOWNERS — Spark Match DevOps
+#
+# Política de aprobación (ADR-003 branch-based deployment):
+# - dev: 1 aprobación del CODE OWNER técnico (devops) es suficiente.
+# - main: 1 CODE OWNER review (devops) + reviewer manual de
+#   @spark-match/product-owners (solicitado por el autor al abrir el PR).
+#
+# CODE OWNERS del repo: @spark-match/devops
+#   Miembros actuales: ahincho, dbarretol
 
-# Catch-all: cualquier cambio es aprobado por el team DevOps
+# Catch-all: cualquier archivo es responsabilidad de devops
 *       @spark-match/devops
-
-# Configuración crítica: CI/CD workflows y CODEOWNERS requieren devops
-/.github/workflows/      @spark-match/devops
-/.github/workflows/**/*  @spark-match/devops
-/.github/CODEOWNERS               @spark-match/devops
