@@ -138,6 +138,9 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
 
     steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
       - name: Resolve environment identifier (for display/artifact/concurrency)
         id: env
         run: |
@@ -148,9 +151,6 @@ jobs:
           fi
           echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
           echo "Resolved env=${ENV} | gh-env=${{ inputs.gh-environment || inputs.environment }} | auto-approve=${{ inputs.auto-approve }} | drift-only=${{ inputs.drift-only }}"
-
-      - name: Checkout caller repository
-        uses: actions/checkout@v6
 
       - name: Setup Terraform ${{ inputs.terraform-version }}
         uses: hashicorp/setup-terraform@v4
