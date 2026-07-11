@@ -7,28 +7,42 @@
 #            require_code_owner_reviews: true
 #            require_last_push_approval: true
 #
-# CODE OWNER del repo (catch-all): @spark-match/devops
-#   Miembros: dbarretol, ahincho
+# CODE OWNERS del repo:
+#   @spark-match/devops        Miembros: dbarretol, ahincho
+#   @spark-match/product-owners Miembros: dbarretol, FabiTaparaQuispe, ahincho
 #
-# Paths criticos (governance): @spark-match/product-owners
-#   - Decisiones arquitectonicas, onboarding, postmortems, docs raiz.
-#   - Miembros: dbarretol, FabiTaparaQuispe, ahincho
+# Convencion:
+#   - NO usamos catch-all (*) porque GitHub ACUMULA los code owners de
+#     TODAS las reglas que matchean. Si tenemos `* @devops` y ademas
+#     `README.md @product-owners`, entonces README.md requiere aprobacion
+#     de ambos equipos.
+#   - Cada path del repo debe estar listado explicitamente.
+#   - Si se crea un path nuevo, agregar una linea aqui antes de mergearlo.
 #
 # Nota: el autor del PR no puede aprobar su propio PR, ni siquiera siendo
 # CODE OWNER (regla de GitHub). Por ejemplo, un PR abierto por ahincho
 # necesita la aprobacion de cualquier otro miembro del team.
 
 # =============================================================================
-# Catch-all: el equipo tecnico del repo es CODE OWNER del codigo
+# Documentos de governance en raiz
 # =============================================================================
-*                                          @spark-match/devops
+# README.md es la cara visible del repo. Cambios afectan como el equipo
+# entiende el repo, asi que ambos equipos aprueban.
+/README.md                                  @spark-match/devops @spark-match/product-owners
+
+# Documentos de governance internos (bypass log, decisiones, politicas).
+# Tambien requieren aprobacion de ambos equipos.
+/governance/                                @spark-match/devops @spark-match/product-owners
 
 # =============================================================================
-# Paths criticos: product-owners revisa governance y docs raiz
+# Paths tecnicos - DevOps gobierna
 # =============================================================================
-/decisions/                                @spark-match/product-owners
-/onboarding/                               @spark-match/product-owners
-/postmortems/                              @spark-match/product-owners
-/README.md                                 @spark-match/product-owners
-/CONTRIBUTING.md                           @spark-match/product-owners
-/LICENSE                                   @spark-match/product-owners
+# CI/CD reusables, templates, CODEOWNERS, branch protection.
+/.github/                                    @spark-match/devops
+
+# Scripts auxiliares (configure-merge-methods.sh, futuros).
+/scripts/                                    @spark-match/devops
+
+# Configuracion tecnica de lint y git ignores.
+/.yamllint.yml                               @spark-match/devops
+/.gitignore                                  @spark-match/devops

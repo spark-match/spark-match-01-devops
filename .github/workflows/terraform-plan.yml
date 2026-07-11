@@ -1,16 +1,33 @@
 # =============================================================================
-# Reusable Workflow: Terraform Plan
+# Reusable Workflow: Terraform Plan (N-environment aware)
 # =============================================================================
-# Runs `terraform plan` on a pull request using a read-only AWS role via OIDC.
+# Runs `terraform plan` against a caller-provided working directory and writes
+# results to a per-environment artifact + per-environment sticky comment on
+# the PR. Designed to be invoked from a matrix [dev, staging, prod, ...].
 #
-# USAGE (in caller repo):
+# USAGE (in caller repo, single env):
 #   jobs:
-#     plan:
+#     plan-dev:
 #       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@main
 #       with:
-#         working-directory: live/prod
-#         aws-region: us-east-1
-#         plan-role-arn-secret: AWS_PLAN_ROLE_ARN
+#         environment: dev
+#         working-directory: live/dev
+#         plan-role-arn-secret: AWS_PLAN_ROLE_ARN_DEV
+#
+# USAGE (in caller repo, matrix N envs):
+#   jobs:
+#     plan:
+#       strategy:
+#         matrix:
+#           include:
+#             - { environment: dev, working-directory: live/dev, ... }
+#             - { environment: staging, working-directory: live/staging, ... }
+#             - { environment: prod, working-directory: live/prod, ... }
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@main
+#       with:
+#         environment: ${{ matrix.environment }}
+#         working-directory: ${{ matrix.working-directory }}
+#         plan-role-arn-secret: ${{ matrix.plan-role-arn-secret }}
 #
 # Required GitHub Secret in caller repo: <plan-role-arn-secret>
 # Required AWS: IAM Role with OIDC trust policy for this repo
@@ -21,6 +38,11 @@ name: Terraform Plan
 on:
   workflow_call:
     inputs:
+      environment:
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory.'
+        type: string
+        required: false
+        default: ''
       working-directory:
         description: 'Directory containing the Terraform configuration (relative to repo root).'
         type: string
@@ -32,7 +54,7 @@ on:
         required: false
         default: 'us-east-1'
       plan-role-arn-secret:
-        description: 'Name of the GitHub Secret containing the OIDC role ARN for plan.'
+        description: 'Name of the GitHub Secret containing the OIDC role ARN for plan (e.g. AWS_PLAN_ROLE_ARN_DEV).'
         type: string
         required: false
         default: 'AWS_PLAN_ROLE_ARN'
@@ -51,8 +73,28 @@ on:
         type: string
         required: false
         default: 'terraform.tfstate'
+      tfvars-file:
+        description: 'Optional path to a tfvars file passed as -var-file (e.g. "prod.tfvars"). Empty = use committed terraform.tfvars.'
+        type: string
+        required: false
+        default: ''
+      var-files:
+        description: 'Comma-separated list of additional tfvars files (additive). Empty = none.'
+        type: string
+        required: false
+        default: ''
+      target:
+        description: 'Optional Terraform target (e.g. "module.security" or "aws_s3_bucket.foo"). Empty = no target.'
+        type: string
+        required: false
+        default: ''
+      extra-args:
+        description: 'Additional raw terraform CLI flags appended to plan. Use sparingly.'
+        type: string
+        required: false
+        default: ''
       comment-on-pr:
-        description: 'Post plan summary as a sticky comment on the PR.'
+        description: 'Post plan summary as a sticky comment on the PR (header = terraform-plan-<environment>).'
         type: boolean
         required: false
         default: true
@@ -61,8 +103,11 @@ on:
         description: 'Exit code from terraform plan (0 = success, 1 = error, 2 = changes).'
         value: ${{ jobs.plan.outputs.plan-exit-code }}
       has-changes:
-        description: 'Whether the plan has resource changes.'
+        description: 'Whether the plan has resource changes (true/false).'
         value: ${{ jobs.plan.outputs.has-changes }}
+      environment:
+        description: 'Environment identifier echoed back.'
+        value: ${{ jobs.plan.outputs.environment }}
 
 permissions:
   id-token: write          # For OIDC
@@ -71,16 +116,28 @@ permissions:
 
 jobs:
   plan:
-    name: Plan (${{ inputs.working-directory }})
+    name: Plan (${{ inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
     outputs:
       plan-exit-code: ${{ steps.plan.outputs.plan-exit-code }}
       has-changes: ${{ steps.plan.outputs.has-changes }}
+      environment: ${{ steps.env.outputs.environment }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
 
     steps:
+      - name: Resolve environment identifier
+        id: env
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV="${{ inputs.environment }}"
+          else
+            ENV=$(basename "${{ inputs.working-directory }}")
+          fi
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+          echo "Resolved environment: ${ENV}"
+
       - name: Checkout caller repository
         uses: actions/checkout@v6
 
@@ -126,16 +183,36 @@ jobs:
         id: plan
         run: |
           set +e
-          terraform plan -input=false -no-color -lock=false -out=tfplan
+          PLAN_ARGS="-input=false -no-color -lock=false -out=tfplan"
+          if [ -n "${{ inputs.tfvars-file }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
+          fi
+          if [ -n "${{ inputs.var-files }}" ]; then
+            IFS=',' read -ra FILES <<< "${{ inputs.var-files }}"
+            for f in "${FILES[@]}"; do
+              PLAN_ARGS="$PLAN_ARGS -var-file=$f"
+            done
+          fi
+          if [ -n "${{ inputs.target }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -target=${{ inputs.target }}"
+          fi
+          if [ -n "${{ inputs.extra-args }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS ${{ inputs.extra-args }}"
+          fi
+          echo "Running: terraform plan $PLAN_ARGS"
+          # shellcheck disable=SC2086
+          terraform plan $PLAN_ARGS
           EXIT_CODE=$?
           set -e
           echo "plan-exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
-          if [ "${EXIT_CODE}" = "0" ]; then
+          # Terraform exit codes:
+          #   0 = plan succeeded with no changes
+          #   1 = error
+          #   2 = plan succeeded with changes
+          if [ "${EXIT_CODE}" = "2" ]; then
             echo "has-changes=true" >> "$GITHUB_OUTPUT"
-          elif [ "${EXIT_CODE}" = "2" ]; then
-            # Exit code 2 = "changes present" (plan succeeded, resources to add/change/destroy)
-            echo "has-changes=true" >> "$GITHUB_OUTPUT"
-            echo "plan-exit-code=0" >> "$GITHUB_OUTPUT"
+          elif [ "${EXIT_CODE}" = "0" ]; then
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
           else
             echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
@@ -147,8 +224,21 @@ jobs:
       - name: Generate plan summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
+          ENV="${{ steps.env.outputs.environment }}"
+          WD="${{ inputs.working-directory }}"
+          REGION="${{ inputs.aws-region }}"
           {
             echo "## Terraform Plan Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${ENV}\` |"
+            echo "| Working directory | \`${WD}\` |"
+            echo "| AWS region | \`${REGION}\` |"
+            echo "| State bucket | \`${{ inputs.backend-bucket }}\` |"
+            echo "| State key | \`${{ inputs.backend-key }}\` |"
+            echo ""
+            echo "### Resource changes"
             echo ""
             echo "| Resource | Change |"
             echo "|:---|:---|"
@@ -162,7 +252,7 @@ jobs:
         if: steps.plan.outputs.has-changes == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: terraform-plan-pr-${{ github.event.pull_request.number }}
+          name: terraform-plan-${{ steps.env.outputs.environment }}-pr-${{ github.event.pull_request.number }}
           path: ${{ inputs.working-directory }}/tfplan
           retention-days: 7
 
@@ -170,13 +260,26 @@ jobs:
         if: steps.plan.outputs.has-changes == 'true' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          header: terraform-plan
+          header: terraform-plan-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Plan
+            ## Terraform Plan — `${{ steps.env.outputs.environment }}`
 
-            Working directory: `${{ inputs.working-directory }}`
-            Plan artifact: `terraform-plan-pr-${{ github.event.pull_request.number }}`
+            - **Environment:** `${{ steps.env.outputs.environment }}`
+            - **Working directory:** `${{ inputs.working-directory }}`
+            - **AWS region:** `${{ inputs.aws-region }}`
+            - **State bucket:** `${{ inputs.backend-bucket }}`
+            - **State key:** `${{ inputs.backend-key }}`
 
             See [Job Summary](../../actions/runs/${{ github.run_id }}) for the resource change table.
 
-            Run `terraform show tfplan` locally (after downloading the artifact) for full details.
+            Download the artifact `terraform-plan-${{ steps.env.outputs.environment }}-pr-${{ github.event.pull_request.number }}` and run `terraform show tfplan` locally for full details.
+
+      - name: Comment PR with no-changes notice
+        if: steps.plan.outputs.has-changes == 'false' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: terraform-plan-${{ steps.env.outputs.environment }}
+          message: |
+            ## Terraform Plan — `${{ steps.env.outputs.environment }}`
+
+            No changes. ✓
