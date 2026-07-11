@@ -1,24 +1,28 @@
 # =============================================================================
-# Reusable Workflow: Terraform Apply
+# Reusable Workflow: Terraform Apply (N-environment aware)
 # =============================================================================
-# Runs `terraform apply` on push to main or manual trigger using a write-role
-# AWS role via OIDC. Uses GitHub Environment as approval gate.
+# Runs `terraform plan` then `terraform apply` against a caller-provided
+# working directory. Uses GitHub Environment as approval gate (configurable
+# via the caller). Designed to be invoked per environment from a caller with
+# N jobs.
 #
-# USAGE (in caller repo):
-#   on:
-#     push:
-#       branches: [main]
+# USAGE (in caller repo, single env):
 #   jobs:
-#     apply:
+#     apply-prod:
 #       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-apply.yml@main
 #       with:
+#         environment: prod
 #         working-directory: live/prod
-#         aws-region: us-east-1
-#         apply-role-arn-secret: AWS_APPLY_ROLE_ARN
-#         environment: production
+#         apply-role-arn-secret: AWS_APPLY_ROLE_ARN_PROD
+#         gh-environment: production
 #
 # Required GitHub Secret in caller repo: <apply-role-arn-secret>
-# Required GitHub Environment: <environment> (configured by repo admin)
+# Required GH Environment: <gh-environment> (configured by repo admin)
+#
+# NOTE: The `gh-environment` field of the job is evaluated BEFORE any step
+# runs, so it cannot reference step outputs. It uses an expression fallback:
+#   ${{ inputs.gh-environment || inputs.environment }}
+# If both are empty, the workflow fails (caller bug).
 # =============================================================================
 
 name: Terraform Apply
@@ -26,6 +30,11 @@ name: Terraform Apply
 on:
   workflow_call:
     inputs:
+      environment:
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, concurrency group. Defaults to basename of working-directory.'
+        type: string
+        required: false
+        default: ''
       working-directory:
         description: 'Directory containing the Terraform configuration.'
         type: string
@@ -37,7 +46,7 @@ on:
         required: false
         default: 'us-east-1'
       apply-role-arn-secret:
-        description: 'Name of the GitHub Secret containing the OIDC role ARN for apply.'
+        description: 'Name of the GitHub Secret containing the OIDC role ARN for apply (e.g. AWS_APPLY_ROLE_ARN_DEV).'
         type: string
         required: false
         default: 'AWS_APPLY_ROLE_ARN'
@@ -56,24 +65,56 @@ on:
         type: string
         required: false
         default: 'terraform.tfstate'
-      environment:
-        description: 'GitHub Environment name (used as approval gate).'
+      tfvars-file:
+        description: 'Optional path to a tfvars file passed as -var-file. Empty = use committed terraform.tfvars.'
         type: string
         required: false
-        default: 'production'
+        default: ''
+      var-files:
+        description: 'Comma-separated list of additional tfvars files (additive). Empty = none.'
+        type: string
+        required: false
+        default: ''
+      target:
+        description: 'Optional Terraform target (e.g. "module.security"). Empty = no target.'
+        type: string
+        required: false
+        default: ''
+      extra-args:
+        description: 'Additional raw terraform CLI flags appended to plan. Use sparingly.'
+        type: string
+        required: false
+        default: ''
+      gh-environment:
+        description: 'GitHub Environment name (used as approval gate). Falls back to inputs.environment. Required for production deploys.'
+        type: string
+        required: false
+        default: ''
+      auto-approve:
+        description: 'If true, skip GH Environment approval gate (the GH Environment must have no required reviewers). Only use for non-prod envs. Default false.'
+        type: boolean
+        required: false
+        default: false
+      drift-only:
+        description: 'If true, run plan only and post summary; do NOT apply. Useful for scheduled drift detection. Default false.'
+        type: boolean
+        required: false
+        default: false
     outputs:
       apply-success:
-        description: 'Whether the apply succeeded.'
+        description: 'Whether the apply succeeded (true/false). False in drift-only mode if plan errored.'
         value: ${{ jobs.apply.outputs.apply-success }}
       has-changes:
         description: 'Whether the plan had resource changes.'
         value: ${{ jobs.apply.outputs.has-changes }}
-      commit-message:
-        description: 'Commit message that triggered the apply (push events only).'
-        value: ${{ github.event.head_commit.message }}
+      environment:
+        description: 'Environment identifier echoed back.'
+        value: ${{ jobs.apply.outputs.environment }}
 
+# Concurrency group keyed by resolved environment (env || working-directory basename)
+# and the working directory. Prevents concurrent applies to the same env.
 concurrency:
-  group: ${{ inputs.environment }}-apply-${{ inputs.working-directory }}
+  group: ${{ inputs.environment || inputs.working-directory }}-apply-${{ inputs.working-directory }}
   cancel-in-progress: false
 
 permissions:
@@ -83,17 +124,31 @@ permissions:
 
 jobs:
   apply:
-    name: Apply (${{ inputs.working-directory }})
+    name: Apply (${{ inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    # GH Environment uses input fallback: gh-environment > environment.
+    # This is evaluated before any step runs, so it can't reference step outputs.
+    environment: ${{ inputs.gh-environment || inputs.environment }}
     outputs:
       apply-success: ${{ steps.apply.outputs.apply-success }}
       has-changes: ${{ steps.plan.outputs.has-changes }}
+      environment: ${{ steps.env.outputs.environment }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
 
     steps:
+      - name: Resolve environment identifier (for display/artifact/concurrency)
+        id: env
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV="${{ inputs.environment }}"
+          else
+            ENV=$(basename "${{ inputs.working-directory }}")
+          fi
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+          echo "Resolved env=${ENV} | gh-env=${{ inputs.gh-environment || inputs.environment }} | auto-approve=${{ inputs.auto-approve }} | drift-only=${{ inputs.drift-only }}"
+
       - name: Checkout caller repository
         uses: actions/checkout@v6
 
@@ -139,13 +194,35 @@ jobs:
         id: plan
         run: |
           set +e
-          terraform plan -input=false -no-color -out=tfplan
+          # Note: -lock=false here because the next step (apply) acquires
+          # the S3 native lockfile. Holding it during plan would block
+          # other workflows.
+          PLAN_ARGS="-input=false -no-color -lock=false -out=tfplan"
+          if [ -n "${{ inputs.tfvars-file }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
+          fi
+          if [ -n "${{ inputs.var-files }}" ]; then
+            IFS=',' read -ra FILES <<< "${{ inputs.var-files }}"
+            for f in "${FILES[@]}"; do
+              PLAN_ARGS="$PLAN_ARGS -var-file=$f"
+            done
+          fi
+          if [ -n "${{ inputs.target }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -target=${{ inputs.target }}"
+          fi
+          if [ -n "${{ inputs.extra-args }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS ${{ inputs.extra-args }}"
+          fi
+          echo "Running: terraform plan $PLAN_ARGS"
+          # shellcheck disable=SC2086
+          terraform plan $PLAN_ARGS
           EXIT_CODE=$?
           set -e
           echo "plan-exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
           if [ "${EXIT_CODE}" = "2" ]; then
             echo "has-changes=true" >> "$GITHUB_OUTPUT"
           else
+            # 0 = no changes, 1 = error
             echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -156,8 +233,23 @@ jobs:
       - name: Generate plan summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
+          ENV="${{ steps.env.outputs.environment }}"
+          WD="${{ inputs.working-directory }}"
+          REGION="${{ inputs.aws-region }}"
           {
-            echo "## Terraform Apply Plan"
+            echo "## Terraform Apply Plan — \`${ENV}\`"
+            echo ""
+            if [ "${{ inputs.drift-only }}" = "true" ]; then
+              echo "**Mode:** drift-only (no apply)"
+              echo ""
+            fi
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${ENV}\` |"
+            echo "| Working directory | \`${WD}\` |"
+            echo "| AWS region | \`${REGION}\` |"
+            echo "| State bucket | \`${{ inputs.backend-bucket }}\` |"
+            echo "| State key | \`${{ inputs.backend-key }}\` |"
             echo ""
             echo "| Resource | Change |"
             echo "|:---|:---|"
@@ -169,7 +261,7 @@ jobs:
 
       - name: Terraform apply
         id: apply
-        if: steps.plan.outputs.has-changes == 'true'
+        if: steps.plan.outputs.has-changes == 'true' && inputs.drift-only != 'true'
         run: |
           set +e
           terraform apply -input=false tfplan
@@ -185,14 +277,23 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Terraform Apply Result"
+            echo "## Terraform Apply Result — \`${{ steps.env.outputs.environment }}\`"
             echo ""
-            if [ "${{ steps.apply.outputs.apply-success }}" = "true" ]; then
+            if [ "${{ inputs.drift-only }}" = "true" ]; then
+              echo "Mode: **drift-only** (plan completed, no apply performed)"
+              if [ "${{ steps.plan.outputs.has-changes }}" = "true" ]; then
+                echo ""
+                echo "> Drift detected: see plan summary above."
+              else
+                echo ""
+                echo "> No drift."
+              fi
+            elif [ "${{ steps.apply.outputs.apply-success }}" = "true" ]; then
               echo "Status: **Success**"
               echo ""
               echo "Triggered by: @${{ github.actor }}"
               echo "Commit: ${{ github.sha }}"
-              echo "Environment: ${{ inputs.environment }}"
+              echo "Environment: ${{ steps.env.outputs.environment }}"
             elif [ "${{ steps.plan.outputs.has-changes }}" = "true" ]; then
               echo "Status: **Failed** (apply error)"
             else
@@ -200,13 +301,13 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Notify on failure
-        if: failure() && steps.apply.outputs.apply-success != 'true'
+      - name: Notify on apply failure
+        if: failure() && steps.apply.outputs.apply-success != 'true' && inputs.drift-only != 'true'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          header: terraform-apply-failed
+          header: terraform-apply-failed-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Apply Failed
+            ## Terraform Apply Failed — `${{ steps.env.outputs.environment }}`
 
             Working directory: `${{ inputs.working-directory }}`
             Commit: ${{ github.sha }}
@@ -219,3 +320,14 @@ jobs:
             1. Check CloudTrail for what was created/modified
             2. Run `terraform plan` locally to see the drift
             3. Decide whether to manually fix or re-run this workflow
+
+      - name: Notify on drift detected
+        if: always() && inputs.drift-only == 'true' && steps.plan.outputs.has-changes == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: terraform-drift-${{ steps.env.outputs.environment }}
+          message: |
+            ## Terraform Drift Detected — `${{ steps.env.outputs.environment }}`
+
+            Scheduled drift detection found changes outside of Terraform.
+            See [Job Summary](../../actions/runs/${{ github.run_id }}) for the resource change table.
