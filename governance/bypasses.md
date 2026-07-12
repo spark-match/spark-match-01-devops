@@ -78,10 +78,11 @@ Solo admins del repo pueden ejecutar el bypass con `gh pr merge --admin`.
 | Repo                       | PR  | Autor   | Razon                                                                  | Aprobado por |
 |----------------------------|-----|---------|------------------------------------------------------------------------|--------------|
 | spark-match-01-devops      | #11 | ahincho | Script `configure-repo-rulesets.sh` (misma causa raiz)                  | ahincho      |
+| spark-match-01-devops      | #12 | ahincho | Update `bypasses.md` con PR #9, #10, #11                                | ahincho      |
 
 **Contexto**: PR de un script bash (192 lineas, 1 archivo) que automatiza aplicar un ruleset estandar a todos los repos de la org `spark-match`. Misma causa raiz que los 4 bypasses anteriores: CODE OWNER unavailability.
 
-**Accion**: `gh pr merge 11 --admin --squash`.
+**Accion**: `gh pr merge 11 --admin --squash`. PR #12 es la actualizacion de este mismo log.
 
 **Justificacion**:
 
@@ -89,12 +90,49 @@ Solo admins del repo pueden ejecutar el bypass con `gh pr merge --admin`.
 - Resuelve un problema real (10 repos que necesitan proteccion consistente en Free tier).
 - CI pasa (lint + gitleaks + yamllint: actionlint/gitleaks/yamllint son los 3 status checks requeridos, todos verdes).
 
-## Patron observado
+### 2026-07-12 - ahincho (migracion a rulesets como unica fuente de verdad)
 
-5 bypasses consecutivos en `01-devops` por la misma causa raiz (CODE OWNER unavailability). El equipo confirmo que no es viable agregar mas miembros al team `@spark-match/devops`. Mitigaciones parciales aplicadas:
+| Repo                       | PR  | Autor   | Razon                                                                  | Aprobado por |
+|----------------------------|-----|---------|------------------------------------------------------------------------|--------------|
+| spark-match-01-devops      | #13 | ahincho | Upgrade script v2: `pull_request` rule + `require_code_owner_review`   | ahincho      |
+| spark-match-01-devops      | #14 | ahincho | Add `bypass_actors` (OrganizationAdmin) al ruleset                     | ahincho      |
 
-- **Branch protection** configurada en ambos repos criticos (`01-devops`, `02-infrastructure`) con status checks reales que SÍ bloquean merges si CI falla (gracias a SEC-11 resuelto en 2026-07-12).
-- **Repo-level rulesets** aplicados via `scripts/configure-repo-rulesets.sh` a 10 repos: cubren `block_force_push` + `require_linear_history` (lo que SÍ puede hacer rulesets; PR approvals quedan en branch protection porque rulesets no tienen rule type "pull_request").
+**Contexto**: PR #13 mejora el script `configure-repo-rulesets.sh` para incluir la regla `pull_request` completa (PR approvals, code owner review, dismiss stale, conversation resolution, allowed merge methods). Esto cubre TODO lo que hacia branch protection clasica. Adicionalmente, se decidio migrar a ruleset como UNICA fuente de verdad: branch protection clasica fue removida de `01-devops` y `02-infrastructure`.
+
+**Descubrimiento critico durante PR #13**: `gh pr merge --admin` NO bypasea las reglas de un ruleset, solo las de branch protection clasica. Sin `bypass_actors` configurado, un admin no puede mergear un PR que no cumple las reglas del ruleset, incluso con `--admin`. Esto bloqueo el merge de PR #13 mismo. **PR #14 resuelve esto** agregando `bypass_actors: [{actor_type: "OrganizationAdmin", bypass_mode: "always"}]` al ruleset, que es el unico mecanismo oficial documentado por GitHub para permitir bypass.
+
+**Acciones ejecutadas**:
+
+1. `gh pr merge 13 --admin --squash` FALLO con "Repository rule violations found".
+2. Update ruleset de 01-devops con `bypass_actors` via `gh api -X PUT`.
+3. `gh pr merge 13 --admin --squash` EXITOSO.
+4. Script actualizado (PR #14) para incluir `bypass_actors` en el JSON del ruleset.
+5. Aplicado a 10 repos con `--delete-existing` (los 10 tienen el mismo `bypass_actors` ahora).
+6. `gh pr merge 14 --admin --squash` EXITOSO.
+
+**Branch protection clasica removida de 4 branches**:
+
+- `spark-match-01-devops/branches/dev/protection`: DELETED
+- `spark-match-01-devops/branches/main/protection`: DELETED
+- `spark-match-02-infrastructure/branches/dev/protection`: DELETED
+- `spark-match-02-infrastructure/branches/main/protection`: DELETED
+
+**Verificacion post-migracion**: `GET /repos/.../rules/branches/{dev|main}` para `01-devops` y `02-infrastructure` retorna las 4 reglas activas (pull_request + non_fast_forward + required_linear_history + required_status_checks) con `ruleset_source: <repo>` y `ruleset_id: <id>`. La proteccion sigue activa, pero ahora viene 100% del ruleset.
+
+## Estado final de la proteccion (2026-07-12)
+
+| Mecanismo | Estado |
+|---|---|
+| Branch protection clasica (`/branches/X/protection`) | **Removida** de 01-devops y 02-infrastructure |
+| Repo-level rulesets | **Activa** en 10 repos, con `bypass_actors` para admin |
+| Single source of truth | **Si** - el ruleset |
+
+## Patron observado (actualizado)
+
+7 bypasses consecutivos en `01-devops` por la misma causa raiz (CODE OWNER unavailability). El equipo confirmo que no es viable agregar mas miembros al team `@spark-match/devops`. Mitigaciones aplicadas:
+
+- **Repo-level rulesets** aplicados via `scripts/configure-repo-rulesets.sh` a 10 repos: cubren `block_force_push` + `require_linear_history` + `pull_request` (con approvals, code owner, dismiss stale, conversation resolution) + `required_status_checks` (donde aplique). Equivalente a branch protection clasica, pero con las ventajas de rulesets (capas, status, auditabilidad, etc.).
+- **`bypass_actors`** configurado en cada ruleset: OrganizationAdmin puede mergear PRs que no cumplen las reglas (workflow documentado en este log).
 - **Causa raiz NO resuelta**: la unica forma de evitar bypasses es agregar miembros a `@spark-match/devops` o aceptar la politica "admin merge cuando no hay reviewers" como parte del flujo normal.
 
 ## Referencias cruzadas
