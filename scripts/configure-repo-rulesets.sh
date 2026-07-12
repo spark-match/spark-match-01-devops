@@ -108,8 +108,8 @@ echo ""
 #   - required_linear_history
 #   - required_status_checks (opcional)
 #
-# bypass_actors: permite a OrganizationAdmin bypasear el ruleset cuando es
-# necesario (workflow de merge admin documentado en governance/bypasses.md).
+# bypass_actors: permite a OrganizationAdmin bypasear el ruleset cuando
+# es necesario (workflow de merge admin, requiere documentacion externa).
 emit_ruleset() {
   cat <<EOF
 {
