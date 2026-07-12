@@ -98,6 +98,11 @@ on:
         type: boolean
         required: false
         default: true
+      retention-days:
+        description: 'Days to keep the plan artifact before deletion.'
+        type: number
+        required: false
+        default: 7
     outputs:
       plan-exit-code:
         description: 'Exit code from terraform plan (0 = success, 1 = error, 2 = changes).'
@@ -114,10 +119,17 @@ permissions:
   contents: read
   pull-requests: write     # For posting comments
 
+# Cancel in-progress plans for the same PR + env. Saves runner minutes
+# when a PR is pushed multiple times. New pushes supersede old plans.
+concurrency:
+  group: terraform-plan-${{ inputs.environment || inputs.working-directory }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   plan:
     name: Plan (${{ inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       plan-exit-code: ${{ steps.plan.outputs.plan-exit-code }}
       has-changes: ${{ steps.plan.outputs.has-changes }}
@@ -259,7 +271,7 @@ jobs:
         with:
           name: terraform-plan-${{ steps.env.outputs.environment }}-pr-${{ github.event.pull_request.number }}
           path: ${{ inputs.working-directory }}/tfplan
-          retention-days: 7
+          retention-days: ${{ inputs.retention-days }}
 
       - name: Comment PR with plan summary
         if: steps.plan.outputs.has-changes == 'true' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
