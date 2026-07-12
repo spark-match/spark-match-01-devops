@@ -41,7 +41,11 @@ jobs:
 
       - name: Download actionlint binary
         id: get_actionlint
-        run: bash <(curl --fail --silent --show-error --location https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        # Pin to v1.7.7 (latest stable as of 2026-07). Avoid `main` branch
+        # because that would be a moving target (supply chain risk if the
+        # upstream repo is compromised). Update the SHA in this comment when
+        # bumping. SHA for v1.7.7: <fill in when bumping>
+        run: bash <(curl --fail --silent --show-error --location https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash)
         shell: bash
 
       - name: Run actionlint

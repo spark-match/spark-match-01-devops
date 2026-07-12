@@ -479,8 +479,6 @@ Detecta access keys de AWS, tokens de GitHub, API keys, etc.
 
 ## 📝 Versionado
 
-## 📝 Versionado
-
 Los callers referencian este repo con `@main`. Para producción real, se recomienda:
 
 ```yaml
