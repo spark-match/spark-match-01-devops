@@ -139,6 +139,55 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
 
     steps:
+      - name: Validate inputs
+        id: validate
+        # Este step corre ANTES de checkout, asi que el working-directory del
+        # caller (e.g. live/dev) aun no existe. Forzamos working-directory: .
+        working-directory: .
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          # working-directory: no debe ser vacio
+          if [ -z "${{ inputs.working-directory }}" ]; then
+            ERRORS+=("working-directory: requerido (default '.' si no se especifica)")
+          fi
+
+          # plan-role-arn-secret: debe corresponder a un secret que existe
+          SECRET_NAME="${{ inputs.plan-role-arn-secret }}"
+          if [ -z "$SECRET_NAME" ]; then
+            ERRORS+=("plan-role-arn-secret: requerido (ej. AWS_PLAN_ROLE_ARN_DEV)")
+          fi
+
+          # terraform-version: formato X.Y.Z
+          TF_VERSION="${{ inputs.terraform-version }}"
+          if ! echo "$TF_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            ERRORS+=("terraform-version: '$TF_VERSION' no tiene formato X.Y.Z (ej. 1.10.0)")
+          fi
+
+          # retention-days: 1-90 (limites de GitHub Actions)
+          RETENTION="${{ inputs.retention-days }}"
+          if ! echo "$RETENTION" | grep -qE '^[0-9]+$' || [ "$RETENTION" -lt 1 ] || [ "$RETENTION" -gt 90 ]; then
+            ERRORS+=("retention-days: '$RETENTION' fuera de rango 1-90 (limites de GitHub Actions)")
+          fi
+
+          # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
+          if [ -n "${{ inputs.environment }}" ]; then
+            if ! echo "${{ inputs.environment }}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("environment: '${{ inputs.environment }}' solo puede contener letras, digitos, _ o -")
+            fi
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            echo "::error::Corrige los inputs y reintenta."
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
       - name: Resolve environment identifier
         id: env
         # Este step corre ANTES de checkout, asi que el working-directory del
