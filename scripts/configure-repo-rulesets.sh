@@ -107,12 +107,22 @@ echo ""
 #   - non_fast_forward: block force pushes
 #   - required_linear_history
 #   - required_status_checks (opcional)
+#
+# bypass_actors: permite a OrganizationAdmin bypasear el ruleset cuando es
+# necesario (workflow de merge admin documentado en governance/bypasses.md).
 emit_ruleset() {
   cat <<EOF
 {
   "name": "spark-match-default-branch-protection",
   "target": "branch",
   "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": null,
+      "actor_type": "OrganizationAdmin",
+      "bypass_mode": "always"
+    }
+  ],
   "conditions": {
     "ref_name": {
       "include": ["~DEFAULT_BRANCH", "refs/heads/dev"],
