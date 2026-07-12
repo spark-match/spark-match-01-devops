@@ -126,6 +126,7 @@ jobs:
   apply:
     name: Apply (${{ inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # GH Environment uses input fallback: gh-environment > environment.
     # This is evaluated before any step runs, so it can't reference step outputs.
     environment: ${{ inputs.gh-environment || inputs.environment }}
