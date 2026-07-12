@@ -1,32 +1,33 @@
 #!/usr/bin/env bash
 # =============================================================================
-# configure-repo-rulesets.sh - Aplica un ruleset estandar a todos los repos
+# configure-repo-rulesets.sh - Aplica un ruleset completo a todos los repos
 #                              de la org spark-match via GitHub CLI.
 # =============================================================================
 # Por que este script existe:
 #   - GitHub Free no soporta ORG-level rulesets (requiere GitHub Team).
 #   - Repo-level rulesets SI funcionan en Free.
-#   - Este script automatiza crear 1 ruleset estandar por repo.
+#   - Este script automatiza crear 1 ruleset completo por repo.
 #
-# Que cubre el ruleset (lo que SÍ puede hacer rulesets):
-#   - block_force_push (non_fast_forward)
-#   - require_linear_history
-#   - required_status_checks (si se especifican en --status-checks)
+# Que cubre el ruleset (v2 - cubre TODO lo de branch protection):
+#   - pull_request rule: 1 aprobacion, code owner review, dismiss stale,
+#                        conversation resolution, allowed merge methods
+#   - required_status_checks (opcional via --status-checks)
+#   - non_fast_forward (block force push)
+#   - required_linear_history
 #
-# Que NO cubre (queda en branch protection clasica):
-#   - required_approving_review_count
-#   - require_code_owner_reviews
-#   - require_last_push_approval
-#   - enforce_admins
-#   - Esto es porque GitHub rulesets no tienen rule type "pull_request".
-#     Ambos coexisten; la mas restrictiva gana al evaluar un PR.
+# Que cubre TODO lo de branch protection clasica. Esto significa que podes
+# tener UNA sola fuente de verdad (el ruleset) y borrar branch protection.
+# Si tienes ambas, la mas restrictiva gana (no rompe nada).
 #
 # Uso:
 #   ./configure-repo-rulesets.sh --dry-run
 #   ./configure-repo-rulesets.sh --repos spark-match-02-infrastructure
 #   ./configure-repo-rulesets.sh --repos r1,r2 --status-checks "Plan (dev) / Plan (dev)"
 #   ./configure-repo-rulesets.sh
-#   ./configure-repo-rulesets.sh --delete-existing
+#   ./configure-repo-rulesets.sh --delete-existing   # recrear desde cero
+#
+# Para borrar branch protection DESPUES de aplicar este script:
+#   gh api -X DELETE repos/OWNER/REPO/branches/BRANCH/protection
 # =============================================================================
 
 set -euo pipefail
@@ -36,6 +37,8 @@ DRY_RUN=false
 REPOS_FILTER=""
 DELETE_EXISTING=false
 STATUS_CHECKS=""
+APPROVALS="1"
+ENFORCE_ADMINS_DEFAULT="false"
 
 # --- Parsing de args ---
 while [[ $# -gt 0 ]]; do
@@ -52,6 +55,10 @@ while [[ $# -gt 0 ]]; do
       STATUS_CHECKS="$2"
       shift 2
       ;;
+    --approvals)
+      APPROVALS="$2"
+      shift 2
+      ;;
     --delete-existing)
       DELETE_EXISTING=true
       shift
@@ -61,7 +68,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,45p' "$0" | sed -E 's/^# ?//'
+      sed -n '2,55p' "$0" | sed -E 's/^# ?//'
       exit 0
       ;;
     *)
@@ -90,11 +97,18 @@ fi
 if [[ -n "$STATUS_CHECKS" ]]; then
   echo "[INFO] Status checks requeridos: $STATUS_CHECKS"
 fi
+echo "[INFO] Approvals requeridos: $APPROVALS"
 echo ""
 
-# --- Construir JSON del ruleset via stdin ---
+# --- Funcion: emitir el JSON del ruleset por stdin ---
+# Ref: https://docs.github.com/en/rest/repos/rules (REST API endpoints for rules)
+# Reglas usadas (todas oficiales, no deprecated):
+#   - pull_request: PR approvals, code owner review, etc.
+#   - non_fast_forward: block force pushes
+#   - required_linear_history
+#   - required_status_checks (opcional)
 emit_ruleset() {
-  cat <<'EOF'
+  cat <<EOF
 {
   "name": "spark-match-default-branch-protection",
   "target": "branch",
@@ -106,12 +120,22 @@ emit_ruleset() {
     }
   },
   "rules": [
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": ${APPROVALS},
+        "require_code_owner_review": true,
+        "dismiss_stale_reviews_on_push": true,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": ["squash", "merge"]
+      }
+    },
     { "type": "non_fast_forward" },
     { "type": "required_linear_history" }
 EOF
 
   if [[ -n "$STATUS_CHECKS" ]]; then
-    # Construir array de checks
     CHECKS_JSON=""
     IFS=',' read -ra CHECKS_ARR <<< "$STATUS_CHECKS"
     for check in "${CHECKS_ARR[@]}"; do
@@ -172,6 +196,7 @@ for repo in $REPOS; do
   else
     if emit_ruleset | gh api -X POST "repos/$full_name/rulesets" \
         -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
         --input - \
         --silent > /dev/null 2>&1; then
       NEW_ID=$(gh api "repos/$full_name/rulesets" --jq '.[] | select(.name == "spark-match-default-branch-protection") | .id' 2>/dev/null)
