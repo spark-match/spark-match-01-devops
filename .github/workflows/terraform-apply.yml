@@ -152,6 +152,17 @@ jobs:
       - name: Checkout caller repository
         uses: actions/checkout@v6
 
+      - name: Resolve environment identifier (for display/artifact/concurrency)
+        id: env
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV="${{ inputs.environment }}"
+          else
+            ENV=$(basename "${{ inputs.working-directory }}")
+          fi
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+          echo "Resolved env=${ENV} | gh-env=${{ inputs.gh-environment || inputs.environment }} | auto-approve=${{ inputs.auto-approve }} | drift-only=${{ inputs.drift-only }}"
+
       - name: Setup Terraform ${{ inputs.terraform-version }}
         uses: hashicorp/setup-terraform@v4
         with:
