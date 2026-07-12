@@ -24,10 +24,17 @@ on:
 permissions:
   contents: read
 
+# Cancel in-progress runs for the same PR + branch. Saves runner minutes on
+# rapid pushes. The cancel-in-progress: true is safe for lint jobs (idempotent).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -43,6 +50,7 @@ jobs:
   gitleaks:
     name: gitleaks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository (full history)
         uses: actions/checkout@v6
@@ -57,6 +65,7 @@ jobs:
   yamllint:
     name: yamllint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
