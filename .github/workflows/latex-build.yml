@@ -53,10 +53,17 @@ on:
 permissions:
   contents: read
 
+# Cancel in-progress builds for the same caller + artifact name. Avoids
+# wasting runner minutes if a PR is pushed multiple times in quick succession.
+concurrency:
+  group: latex-build-${{ inputs.artifact-name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Compile LaTeX
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       artifact-name: ${{ inputs.artifact-name }}
     steps:

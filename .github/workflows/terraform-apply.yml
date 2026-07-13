@@ -126,6 +126,7 @@ jobs:
   apply:
     name: Apply (${{ inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # GH Environment uses input fallback: gh-environment > environment.
     # This is evaluated before any step runs, so it can't reference step outputs.
     environment: ${{ inputs.gh-environment || inputs.environment }}
@@ -140,6 +141,10 @@ jobs:
     steps:
       - name: Resolve environment identifier (for display/artifact/concurrency)
         id: env
+        # Este step corre ANTES de checkout, asi que el working-directory del
+        # caller (e.g. live/dev) aun no existe. Forzamos working-directory: .
+        # para que GitHub no intente hacer cd a un dir que no existe.
+        working-directory: .
         run: |
           if [ -n "${{ inputs.environment }}" ]; then
             ENV="${{ inputs.environment }}"
