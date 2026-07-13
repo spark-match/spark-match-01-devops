@@ -47,11 +47,18 @@ on:
 permissions:
   contents: write   # Required to create tags and releases
 
+# Only one release at a time per repo. If multiple PRs merge in rapid
+# succession, queue them instead of racing on tag creation.
+concurrency:
+  group: latex-release-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Build & Release PDF
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       new-version: ${{ steps.version.outputs.version }}
     steps:
