@@ -1,0 +1,69 @@
+# =============================================================================
+# Reusable Workflow: Checkov - Terraform Static Analysis
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs Checkov against the caller's
+# Terraform code with the `terraform` framework. Hard-fail mode: callers
+# justify each skip inline with `# checkov:skip=CKV_AWS_XX:reason` next to
+# the offending resource. Pinned to checkov 3.2.415 for reproducible output.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     checkov:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@dev
+#       with:
+#         environment-name: dev
+#         checkov-version: 3.2.415       # default; pin for reproducibility
+#         working-directory: .           # default: repo root
+#
+# Hard-fail discipline (per PR #18 in orion-infrastructure):
+#   - Findings must be fixed in the resource config, OR
+#   - Findings must be skipped inline with a justification
+#     (`# checkov:skip=CKV_AWS_60:reason`).
+#   - If a new finding shows up, the PR author either fixes it or adds the
+#     skip with rationale in the same commit.
+#
+# Cross-owner safe: pure CLI check, no secrets forwarded.
+# =============================================================================
+
+name: Checkov
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      checkov-version:
+        description: 'Checkov version to install (X.Y.Z format). Pin for reproducible lint output.'
+        type: string
+        required: false
+        default: '3.2.415'
+      working-directory:
+        description: 'Directory to scan (relative to repo root).'
+        type: string
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  checkov:
+    name: "checkov (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Install checkov (pinned)
+        run: pip install --quiet checkov==${{ inputs.checkov-version }}
+
+      # `--compact` collapses duplicate-finding output into a summary table.
+      # Hard-fail: if a new finding appears, fix the resource or add an inline
+      # `# checkov:skip=CKV_AWS_XX:reason` annotation with justification.
+      - name: Run checkov
+        working-directory: ${{ inputs.working-directory }}
+        run: checkov --directory . --framework terraform --compact

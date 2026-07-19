@@ -1,0 +1,100 @@
+# =============================================================================
+# Reusable Workflow: Terraform Validate
+# =============================================================================
+# Atomic recipe (ecosystem layer). Discovers every Terraform module in the
+# caller repo (by `*.tf` files at any directory level, excluding
+# `.terraform/` plugin caches and `.git/`) and runs:
+#   1. `terraform init -backend=false` -- downloads providers via the
+#      committed `.terraform.lock.hcl` without touching the S3/DynamoDB
+#      backend (no AWS credentials needed).
+#   2. `terraform validate -no-color` -- syntax + type checks each module.
+#
+# Works for monorepos (live/<env>/ + modules/*) without hardcoded directory
+# lists: discovery is automatic from the caller's tree.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     terraform-validate:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@dev
+#       with:
+#         environment-name: dev
+#         terraform-version: 1.15.7     # defaults to 1.10.0
+#         working-directory: .           # default: repo root
+#
+# Cross-owner safe: init downloads providers from the registry over HTTPS and
+# uses the committed lockfile. No AWS calls.
+# =============================================================================
+
+name: Terraform Validate
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      terraform-version:
+        description: 'Terraform version to install (X.Y.Z format).'
+        type: string
+        required: false
+        default: '1.10.0'
+      working-directory:
+        description: 'Directory to scan for Terraform modules (relative to repo root). Discovery starts here and goes recursive.'
+        type: string
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-validate:
+    name: "terraform validate (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform ${{ inputs.terraform-version }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      # Auto-discover every directory that contains at least one `*.tf` file,
+      # excluding `.terraform/` (provider plugin caches) and `.git/`. Each
+      # directory is exactly one module root.
+      - name: Discover Terraform module directories
+        id: discover
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          DIRS=$(find . -type f -name '*.tf' \
+            -not -path './.terraform/*' \
+            -not -path './.git/*' \
+            -exec dirname {} \; 2>/dev/null | sort -u)
+          if [ -z "$DIRS" ]; then
+            echo "::error::No Terraform modules discovered under '${{ inputs.working-directory }}' (no *.tf files)."
+            exit 1
+          fi
+          COUNT=$(printf '%s\n' "$DIRS" | wc -l | tr -d ' ')
+          echo "Discovered ${COUNT} module(s):"
+          printf '%s\n' "$DIRS" | sed 's/^/  - /'
+
+      - name: terraform init -backend=false + validate per module
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          DIRS=$(find . -type f -name '*.tf' \
+            -not -path './.terraform/*' \
+            -not -path './.git/*' \
+            -exec dirname {} \; 2>/dev/null | sort -u)
+          for DIR in $DIRS; do
+            echo "::group::Module: $DIR"
+            terraform -chdir="$DIR" init -backend=false -input=false -upgrade=false
+            terraform -chdir="$DIR" validate -no-color
+            echo "::endgroup::"
+          done

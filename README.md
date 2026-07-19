@@ -21,6 +21,10 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | `actionlint.yml` | Validate GitHub Actions syntax | — |
 | `gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v1`) | — |
 | `yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
+| `terraform-fmt.yml`     | `terraform fmt -check -recursive -diff` on the caller's Terraform tree | — |
+| `terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
+| `tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
+| `checkov.yml`           | Static analysis with checkov (pinned 3.2.415), terraform framework, hard-fail | — |
 
 #### `actionlint.yml`
 
@@ -92,6 +96,106 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@dev
     with:
       environment-name: ci
+```
+
+#### `terraform-fmt.yml`
+
+Runs `terraform fmt -check -recursive -diff` on the caller's Terraform tree. Recursion covers submodules automatically, so monorepos (e.g. `live/dev/` + `modules/*`) get the whole tree checked with one call. No AWS needed.
+
+Inputs:
+
+| Input        | Type   | Default | Notes                                                |
+|--------------|--------|---------|------------------------------------------------------|
+| environment-name | string | `dev` | Informational only; used in the job name and logs. |
+| terraform-version | string | `1.10.0` | X.Y.Z format. Defaults match the `terraform-plan.yml` default. |
+| working-directory | string | `.` | Where `terraform fmt -recursive` starts. |
+
+Usage:
+
+```yaml
+jobs:
+  terraform-fmt:
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@dev
+    with:
+      environment-name: dev
+      terraform-version: 1.15.7
+```
+
+#### `terraform-validate.yml`
+
+Discovers every Terraform module in the caller (by `.tf` files at any directory level, excluding `.terraform/` and `.git/`) and runs `terraform init -backend=false` + `terraform validate` for each. Because `-backend=false` skips the S3/DynamoDB backend, no AWS credentials are needed. Providers come from the registry, pinned by the committed `.terraform.lock.hcl`.
+
+Inputs:
+
+| Input        | Type   | Default | Notes                                                |
+|--------------|--------|---------|------------------------------------------------------|
+| environment-name | string | `dev` | Informational only. |
+| terraform-version | string | `1.10.0` | X.Y.Z format. |
+| working-directory | string | `.` | Discovery starts here; walks recursively. |
+
+Usage:
+
+```yaml
+jobs:
+  terraform-validate:
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@dev
+    with:
+      environment-name: dev
+      terraform-version: 1.15.7
+```
+
+#### `tflint.yml`
+
+Runs `tflint --recursive` against the caller's Terraform code. Caller must provide a `.tflint.hcl` at the repo root — TFLint reads it per-subdirectory and follows the plugin set declared there.
+
+Pins:
+
+- `terraform-linters/setup-tflint@v6` (bumped from v4 in `orion-infrastructure` PR #13)
+- `tflint_version: latest` (caller can pin via `.tflint.hcl` config)
+
+Inputs:
+
+| Input        | Type   | Default | Notes                                                |
+|--------------|--------|---------|------------------------------------------------------|
+| environment-name | string | `dev` | Informational only. |
+| terraform-version | string | `1.10.0` | Required by `setup-tflint` for plugin discovery. |
+| working-directory | string | `.` | Where `tflint --recursive` runs. |
+
+Usage:
+
+```yaml
+jobs:
+  tflint:
+    uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@dev
+    with:
+      environment-name: dev
+```
+
+#### `checkov.yml`
+
+Runs `checkov --directory . --framework terraform --compact` against the caller's Terraform code. Hard-fail mode: callers justify each skip inline with `# checkov:skip=CKV_AWS_XX:reason` next to the offending resource. Pinned to checkov `3.2.415` for reproducible output (per `orion-infrastructure` PR #18).
+
+Discipline (from `orion-infrastructure` PR #18):
+
+- Findings must be fixed in the resource, OR
+- Findings must be skipped inline with a written justification.
+
+Inputs:
+
+| Input        | Type   | Default | Notes                                                |
+|--------------|--------|---------|------------------------------------------------------|
+| environment-name | string | `dev` | Informational only. |
+| checkov-version | string | `3.2.415` | X.Y.Z format. Pin for reproducible lint output. |
+| working-directory | string | `.` | Checkov scan root. |
+
+Usage:
+
+```yaml
+jobs:
+  checkov:
+    uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@dev
+    with:
+      environment-name: dev
 ```
 
 ### node
@@ -209,7 +313,7 @@ Required secrets: `AWS_APPLY_ROLE_ARN` (passed explicitly).
 
 These are not consumed by other Spark Match repos but are kept here for this repo's own CI:
 
-- `ci.yml` — Pull request-triggered self-test. Calls the three ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break.
+- `ci.yml` — Pull request-triggered self-test. Calls the three pure-lint ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break. The four terraform ecosystem recipes (`terraform-fmt`, `terraform-validate`, `tflint`, `checkov`) are NOT exercised here because this repo has no Terraform code to lint; they are validated by consumer repos like `orion-infrastructure`.
 - `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main` / `dev`, on pull requests, and weekly.
 
 The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-article` repository's toolchain and are not part of the orion stack.
@@ -229,18 +333,22 @@ spark-match-01-devops/
   .github/
     CODEOWNERS                  Approval policy (devops + product-owners)
     dependabot.yml              Weekly GitHub Actions bump PRs
-    workflows/
-      ci.yml                    Self-test PR wrapper
-      actionlint.yml            ecosystem
-      gitleaks.yml              ecosystem
-      yamllint.yml              ecosystem
-      eslint.yml                node
-      sam-deploy.yml            deploy
-      terraform-plan.yml        deploy
-      terraform-apply.yml       deploy
-      codeql.yml                self (security)
-      latex-build.yml           article-side
-      latex-release.yml         article-side
+      workflows/
+        ci.yml                    Self-test PR wrapper
+        actionlint.yml            ecosystem
+        gitleaks.yml              ecosystem
+        yamllint.yml              ecosystem
+        terraform-fmt.yml         ecosystem
+        terraform-validate.yml    ecosystem
+        tflint.yml                ecosystem
+        checkov.yml               ecosystem
+        eslint.yml                node
+        sam-deploy.yml            deploy
+        terraform-plan.yml        deploy
+        terraform-apply.yml       deploy
+        codeql.yml                self (security)
+        latex-build.yml           article-side
+        latex-release.yml         article-side
   docs/
     VERSIONING.md               Pin-by-env rules and conventions
   scripts/
