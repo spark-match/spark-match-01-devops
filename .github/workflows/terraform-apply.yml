@@ -162,11 +162,18 @@ jobs:
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
+          # terraform_wrapper: false — the wrapper eats exit code 2 from
+          # -detailed-exitcode, breaking has-changes detection. Disable it
+          # so raw terraform exit codes pass through to the script.
+          terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC, apply role)
-        uses: aws-actions/configure-aws-credentials@v5
+        # Same cross-owner workaround as terraform-plan.yml: hardcode
+        # AWS_APPLY_ROLE_ARN (caller uses `secrets: inherit`, which is a no-op
+        # across owner boundaries but doesn't error).
+        uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets[inputs.apply-role-arn-secret] }}
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: Terraform fmt
@@ -203,7 +210,10 @@ jobs:
           # Note: -lock=false here because the next step (apply) acquires
           # the S3 native lockfile. Holding it during plan would block
           # other workflows.
-          PLAN_ARGS="-input=false -no-color -lock=false -out=tfplan"
+          # -detailed-exitcode: exit 2 when plan has changes (required for
+          # has-changes detection; without it plan always exits 0 and apply
+          # never runs).
+          PLAN_ARGS="-input=false -no-color -lock=false -detailed-exitcode -out=tfplan"
           if [ -n "${{ inputs.tfvars-file }}" ]; then
             PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
           fi
