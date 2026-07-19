@@ -1,496 +1,284 @@
-# Spark Match — DevOps (Pipelines Reutilizables)
+# Spark Match DevOps — Reusable Workflows
 
-Repositorio central de **pipelines de CI/CD** para todos los proyectos Spark Match. Aquí viven los **reusable workflows** de GitHub Actions que los demás repos consumen.
+Central repository of CI/CD pipelines for all Spark Match projects. This repo hosts the **GitHub Actions reusable workflows** that consumer projects call. The pattern is one source of truth for shared automation and many thin callers that just dispatch to it, which keeps pipelines identical across projects and concentrates maintenance in a single place.
 
-> **Patrón:** Un repo central de pipelines → muchos repos que solo "llaman" al pipeline central. Esto evita duplicación, facilita mantenimiento y asegura consistencia entre proyectos.
+The catalog has three layers, defined by what they inspect or mutate:
 
----
+- **ecosystem** — checks that read code only (no caller secrets required)
+- **node** — checks for Node workspaces (no caller secrets required)
+- **deploy** — deployers that take an OIDC role via caller-scoped secrets
 
-## 📁 Estructura
+Every recipe accepts an `environment-name` input. It is informational in ecosystem and node recipes (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the role secret there).
+
+## Catalog
+
+The recipes live at the top level of `.github/workflows/`. GitHub Actions requires reusable workflows at the top level, so the three layers above are encoded by naming and ordering rather than by subdirectory.
+
+### ecosystem
+
+| Recipe | Purpose | Caller secrets |
+|---|---|---|
+| `actionlint.yml` | Validate GitHub Actions syntax | — |
+| `gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v1`) | — |
+| `yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
+
+#### `actionlint.yml`
+
+Validates `.github/workflows/*.yml` in the caller. Downloads the actionlint binary pinned to `v1.7.7` (avoid tracking `main` for supply-chain safety).
+
+Inputs:
+
+| Input        | Type   | Default | Notes                                                |
+|--------------|--------|---------|------------------------------------------------------|
+| environment-name | string | `dev` | Informational only; used in the job name and logs. |
+
+Usage:
+
+```yaml
+jobs:
+  actionlint:
+    uses: spark-match/spark-match-01-devops/.github/workflows/actionlint.yml@dev
+    with:
+      environment-name: ci
+```
+
+#### `gitleaks.yml`
+
+Runs secret scanning against the full git history. Pins `gitleaks-action@v1` because `v3` triggers an upstream SHA-resolution bug on PR runs.
+
+Inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment-name | string | `dev` | Informational only. |
+
+Usage:
+
+```yaml
+jobs:
+  gitleaks:
+    uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@dev
+    with:
+      environment-name: ci
+```
+
+#### `yamllint.yml`
+
+Validates YAML files in the caller repo. yamllint auto-discovers `.yamllint.yml`, so config (ignores, rule relaxations) is the caller's responsibility. Typical ignore set:
+
+```yaml
+ignore: |
+  .git/
+  node_modules/
+  coverage/
+  dist/
+  .terraform/
+  .github/workflows/   # validated by actionlint, not yamllint
+```
+
+Inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment-name | string | `dev` | Informational only. |
+
+Pinned to yamllint `1.35.1` (last v1 release before the v2 rewrite).
+
+Usage:
+
+```yaml
+jobs:
+  yamllint:
+    uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@dev
+    with:
+      environment-name: ci
+```
+
+### node
+
+#### `eslint.yml`
+
+Runs `npm run <lint-script>` for Node workspaces and caches `~/.npm` keyed on `os-node<node-version>-eslint<eslint-version>-package-lock.json`. Includes `eslint-version` so callers can roll forward to a new ESLint major without forking the recipe (cache key changes so no stale cache).
+
+Inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment-name | string | `dev` | Informational only. |
+| node-version | string | `24`    | Passed to `actions/setup-node`. |
+| eslint-version | string | `10` | Major only (used as cache key segment). |
+| lint-script  | string | `lint` | The npm script name in `package.json`. |
+| working-directory | string | `.` | Where `npm ci` runs (where `package.json` lives). |
+
+Usage:
+
+```yaml
+jobs:
+  eslint:
+    uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@dev
+    with:
+      environment-name: ci
+      eslint-version: 10
+      # lint-script defaults to "lint"
+```
+
+### deploy
+
+#### `sam-deploy.yml`
+
+Builds and deploys an AWS SAM application via OIDC. Handles checkout, node setup, npm cache, OIDC credentials, `npm ci`, the Lambda Layers build script, SAM CLI install, `sam validate --lint`, `sam build --use-container`, and `sam deploy --config-env <env>` with idempotent flags (`--no-confirm-changeset`, `--no-fail-on-empty-changeset`). The caller must already have `samconfig.toml` with sections `[default]`, `[prod]`, etc., and a Layers build script in `package.json`.
+
+Inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment-name | string | — (required) | Becomes the GitHub Environment gate. Caller must define the environment and hold the role secret there. Defaults `sam-config-env` to this value when not provided. |
+| aws-region   | string | `us-east-1` | Should match `[<env>].region` in `samconfig.toml`. |
+| stack-name   | string | `''` | CloudFormation stack name. Empty = use `samconfig.toml`. |
+| sam-template | string | `template.yaml` | Path to the SAM template, relative to repo root. |
+| sam-config-env | string | = environment-name | The `[<section>]` name in `samconfig.toml`. |
+| s3-bucket    | string | `''` | Artifacts bucket. Empty = use `samconfig.toml` or auto-managed. |
+| parameter-overrides-json | string | `{}` | Valid JSON object merged on top of `samconfig.toml` overrides. |
+| node-version | string | `24` | Used by the build container for `npm ci` and Layers build. |
+| sam-cli-version | string | `1.151.0` | Pinned for reproducible deploys. |
+| pre-build-script | string | `build:shared` | npm script to run before Layers build (e.g. compile the shared workspace). Empty = skip. |
+| build-layers-script | string | `layer:build:all` | npm script that builds Lambda Layers. Empty = no layers. |
+
+Required secrets (caller-side, scoped to the GitHub Environment):
+
+- `AWS_DEPLOY_ROLE_ARN` — IAM role with trust policy for `token.actions.githubusercontent.com` and permissions for CloudFormation, IAM, S3, SSM, and Lambda publish.
+
+Usage:
+
+```yaml
+jobs:
+  deploy-dev:
+    uses: spark-match/spark-match-01-devops/.github/workflows/sam-deploy.yml@dev
+    with:
+      environment-name: dev
+      aws-region: us-east-1
+      stack-name: orion-backend-dev
+      sam-config-env: default
+      s3-bucket: orion-sam-artifacts-dev
+    secrets:
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+```
+
+The caller workflow must also declare `id-token: write` at the workflow or job level (GitHub mints the OIDC JWT from the caller's permissions context).
+
+#### `terraform-plan.yml`
+
+Runs `terraform plan` per environment. Posts a sticky comment on the PR with the plan summary, uploads the plan binary as an artifact, and respects a per-environment backend config. Designed to be called from a matrix `[dev, staging, prod, ...]` in the caller.
+
+Key inputs (full list in the file header):
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment  | string | `''` (basename of `working-directory`) | Used for artifact naming and sticky-comment header. |
+| working-directory | string | `.` | Where `terraform init` runs. |
+| aws-region   | string | `us-east-1` | |
+| plan-role-arn-secret | string | `AWS_PLAN_ROLE_ARN` | Name of the GitHub Secret holding the plan-role ARN. Same-name convention lets cross-owner callers work. |
+| terraform-version | string | `1.10.0` | |
+| backend-bucket / backend-key / tfvars-file / var-files / target / extra-args | string | various | Standard passthrough. |
+| comment-on-pr | bool | `true` | |
+| retention-days | number | `7` | 1-90 (GitHub Actions limits). |
+
+Required secrets: `AWS_PLAN_ROLE_ARN` (passed explicitly; cross-owner inheritance blocked by GitHub).
+
+#### `terraform-apply.yml`
+
+Runs `terraform apply` per environment with an optional GitHub Environment approval gate (`gh-environment` input or fallback to `environment`). Supports `drift-only` mode for scheduled drift detection without applying.
+
+Key inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment | string | `''` (basename of `working-directory`) | Display + concurrency. |
+| working-directory | string | `.` | |
+| aws-region   | string | `us-east-1` | |
+| apply-role-arn-secret | string | `AWS_APPLY_ROLE_ARN` | |
+| terraform-version | string | `1.10.0` | |
+| backend-bucket / backend-key / tfvars-file / var-files / target / extra-args | string | various | Standard passthrough. |
+| gh-environment | string | = environment | Approval gate name. Falls back to `environment`. |
+| auto-approve | bool | `false` | Skip approval (only for non-prod envs with empty reviewers list). |
+| drift-only | bool | `false` | Plan only, post summary, do not apply. Useful for scheduled drift detection. |
+
+Required secrets: `AWS_APPLY_ROLE_ARN` (passed explicitly).
+
+### Other files in `.github/workflows/`
+
+These are not consumed by other Spark Match repos but are kept here for this repo's own CI:
+
+- `ci.yml` — Pull request-triggered self-test. Calls the three ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break.
+- `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main` / `dev`, on pull requests, and weekly.
+
+The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-article` repository's toolchain and are not part of the orion stack.
+
+## Versioning
+
+See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
+
+- The catalog is pinned by environment. Callers targeting `dev` reference `@dev`; callers targeting `prod` reference `@main`. This way changes are tested against dev deploys before they reach prod.
+- No SemVer in the short term. Breaking changes are communicated by PR + release notes.
+- All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
+
+## Repository layout
 
 ```
 spark-match-01-devops/
-├── .github/
-│   ├── CODEOWNERS              # devops + product-owners aprueban cambios
-│   └── workflows/
-│       ├── ci.yml                # CI: lint + security checks (en PR) — interno
-│       ├── quality-checks.yml    # Lint + typecheck + tests (Node + Py) — reusable
-│       ├── terraform-plan.yml    # Plan de Terraform (read-only, en PR) — reusable
-│       ├── terraform-apply.yml   # Apply de Terraform (write, en merge) — reusable
-│       ├── sam-deploy.yml        # SAM build + deploy con OIDC — reusable
-│       ├── latex-build.yml       # Compilar LaTeX → PDF (en PR) — reusable
-│       └── latex-release.yml     # Compilar + tag + release (en merge) — reusable
-├── .yamllint.yml                 # Config de yamllint
-├── .gitignore
-├── LICENSE
-└── README.md
+  .github/
+    CODEOWNERS                  Approval policy (devops + product-owners)
+    dependabot.yml              Weekly GitHub Actions bump PRs
+    workflows/
+      ci.yml                    Self-test PR wrapper
+      actionlint.yml            ecosystem
+      gitleaks.yml              ecosystem
+      yamllint.yml              ecosystem
+      eslint.yml                node
+      sam-deploy.yml            deploy
+      terraform-plan.yml        deploy
+      terraform-apply.yml       deploy
+      codeql.yml                self (security)
+      latex-build.yml           article-side
+      latex-release.yml         article-side
+  docs/
+    VERSIONING.md               Pin-by-env rules and conventions
+  scripts/
+    README.md                   Operational scripts (configure-merge-methods, etc.)
+    *.sh / *.ps1                Idempotent, --dry-run supported; require `gh` admin auth
+  LICENSE                       Apache-2.0
+  README.md                     This file
+  .yamllint.yml                 Lint config for non-workflow YAML
+  .gitignore                    IDE / OS / Terraform artifacts
 ```
 
----
+## Operational scripts
 
-## 🔄 Workflows disponibles
+The `scripts/` directory holds idempotent operational scripts that apply org-wide policy (for example `configure-merge-methods.sh` sets squash-only on all repos in the org). All scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides. See [`scripts/README.md`](scripts/README.md).
 
-### 1. `quality-checks.yml`
+## Contributing
 
-Lint + typecheck + tests para repos Node y/o Python, con soporte para monorepos (`shared/`, `contexts/*/`, `events/*/`).
+Changes to the catalog follow the git workflow in this repo:
 
-**Inputs:**
+1. Branch from `dev` with a Conventional Commits scope (`chore(cookbook): ...`, `feat(node): ...`, `fix(deploy): ...`).
+2. Open a pull request against `dev`.
+3. Code owners review (see `.github/CODEOWNERS`).
+4. After `ci.yml` self-test is green and at least one external caller (for example `orion-backend`) has validated the change in `dev`, the PR is promoted `dev` to `main` by a second PR.
+5. Branch is deleted on merge (ruleset policy).
 
-| Input | Tipo | Default | Descripción |
-|---|---|---|---|
-| `working-directory` | string | `.` | Carpeta con `package.json`/`pyproject.toml` |
-| `node-version` | string | `20` | Versión de Node.js |
-| `python-version` | string | `3.12` | Versión de Python (si hay `pyproject.toml`) |
-| `run-shared-tests` | string | `'true'` | Correr tests en `shared/` (`'true'`/`'false'`) |
-| `run-contexts-tests` | string | `'true'` | Correr tests en `contexts/` |
-| `run-events-tests` | string | `'true'` | Correr tests en `events/` |
-| `run-py-tests` | string | `'true'` | Correr `pytest` (si hay `pyproject.toml`) |
-| `package-manager` | choice | `npm` | `npm` o `pnpm` |
+When adding a new recipe:
 
-**Comportamiento:**
+- Place the file at the top level of `.github/workflows/`. Subfolders break `uses: ./...`.
+- Re-declare `permissions` for whatever the recipe needs (`contents: read`, `id-token: write`, etc.).
+- For deploy recipes, declare secrets by explicit name and follow the same-name convention used by existing deploy recipes.
+- Update `docs/VERSIONING.md` if the recipe introduces a new convention.
 
-- Detecta automáticamente si hay `package.json` → ejecuta job `node-quality`.
-- Detecta automáticamente si hay `pyproject.toml` → ejecuta job `python-quality` (con `uv`).
-- Cada job es **opt-out**, nunca rompe por ausencia de tooling.
+When bumping external tool versions:
 
-**Ejemplo de uso:**
+- Pin `actionlint` to a release tag (never `main`).
+- Pin `yamllint` to `1.35.1` unless the team agrees to migrate to the v2 rewrites.
+- Use Dependabot (`.github/dependabot.yml`) for routine bumps; do pin by hand when changing the version the recipe defaults to.
 
-```yaml
-# 03-backend/.github/workflows/ci.yml
-jobs:
-  quality-checks:
-    uses: spark-match/01-devops/.github/workflows/quality-checks.yml@main
-    with:
-      working-directory: .
-      node-version: '20'
-      run-shared-tests: 'true'
-      run-contexts-tests: 'true'
-    secrets: inherit
-```
+## License
 
-**GitHub Secret requerido:** ninguno (solo lectura del repo).
-
----
-
-### 2. `sam-deploy.yml`
-
-Build + deploy de un stack SAM con **OIDC** + **environment approval gate**, para llamar desde cualquier repo que tenga `template.yaml` + `samconfig.toml`.
-
-**Inputs:**
-
-| Input | Tipo | Default | Descripción |
-|---|---|---|---|
-| `working-directory` | string | `.` | Carpeta con `template.yaml` |
-| `aws-region` | string | `us-east-1` | Región AWS |
-| `sam-config-env` | string | `dev` | Bloque de `samconfig.toml` a usar |
-| `deploy-role-arn-secret` | string | `AWS_SAM_DEPLOY_ROLE_ARN` | Secret con ARN del role OIDC para deploy |
-| `s3-bucket-secret` | string | `AWS_SAM_ARTIFACTS_BUCKET` | Secret con bucket de artifacts SAM |
-| `s3-prefix` | string | `spark-match-backend` | Prefijo S3 para artifacts |
-| `node-version` | string | `20` | Node para Lambda Layers |
-| `python-version` | string | `3.12` | Python para Lambda Layers Python |
-| `sam-version` | string | `1.143.0` | Versión de SAM CLI |
-| `no-disable-rollback` | bool | `false` | Pasar `--no-disable-rollback` (recomendado en prod) |
-| `no-fail-on-empty-changeset` | bool | `true` | Pasar `--no-fail-on-empty-changeset` |
-| `environment` | string | `=sam-config-env` | GH Environment (approval gate) |
-| `extra-args` | string | `''` | Args extra para `sam deploy` |
-
-**GitHub Secrets requeridos:**
-
-- `<deploy-role-arn-secret>` con ARN del role IAM con permisos de deploy SAM.
-- `<s3-bucket-secret>` con el nombre del bucket de artifacts (creado por TF en Fase 2).
-
-**Concurrencia:** usa `concurrency` group `sam-deploy-<working-directory>-<env>` para evitar deploys simultáneos al mismo environment.
-
-**Ejemplo de uso:**
-
-```yaml
-# 03-backend/.github/workflows/deploy.yml
-jobs:
-  sam-deploy:
-    uses: spark-match/01-devops/.github/workflows/sam-deploy.yml@main
-    secrets: inherit
-    with:
-      working-directory: .
-      sam-config-env: ${{ github.event.inputs.environment || 'dev' }}
-      environment: ${{ github.event.inputs.environment || 'dev' }}
-```
-
----
-
-### 3. `terraform-plan.yml`
-
-Ejecuta `terraform plan` en Pull Requests con un **role IAM de solo lectura** (vía OIDC).
-**N-environment aware**: pensado para correr en una matrix `[dev, staging, prod, ...]` con secrets y backends distintos por env.
-
-**Inputs:**
-
-| Input | Tipo | Default | Descripción |
-|---|---|---|---|
-| `environment` | string | `''` (basename de `working-directory`) | Identificador del env. Se usa para naming del artifact y header del sticky comment. |
-| `working-directory` | string | `.` | Carpeta con el `.tf` |
-| `aws-region` | string | `us-east-1` | Región AWS |
-| `plan-role-arn-secret` | string | `AWS_PLAN_ROLE_ARN` | Nombre del GitHub Secret con el ARN del role de plan. Por env: `AWS_PLAN_ROLE_ARN_DEV`, `_PROD`. |
-| `terraform-version` | string | `1.10.0` | Versión de Terraform |
-| `backend-bucket` | string | `''` | Bucket S3 para state (vacío = sin backend) |
-| `backend-key` | string | `terraform.tfstate` | Path del state file |
-| `tfvars-file` | string | `''` | Archivo tfvars explícito (e.g. `prod.tfvars`). Vacío = auto-load `terraform.tfvars`. |
-| `var-files` | string | `''` | Lista CSV de tfvars adicionales (additive). |
-| `target` | string | `''` | `-target=...` para limitar scope del plan. |
-| `extra-args` | string | `''` | Args extra raw para `terraform plan`. |
-| `comment-on-pr` | boolean | `true` | Postear sticky comment en el PR (header por env). |
-
-**Outputs:**
-
-| Output | Descripción |
-|---|---|
-| `plan-exit-code` | 0 = no changes / error, 2 = changes |
-| `has-changes` | `true` si hay cambios, `false` en otro caso |
-| `environment` | Identificador del env (resuelto desde inputs) |
-
-**Ejemplo de uso (matrix N envs):**
-
-```yaml
-name: CI - Terraform Plan
-on:
-  pull_request:
-    branches: [main, dev]
-jobs:
-  plan:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - environment: dev
-            working-directory: live/dev
-            backend-bucket: spark-match-tfstate-dev
-            backend-key: dev/terraform.tfstate
-            plan-role-arn-secret: AWS_PLAN_ROLE_ARN_DEV
-          - environment: prod
-            working-directory: live/prod
-            backend-bucket: spark-match-tfstate-prod
-            backend-key: prod/terraform.tfstate
-            plan-role-arn-secret: AWS_PLAN_ROLE_ARN_PROD
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@main
-    secrets: inherit
-    with:
-      environment: ${{ matrix.environment }}
-      working-directory: ${{ matrix.working-directory }}
-      backend-bucket: ${{ matrix.backend-bucket }}
-      backend-key: ${{ matrix.backend-key }}
-      plan-role-arn-secret: ${{ matrix.plan-role-arn-secret }}
-      tfvars-file: ${{ matrix.tfvars-file }}
-```
-
-**Notas:**
-
-- Cada job de la matrix produce un **artifact con nombre distinto** (`terraform-plan-{env}-pr-{N}`) y un **sticky comment con header por env** (`terraform-plan-dev`, `terraform-plan-prod`), evitando colisiones.
-- El fix clave: `has-changes` ahora es `false` cuando `plan` retorna exit 0 (no changes). La versión vieja tenia el logica invertida.
-
-### 4. `terraform-apply.yml`
-
-Ejecuta `terraform plan` + `terraform apply` con **role IAM de escritura** (vía OIDC).
-Soporta GH Environment como approval gate, opcionalmente con `auto-approve` para dev.
-Soporta `drift-only` para correr solo plan (útil para cron jobs de drift detection).
-**N-environment aware**: pensado para invocarse 1 vez por env desde el caller.
-
-**Inputs:**
-
-| Input | Tipo | Default | Descripción |
-|---|---|---|---|
-| `environment` | string | `''` (basename de `working-directory`) | Identificador del env. Usado para naming, concurrency, display. |
-| `gh-environment` | string | `''` | GH Environment para approval gate. Falls back to `environment`. |
-| `working-directory` | string | `.` | Carpeta con el `.tf` |
-| `aws-region` | string | `us-east-1` | Región AWS |
-| `apply-role-arn-secret` | string | `AWS_APPLY_ROLE_ARN` | Nombre del GitHub Secret con el ARN. Por env: `AWS_APPLY_ROLE_ARN_DEV`, `_PROD`. |
-| `terraform-version` | string | `1.10.0` | Versión de Terraform |
-| `backend-bucket` | string | `''` | Bucket S3 para state |
-| `backend-key` | string | `terraform.tfstate` | Path del state file |
-| `tfvars-file` | string | `''` | Archivo tfvars explícito |
-| `var-files` | string | `''` | Lista CSV de tfvars adicionales |
-| `target` | string | `''` | `-target=...` para scope reducido |
-| `extra-args` | string | `''` | Args extra raw para `terraform plan` |
-| `auto-approve` | boolean | `false` | `true` salta el approval gate (el GH Environment no debe tener reviewers). Solo para dev. |
-| `drift-only` | boolean | `false` | `true` corre solo plan, NO aplica. Útil para cron de drift detection. |
-
-**Outputs:**
-
-| Output | Descripción |
-|---|---|
-| `apply-success` | `true`/`false` |
-| `has-changes` | `true`/`false` |
-| `environment` | Identificador del env |
-
-**Concurrencia:** Group `${{ inputs.environment || working-directory }}-apply-${{ working-directory }}`. Evita applies concurrentes al mismo env/dir.
-
-**Ejemplo de uso (2-env):**
-
-```yaml
-name: CD - Terraform Apply
-on:
-  push:
-    branches: [dev, main]
-  workflow_dispatch:
-    inputs:
-      environment:
-        type: choice
-        options: [dev, prod]
-jobs:
-  apply-dev:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
-       || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-apply.yml@main
-    secrets: inherit
-    with:
-      environment: dev
-      gh-environment: dev
-      working-directory: live/dev
-      backend-bucket: spark-match-tfstate-dev
-      backend-key: dev/terraform.tfstate
-      apply-role-arn-secret: AWS_APPLY_ROLE_ARN_DEV
-      auto-approve: true
-  apply-prod:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
-       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-apply.yml@main
-    secrets: inherit
-    with:
-      environment: prod
-      gh-environment: production
-      working-directory: live/prod
-      backend-bucket: spark-match-tfstate-prod
-      backend-key: prod/terraform.tfstate
-      apply-role-arn-secret: AWS_APPLY_ROLE_ARN_PROD
-      auto-approve: false
-```
-
-**Notas:**
-
-- **`-lock=false` en el plan interno**: para que el `apply` (siguiente step) pueda adquirir el S3 native lockfile sin conflicto.
-- **`auto-approve=true`** debe coincidir con un GH Environment SIN reviewers. NO usar en prod.
-- **`drift-only=true`** postea el resumen pero no aplica. Ideal para `on: schedule: - cron: '0 8 * * *'`.
-
-### 5. `latex-build.yml`
-
-Compila un documento LaTeX y sube el PDF como artifact.
-
-**Inputs:**
-
-| Input | Tipo | Default | Descripción |
-|---|---|---|---|
-| `root-file` | string | `main.tex` | Archivo LaTeX raíz |
-| `artifact-name` | string | `latex-build` | Nombre del artifact |
-| `retention-days` | number | `14` | Días de retención |
-| `use-lualatex` | boolean | `false` | Usar LuaLaTeX en vez de pdfLaTeX |
-| `shell-escape` | boolean | `false` | Habilitar shell-escape (¡cuidado!) |
-
-**Ejemplo:**
-
-```yaml
-name: CI - Build PDF
-on:
-  pull_request:
-    branches: [main]
-    paths: ['**.tex', '**.bib', 'figures/**']
-jobs:
-  build:
-    uses: spark-match/spark-match-01-devops/.github/workflows/latex-build.yml@main
-    with:
-      root-file: main.tex
-      artifact-name: paper-pr-${{ github.event.pull_request.number }}
-```
-
-### 6. `latex-release.yml`
-
-Compila LaTeX, auto-bumpea la versión patch desde el último tag, y publica un GitHub Release con el PDF.
-
-**Inputs:**
-
-| Input | Tipo | Default | Descripción |
-|---|---|---|---|
-| `root-file` | string | `main.tex` | Archivo LaTeX raíz |
-| `release-name-prefix` | string | `Release` | Prefijo del nombre del release |
-| `release-body-template` | string | (empty) | Markdown adicional para el body |
-
-**Ejemplo:**
-
-```yaml
-name: CD - Release on Merge
-on:
-  pull_request:
-    types: [closed]
-jobs:
-  release:
-    if: github.event.pull_request.merged == true
-    uses: spark-match/spark-match-01-devops/.github/workflows/latex-release.yml@main
-    with:
-      root-file: main.tex
-      release-name-prefix: Spark Match Paper
-```
-
----
-
-## 🛠️ Setup OIDC (una vez por repo caller)
-
-Para que un caller use los workflows de Terraform, necesita:
-
-1. **GitHub Secret** con el ARN del role IAM:
-   ```bash
-   gh secret set AWS_PLAN_ROLE_ARN \
-     --repo spark-match/<repo-caller> \
-     --body "arn:aws:iam::681526276858:role/spark-match-terraform-plan"
-   ```
-
-2. **Trust policy** del role IAM incluye el repo caller (ver `docs/oidc-setup/` en `spark-match-02-infrastructure`).
-
-3. **GitHub Environment** (solo para apply) configurado con branch policy y reviewers.
-
----
-
-## 📋 Repos que consumen estos pipelines
-
-| Repo | Pipeline usado | Estado |
-|---|---|---|
-| `spark-match-02-infrastructure` | `terraform-plan.yml`, `terraform-apply.yml` | ✅ |
-| `spark-match-03-backend` | `quality-checks.yml`, `sam-deploy.yml` | ✅ |
-| `spark-match-07-article` | `latex-build.yml`, `latex-release.yml` | ✅ |
-| `spark-match-08-deep-agent` | `quality-checks.yml` (planeado) | ⏳ |
-
----
-
-## ➕ Cómo extender Terraform pipelines a N ambientes
-
-Los reusables `terraform-plan.yml` y `terraform-apply.yml` están diseñados
-para soportar N ambientes sin modificar el reusable. Solo se ajusta el caller.
-
-### Para agregar un nuevo env (ejemplo: `staging`)
-
-1. **Bucket S3** para el state:
-   ```bash
-   ENVIRONMENT=staging ./scripts/bootstrap-backend.sh
-   ```
-
-2. **GitHub Secrets** (1 por role + env):
-   ```bash
-   gh secret set AWS_PLAN_ROLE_ARN_STAGING  --body "arn:aws:iam::...:role/spark-match-terraform-plan-staging"
-   gh secret set AWS_APPLY_ROLE_ARN_STAGING --body "arn:aws:iam::...:role/spark-match-terraform-apply-staging"
-   ```
-
-3. **GitHub Environments** `staging` (con branch policy `staging` y reviewers opcionales).
-
-4. **Caller** — agregar entrada en la matrix de plan + nuevo job en apply:
-   ```yaml
-   # terraform-plan.yml
-   jobs:
-     plan:
-       strategy:
-         matrix:
-           include:
-             - environment: dev
-               working-directory: live/dev
-               backend-bucket: spark-match-tfstate-dev
-               backend-key: dev/terraform.tfstate
-               plan-role-arn-secret: AWS_PLAN_ROLE_ARN_DEV
-             - environment: staging                # NUEVO
-               working-directory: live/staging
-               backend-bucket: spark-match-tfstate-staging
-               backend-key: staging/terraform.tfstate
-               plan-role-arn-secret: AWS_PLAN_ROLE_ARN_STAGING
-             - environment: prod
-               working-directory: live/prod
-               backend-bucket: spark-match-tfstate-prod
-               backend-key: prod/terraform.tfstate
-               plan-role-arn-secret: AWS_PLAN_ROLE_ARN_PROD
-       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@main
-       with:
-         environment: ${{ matrix.environment }}
-         working-directory: ${{ matrix.working-directory }}
-         # ... (resto igual)
-   ```
-
-   ```yaml
-   # terraform-apply.yml
-   jobs:
-     apply-staging:                                # NUEVO
-       if: github.ref == 'refs/heads/staging' || ...
-       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-apply.yml@main
-       secrets: inherit
-       with:
-         environment: staging
-         gh-environment: staging
-         working-directory: live/staging
-         backend-bucket: spark-match-tfstate-staging
-         backend-key: staging/terraform.tfstate
-         apply-role-arn-secret: AWS_APPLY_ROLE_ARN_STAGING
-         auto-approve: true
-   ```
-
-5. **IAM roles** — si querés estricto (recomendado), crear `spark-match-terraform-{plan,apply}-staging` con trust policy restringida.
-
-### Lo que NO hay que tocar
-
-- El reusable `terraform-plan.yml` y `terraform-apply.yml`.
-- Otros callers (repos como `03-backend`).
-
----
-
-1. Crear archivo `.github/workflows/<nombre>.yml` con `on: workflow_call`
-2. Definir `inputs:` documentados
-3. Definir `outputs:` si es relevante
-4. Documentar en este README (tabla + ejemplo de uso)
-5. Hacer PR → CODEOWNERS (`@spark-match/devops` + `@spark-match/product-owners`) aprueba
-6. Consumir desde otros repos con `uses: spark-match/spark-match-01-devops/.github/workflows/<nombre>.yml@main`
-
----
-
-## 🔐 Seguridad
-
-- Los workflows usan **OIDC** (no access keys)
-- Los roles IAM tienen permisos mínimos (read-only para plan, write para apply)
-- Apply requiere **GitHub Environment approval** (no se ejecuta automáticamente)
-- Los workflows validan formato (`fmt -check`) y config (`validate`) antes de plan/apply
-
----
-
-## 🛡️ CI Lint & Security Checks
-
-Este repo tiene su propio CI (`.github/workflows/ci.yml`) que corre en cada PR con **3 checks requeridos**:
-
-| Check | Qué valida | Herramienta |
-|---|---|---|
-| **actionlint** | Sintaxis de workflows de GitHub Actions | `rhysd/actionlint` |
-| **gitleaks** | Secretos commiteados por error | `gitleaks/gitleaks-action@v1` |
-| **yamllint** | Sintaxis de archivos YAML genéricos | `yamllint` + `.yamllint.yml` |
-
-Estos checks están configurados como **required status checks** en la branch protection de `main`. Cualquier PR debe pasar los 3 antes de poder mergearse.
-
-### Configuración yamllint
-
-El archivo `.yamllint.yml` configura reglas permisivas para evitar fricción:
-- Líneas hasta 160 caracteres (workflows tienen líneas largas)
-- Truthy values como `on`/`off` permitidos
-- Comentarios flexibles
-
-### Configuración gitleaks
-
-Usa la versión `v1` (no requiere licencia para organizaciones).
-Detecta access keys de AWS, tokens de GitHub, API keys, etc.
-
----
-
-## 📝 Versionado
-
-Los callers referencian este repo con `@main`. Para producción real, se recomienda:
-
-```yaml
-uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@v1.0.0
-```
-
-Y crear tags en este repo cuando los workflows cambien de forma breaking.
-
-Por ahora, mientras el proyecto está en desarrollo, usamos `@main` para simplificar.
-
----
-
-## Licencia
-
-MIT — ver [LICENSE](LICENSE).
+Apache-2.0. See [`LICENSE`](LICENSE).
