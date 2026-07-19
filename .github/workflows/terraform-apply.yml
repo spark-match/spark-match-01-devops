@@ -110,6 +110,10 @@ on:
       environment:
         description: 'Environment identifier echoed back.'
         value: ${{ jobs.apply.outputs.environment }}
+    secrets:
+      AWS_APPLY_ROLE_ARN:
+        description: 'OIDC role ARN for the apply job (assumed via aws-actions/configure-aws-credentials). Caller must pass this explicitly when calling cross-owner.'
+        required: true
 
 # Concurrency group keyed by resolved environment (env || working-directory basename)
 # and the working directory. Prevents concurrent applies to the same env.
