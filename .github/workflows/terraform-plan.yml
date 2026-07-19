@@ -233,7 +233,7 @@ jobs:
         # Workaround (forked at ahincho/spark-match-01-devops): hardcode the
         # expected secret name here. Both orion and spark-match callers use
         # `secrets: inherit` (no-op for cross-owner) plus the same AWS_PLAN_ROLE_ARN.
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
