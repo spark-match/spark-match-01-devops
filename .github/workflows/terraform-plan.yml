@@ -213,9 +213,16 @@ jobs:
           terraform_version: ${{ inputs.terraform-version }}
 
       - name: Configure AWS credentials (OIDC, plan role)
+        # Workaround: ${{ secrets[inputs.plan-role-arn-secret] }} (dynamic
+        # bracket notation) silently evaluates to "" in workflow_call reusable
+        # workflows, even when caller passes `secrets: inherit`. GitHub
+        # Actions sandboxes dynamic secret expansion to prevent leak via
+        # context-injected key names. Until we move to a per-env caller-only
+        # architecture, we hardcode the secret name here. Caller is
+        # documented above (AWS_PLAN_ROLE_ARN). See PR #36 for context.
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          role-to-assume: ${{ secrets[inputs.plan-role-arn-secret] }}
+          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: Terraform fmt
