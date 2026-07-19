@@ -211,6 +211,10 @@ jobs:
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
+          # terraform_wrapper: false — the wrapper eats exit code 2 from
+          # -detailed-exitcode, breaking has-changes detection. Disable it
+          # so raw terraform exit codes pass through to the script.
+          terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC, plan role)
         # Diagnostic: print secret length to log (GitHub masks the value but
