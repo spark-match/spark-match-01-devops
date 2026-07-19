@@ -1,0 +1,57 @@
+# =============================================================================
+# Reusable Workflow: Actionlint - GitHub Actions syntax validation
+# =============================================================================
+# Atomic recipe (ecosystem layer). Validates the syntax of GitHub Actions
+# workflow YAML files in the caller's repository. No AWS, no Node.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     actionlint:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/actionlint.yml@dev
+#       with:
+#         environment-name: dev   # informational only (job name + logs)
+#
+# Inputs:
+#   environment-name: Target GH Environment name for context only. NOTE: this
+#                     recipe does NOT reference the GH Environment as a gate
+#                     (no secrets are needed). The value is baked into the
+#                     job name and step logs so PR reviewers can see which
+#                     env the check ran against.
+#
+# Cross-owner safe: works for any caller (org or user-owned) since no secrets
+# are forwarded.
+# =============================================================================
+
+name: Actionlint
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: "actionlint (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Download actionlint binary (pinned v1.7.7)
+        id: get_actionlint
+        # Pin to v1.7.7 (latest stable as of 2026-07). Avoid `main` branch
+        # because that would be a moving target (supply chain risk if the
+        # upstream repo is compromised). Update this pin when bumping.
+        run: bash <(curl --fail --silent --show-error --location https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash)
+        shell: bash
+
+      - name: Run actionlint
+        run: ${{ steps.get_actionlint.outputs.executable }} -color

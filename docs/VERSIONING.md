@@ -29,8 +29,40 @@ Si en algun momento queremos publicar versiones estables de los reusables para t
 
 Mientras tanto, los callers internos referencian `@dev` o `@main` segun el ambiente destino.
 
-## Workflows planeados (no implementados todavia)
+## Catalogo de recipes (v2)
 
-`quality-checks.yml` y `sam-deploy.yml` aparecen en el README como spec pero **NO estan implementados** en este repo. Fueron archivos WIP en un stash que se perdio. Los repos que supuestamente los consumen (e.g. `spark-match-03-backend`) actualmente no usan reusables de 01-devops.
+Estructura actual bajo `.github/workflows/`:
 
-Si se implementan en el futuro, seguiran la convencion de pin por ambiente (un caller que los use desde dev los pinea a `@dev`, etc.).
+```
+.github/workflows/
++-- ci.yml                       # Self-test: PR-triggered wrapper que llama los atomic reusables
++-- codeql.yml                   # Reusable: CodeQL matrix (lenguaje 'actions', weekly + push + PR)
++-- terraform-plan.yml           # Reusable: tf plan (N-env, OIDC, sf-sticky-comments)
++-- terraform-apply.yml          # Reusable: tf apply con approval gate (N-env, OIDC)
++-- actionlint.yml               # Atomic (ecosystem): GH Actions syntax validation
++-- gitleaks.yml                 # Atomic (ecosystem): secret scanning (gitleaks v1 pin)
++-- yamllint.yml                 # Atomic (ecosystem): YAML files
++-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
++-- sam-deploy.yml               # Atomic (deploy): sam build + deploy, samconfig env, layers build
+```
+
+### Por que no usamos subcarpetas (limitacion de GH Actions)
+
+GitHub Actions requiere que los reusable workflows esten en **top-level** de `.github/workflows/`. La referencia `uses: ./path/to/subfolder/file.yml` falla con `invalid value workflow reference: workflows must be defined at the top level of the .github/workflows/ directory`. Por eso todos los reusables viven al mismo nivel que `ci.yml`, `codeql.yml`, etc. El layer (ecosystem / node / deploy) se codifica en el **documento VERSIONING (este archivo)** + etiquetas en el nombre del job (`actionlint (env=...)`).
+
+### Convencion de inputs
+
+Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en el job name y steps). Las recipes de deploy lo usan ademas como **GH Environment gate** (caller debe tener un GH Environment con ese nombre y el secret AWS_DEPLOY_ROLE_ARN/CFN_ROLE_ARN dentro).
+
+### Reglas del catalogo
+
+- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `actionlint.yml` + `sam-deploy.yml` sin tomar `yamllint.yml` o `eslint.yml`.
+- **Secrets solo en recipes de deploy.** Las recipes de ecosystem y node no reciben secrets (checks de codigo estatico puro).
+- **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (ahincho/orion-backend -> spark-match).
+- **Pin de herramientas externas.** actionlint v1.7.7, yamllint 1.35.1, eslint version parametrizable via input, terraform version parametrizable via input, sam-cli version parametrizable via input.
+
+### Como prueba de cambios
+
+1. `ci.yml` (self-test) corre los 3 ecosystem recipes sobre este repo en cada PR.
+2. Cambios que afectan a recipes de `node/` o `deploy/` requieren un caller externo para smoke test (orion-backend, orion-infrastructure).
+3. Una vez verde en `ci.yml` + smoke test en `orion-backend@dev`, el cambio se promueve a `main` con un PR `dev` -> `main`.

@@ -1,0 +1,92 @@
+# =============================================================================
+# Reusable Workflow: ESLint - JS/TS linting for Node workspaces
+# =============================================================================
+# Atomic recipe (node layer). Runs `npm run <lint-script>` in the caller's
+# repository with the requested Node and ESLint versions. Caches npm
+# dependencies to keep runs fast.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     eslint:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@dev
+#       with:
+#         environment-name: dev
+#         eslint-version: 10    # major version (cache key)
+#         # lint-script defaults to "lint" (matches orion-backend convention)
+#
+# Notes:
+#   - Assumes caller has `npm run <lint-script>` defined in package.json.
+#   - eslint-version is parametrized so callers can advance / stay behind
+#     the latest major without forking this recipe (e.g. orion-frontend
+#     may stay on v9 while orion-backend is on v10).
+#   - Cache key includes eslint-version to avoid cache poisoning when a
+#     caller rolls back the major.
+#
+# Cross-owner safe: no caller secrets forwarded.
+# =============================================================================
+
+name: ESLint
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      node-version:
+        description: 'Node.js version (passed to actions/setup-node).'
+        type: string
+        required: false
+        default: '24'
+      eslint-version:
+        description: 'ESLint major version. Used in the npm cache key so rollback to a previous major does not hit a stale cache. Pass the major only (e.g. "10" for ESLint 10.x.x).'
+        type: string
+        required: false
+        default: '10'
+      lint-script:
+        description: 'npm script name to run for linting (caller-defined in package.json).'
+        type: string
+        required: false
+        default: 'lint'
+      working-directory:
+        description: 'Working directory for npm (where the caller package.json lives). Default = repo root.'
+        type: string
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  eslint:
+    name: "eslint (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run ${{ inputs.lint-script }}

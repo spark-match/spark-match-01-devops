@@ -1,0 +1,73 @@
+# =============================================================================
+# Reusable Workflow: TFLint - Terraform Linter
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs `tflint --recursive` against the
+# caller's Terraform code (covers root + submodules via TFLint's recursive
+# directory walk). Caller must provide a `.tflint.hcl` config at the repo
+# root -- TFLint reads it per-subdirectory automatically.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     tflint:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@dev
+#       with:
+#         environment-name: dev
+#         terraform-version: 1.15.7     # defaults to 1.10.0
+#         working-directory: .           # default: repo root
+#
+# Pins:
+#   - terraform-linters/setup-tflint@v6 (bumped from v4 in PR #13, orion-infrastructure)
+#   - tflint_version: latest (caller can pin via .tflint.hcl)
+#
+# Cross-owner safe: pure CLI check, no secrets forwarded.
+# =============================================================================
+
+name: TFLint
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      terraform-version:
+        description: 'Terraform version to install (required by setup-tflint for plugin discovery).'
+        type: string
+        required: false
+        default: '1.10.0'
+      working-directory:
+        description: 'Directory to lint (relative to repo root). tflint --recursive walks subdirectories.'
+        type: string
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  tflint:
+    name: "tflint (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform ${{ inputs.terraform-version }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
+
+      # Non-zero exit on any finding. Caller's .tflint.hcl config drives
+      # enabled plugins and per-rule overrides.
+      - name: Run tflint
+        working-directory: ${{ inputs.working-directory }}
+        run: tflint --recursive

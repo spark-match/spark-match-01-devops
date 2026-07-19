@@ -1,0 +1,63 @@
+# =============================================================================
+# CodeQL - Static analysis for security vulnerabilities
+# =============================================================================
+# Trigger:
+#   - push to main/dev           (defense in depth on every merge)
+#   - pull_request to main/dev   (gate before merge)
+#   - weekly schedule            (Monday 06:17 UTC, low contention slot)
+#
+# Languages: 'actions' (GitHub Actions YAML workflows).
+# Note: CodeQL does NOT support 'bash' as a built-in language in the
+# current CLI version. Shell scripts under scripts/ are not scanned here.
+# They are validated by actionlint for workflow YAML and (optionally)
+# shellcheck can be added in a future PR if needed.
+#
+# Required: Code scanning alerts must be reviewed and triaged periodically.
+# =============================================================================
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+# Cancel in-progress runs for the same ref. CodeQL is idempotent and the
+# `init` action handles cancellation safely by short-circuiting.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
