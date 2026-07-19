@@ -206,7 +206,10 @@ jobs:
           # Note: -lock=false here because the next step (apply) acquires
           # the S3 native lockfile. Holding it during plan would block
           # other workflows.
-          PLAN_ARGS="-input=false -no-color -lock=false -out=tfplan"
+          # -detailed-exitcode: exit 2 when plan has changes (required for
+          # has-changes detection; without it plan always exits 0 and apply
+          # never runs).
+          PLAN_ARGS="-input=false -no-color -lock=false -detailed-exitcode -out=tfplan"
           if [ -n "${{ inputs.tfvars-file }}" ]; then
             PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
           fi
