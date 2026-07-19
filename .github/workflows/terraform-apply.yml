@@ -164,9 +164,12 @@ jobs:
           terraform_version: ${{ inputs.terraform-version }}
 
       - name: Configure AWS credentials (OIDC, apply role)
+        # Same cross-owner workaround as terraform-plan.yml: hardcode
+        # AWS_APPLY_ROLE_ARN (caller uses `secrets: inherit`, which is a no-op
+        # across owner boundaries but doesn't error).
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          role-to-assume: ${{ secrets[inputs.apply-role-arn-secret] }}
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: Terraform fmt
