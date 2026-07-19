@@ -1,0 +1,214 @@
+# =============================================================================
+# Reusable Workflow: SAM Deploy (N-environment aware)
+# =============================================================================
+# Atomic recipe (deploy layer). Builds and deploys an AWS SAM application
+# (multi-environment via samconfig.toml) via OIDC.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     deploy-dev:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/deploy/sam-deploy.yml@dev
+#       with:
+#         environment-name: dev
+#         stack-name: orion-backend-dev
+#       secrets:
+#         AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+#
+# Required GitHub Environment in caller repo:
+#   Create one GH Environment per value passed via environment-name
+#   (e.g. "dev", "prod"). Each environment should hold the
+#   AWS_DEPLOY_ROLE_ARN secret scoped to it. This is the approval gate.
+#
+# Required Secret in caller (per environment):
+#   AWS_DEPLOY_ROLE_ARN: OIDC role ARN to assume for the deploy. The role
+#     must have a trust policy for the GitHub OIDC provider (token.actions.
+#     githubusercontent.com) and CloudFormation + IAM + S3 + SSM +
+#     Lambda publish permissions.
+#
+# Notes:
+#   - Assumes caller has a samconfig.toml with [default] / [prod] sections
+#     following the spark-match convention:
+#       [default]
+#       stack_name = "<stack>"
+#       s3_bucket  = "<bucket>"
+#       region     = "us-east-1"
+#       parameter_overrides = "Environment=\"dev\""
+#   - Builds Lambda Layers via `npm run <build-layers-script>` (default
+#     `layer:build:all`) so they are deployed together with the stack.
+#   - Cross-owner secret inheritance: when caller is in a different owner
+#     than spark-match, the secret name MUST match `AWS_DEPLOY_ROLE_ARN`
+#     here and in the caller's environments. See terraform-plan.yml for
+#     the same workaround applied to Terraform secrets.
+# =============================================================================
+
+name: SAM Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, prod, etc). Used as the GH Environment gate, sam-config-env default, job name, and concurrency key.'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region to deploy to. Should match samconfig.toml `[<env>].region`.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      stack-name:
+        description: 'CloudFormation stack name (overrides samconfig.toml stack_name when set).'
+        type: string
+        required: false
+        default: ''
+      sam-template:
+        description: 'Path to the SAM template, relative to repo root.'
+        type: string
+        required: false
+        default: 'template.yaml'
+      sam-config-env:
+        description: 'Section name in samconfig.toml (e.g. "default", "prod"). Defaults to environment-name.'
+        type: string
+        required: false
+        default: ''
+      s3-bucket:
+        description: 'S3 bucket for SAM artifacts. Empty = use samconfig.toml s3_bucket.'
+        type: string
+        required: false
+        default: ''
+      parameter-overrides-json:
+        description: 'JSON object of extra parameter overrides (merged ON TOP of samconfig.toml parameter_overrides). Example: {"Environment":"prod","LogLevel":"WARN"}'
+        type: string
+        required: false
+        default: '{}'
+      node-version:
+        description: 'Node.js version for build (npm install + Lambda Layers).'
+        type: string
+        required: false
+        default: '24'
+      sam-cli-version:
+        description: 'aws-actions/setup-sam version.'
+        type: string
+        required: false
+        default: '1.151.0'
+      pre-build-script:
+        description: 'npm script to run before sam build (e.g. "build:shared" for @orion/shared compile). Empty = skip.'
+        type: string
+        required: false
+        default: 'build:shared'
+      build-layers-script:
+        description: 'npm script to build Lambda Layers (e.g. "layer:build:all"). Empty = skip (no layers).'
+        type: string
+        required: false
+        default: 'layer:build:all'
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for the deploy job. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Concurrency group keyed by env to prevent concurrent deploys to the same
+# env. cancel-in-progress: false — never cancel a deploy mid-flight (the
+# CloudFormation stack may end up in a half-applied state).
+concurrency:
+  group: sam-deploy-${{ inputs.environment-name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: "deploy (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # GH Environment gate. Caller MUST create an environment with this name
+    # in their repo settings and add AWS_DEPLOY_ROLE_ARN to it.
+    environment: ${{ inputs.environment-name }}
+    steps:
+      - name: Validate parameter-overrides JSON shape
+        run: |
+          set -euo pipefail
+          PARAM_JSON='${{ inputs.parameter-overrides-json }}'
+          if [ -n "$PARAM_JSON" ] && [ "$PARAM_JSON" != "{}" ]; then
+            echo "$PARAM_JSON" | jq -e . >/dev/null 2>&1 || {
+              echo "::error::parameter-overrides-json is not valid JSON: $PARAM_JSON"
+              exit 1
+            }
+            echo "parameter-overrides-json OK: $PARAM_JSON"
+          else
+            echo "parameter-overrides-json empty - using samconfig.toml defaults only."
+          fi
+
+      - name: Resolve effective sam-config-env
+        id: cfg
+        run: |
+          if [ -n "${{ inputs.sam-config-env }}" ]; then
+            ENV="${{ inputs.sam-config-env }}"
+          else
+            ENV="${{ inputs.environment-name }}"
+          fi
+          echo "sam-config-env=${ENV}" >> "$GITHUB_OUTPUT"
+          echo "Effective samconfig section: [${ENV}]"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node${{ inputs.node-version }}-
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pre-build step
+        if: inputs.pre-build-script != ''
+        run: npm run ${{ inputs.pre-build-script }}
+
+      - name: Build Lambda Layers
+        if: inputs.build-layers-script != ''
+        run: npm run ${{ inputs.build-layers-script }}
+
+      - name: Install SAM CLI
+        uses: aws-actions/setup-sam@v3
+        with:
+          version: ${{ inputs.sam-cli-version }}
+
+      - name: SAM validate (template + lint)
+        run: sam validate --template ${{ inputs.sam-template }} --lint
+
+      - name: SAM build
+        run: sam build --template ${{ inputs.sam-template }} --use-container
+
+      - name: SAM deploy
+        run: |
+          set -euo pipefail
+          DEPLOY_ARGS="--config-env ${{ steps.cfg.outputs.sam-config-env }} --no-confirm-changeset --no-fail-on-empty-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --region ${{ inputs.aws-region }}"
+          if [ -n "${{ inputs.stack-name }}" ]; then
+            DEPLOY_ARGS="$DEPLOY_ARGS --stack-name ${{ inputs.stack-name }}"
+          fi
+          if [ -n "${{ inputs.s3-bucket }}" ]; then
+            DEPLOY_ARGS="$DEPLOY_ARGS --s3-bucket ${{ inputs.s3-bucket }}"
+          fi
+          PARAM_JSON='${{ inputs.parameter-overrides-json }}'
+          if [ -n "$PARAM_JSON" ] && [ "$PARAM_JSON" != "{}" ]; then
+            PARAM_OVERRIDES=$(echo "$PARAM_JSON" | jq -r 'to_entries | map("ParameterKey=\(.key),ParameterValue=\(.value|tostring)") | join(" ")')
+            DEPLOY_ARGS="$DEPLOY_ARGS --parameter-overrides $PARAM_OVERRIDES"
+          fi
+          echo "Running: sam deploy $DEPLOY_ARGS"
+          # shellcheck disable=SC2086
+          sam deploy $DEPLOY_ARGS

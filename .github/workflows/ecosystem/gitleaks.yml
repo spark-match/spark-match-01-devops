@@ -1,0 +1,54 @@
+# =============================================================================
+# Reusable Workflow: Gitleaks - Secret scanning
+# =============================================================================
+# Atomic recipe (ecosystem layer). Detects accidentally-committed secrets in
+# the caller's git history.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     gitleaks:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/ecosystem/gitleaks.yml@dev
+#       with:
+#         environment-name: dev
+#
+# Pin: gitleaks/gitleaks-action@v1.
+#   v3 has an upstream bug with SHA resolution on PR runs:
+#     "fatal: ambiguous argument 'SHA^..SHA'"
+#   Stay on v1 until upstream ships a fix.
+#
+# Inputs:
+#   environment-name: Informational. Used in job name + logs.
+#
+# Cross-owner safe: only uses the auto-provisioned GITHUB_TOKEN. No caller
+# secrets are forwarded.
+# =============================================================================
+
+name: Gitleaks
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: "gitleaks (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout caller repository (full history)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
