@@ -245,6 +245,12 @@ jobs:
       - name: Terraform validate
         run: terraform validate -no-color
 
+      - name: Run tfsec (static security scan)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: ${{ inputs.working-directory }}
+          soft_fail: false
+
       - name: Terraform plan
         id: plan
         run: |
