@@ -1,0 +1,70 @@
+# =============================================================================
+# Reusable Workflow: Terraform Format Check
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs `terraform fmt -check -recursive -diff`
+# on the caller's Terraform code. Recursion traverses submodules automatically,
+# so a Terraform monorepo (live/dev + modules/*) gets every subtree checked
+# with a single call. No AWS credentials required.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     terraform-fmt:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@dev
+#       with:
+#         environment-name: dev
+#         terraform-version: 1.15.7     # defaults to 1.10.0
+#         working-directory: .           # default: repo root
+#
+# Pins:
+#   - hashicorp/setup-terraform@v4
+#   - terraform_wrapper: false (we never use the wrapper, it's only useful for
+#     the terraform-plan recipe where detailed-exitcode must pass through)
+#
+# Cross-owner safe: pure CLI check, no secrets forwarded.
+# =============================================================================
+
+name: Terraform Format Check
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      terraform-version:
+        description: 'Terraform version to install (X.Y.Z format).'
+        type: string
+        required: false
+        default: '1.10.0'
+      working-directory:
+        description: 'Directory to lint (relative to repo root). `terraform fmt -recursive` traverses subdirectories automatically.'
+        type: string
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-fmt:
+    name: "terraform fmt (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform ${{ inputs.terraform-version }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      # `-recursive` traverses subdirectories; `-check` makes it exit non-zero
+      # if any file would be reformatted; `-diff` prints the proposed changes
+      # so reviewers can see what would change.
+      - name: Run terraform fmt -check
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform fmt -check -recursive -diff
