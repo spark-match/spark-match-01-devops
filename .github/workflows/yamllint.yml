@@ -1,0 +1,58 @@
+# =============================================================================
+# Reusable Workflow: yamllint - YAML file validation
+# =============================================================================
+# Atomic recipe (ecosystem layer). Validates non-workflow YAML files (SAM
+# templates, Terraform configs, Kubernetes manifests) against a caller-provided
+# `.yamllint.yml` config.
+#
+# yamllint auto-discovers `.yamllint.yml` from the working directory, so the
+# caller controls ignores / rule relaxations via their repo config. The
+# typical ignore set is:
+#   ignore: |
+#     .git/
+#     node_modules/
+#     coverage/
+#     dist/
+#     .terraform/
+#     .github/workflows/   # workflow YAML is checked by actionlint, not yamllint
+#
+# USAGE (in caller repo):
+#   jobs:
+#     yamllint:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@dev
+#       with:
+#         environment-name: dev
+#
+# Cross-owner safe: pure pip install + lint, no secrets forwarded.
+# =============================================================================
+
+name: yamllint
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: read
+
+jobs:
+  yamllint:
+    name: "yamllint (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+
+      # yamllint 1.35.1 is the last v1 release before the 2.x rewrite. Pin for
+      # reproducible lint output across runner versions.
+      - name: Install yamllint (pinned 1.35.1)
+        run: pip install --quiet yamllint==1.35.1
+
+      - name: Run yamllint
+        run: yamllint .

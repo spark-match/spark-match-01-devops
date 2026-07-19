@@ -9,6 +9,7 @@ ignore: |
   .terraform/
   node_modules/
   .github/workflows/
+  *.md
 
 rules:
   # Allow longer lines (workflow files often have long input names + URLs)
