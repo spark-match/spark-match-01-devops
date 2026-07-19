@@ -113,6 +113,10 @@ on:
       environment:
         description: 'Environment identifier echoed back.'
         value: ${{ jobs.plan.outputs.environment }}
+    secrets:
+      AWS_PLAN_ROLE_ARN:
+        description: 'OIDC role ARN for the plan job (assumed via aws-actions/configure-aws-credentials). Caller must pass this explicitly when calling cross-owner.'
+        required: true
 
 permissions:
   id-token: write          # For OIDC
