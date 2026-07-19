@@ -43,18 +43,18 @@ concurrency:
 jobs:
   actionlint:
     name: actionlint
-    uses: ./.github/workflows/ecosystem/actionlint.yml
+    uses: ./.github/workflows/actionlint.yml
     with:
       environment-name: ci
 
   gitleaks:
     name: gitleaks
-    uses: ./.github/workflows/ecosystem/gitleaks.yml
+    uses: ./.github/workflows/gitleaks.yml
     with:
       environment-name: ci
 
   yamllint:
     name: yamllint
-    uses: ./.github/workflows/ecosystem/yamllint.yml
+    uses: ./.github/workflows/yamllint.yml
     with:
       environment-name: ci

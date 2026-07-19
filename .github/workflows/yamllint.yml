@@ -19,7 +19,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     yamllint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/ecosystem/yamllint.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@dev
 #       with:
 #         environment-name: dev
 #
