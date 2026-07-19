@@ -213,6 +213,15 @@ jobs:
           terraform_version: ${{ inputs.terraform-version }}
 
       - name: Configure AWS credentials (OIDC, plan role)
+        # Diagnostic: print secret length to log (GitHub masks the value but
+        # length is preserved).
+        id: diag
+        run: |
+          echo "::notice::secret_len=$(echo -n "$AWS_PLAN_ROLE_ARN" | wc -c)"
+        env:
+          AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+
+      - name: Configure AWS credentials (OIDC, plan role)
         # Workaround: ${{ secrets[inputs.plan-role-arn-secret] }} (dynamic
         # bracket notation) silently evaluates to "" in workflow_call reusable
         # workflows, even when caller passes `secrets: inherit`. GitHub
