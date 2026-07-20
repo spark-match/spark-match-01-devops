@@ -39,7 +39,7 @@ on:
         default: 'dev'
     secrets:
       GITLEAKS_LICENSE:
-        description: 'Gitleaks license key (required for organization-scoped repos under gitleaks-action v3+). The caller must forward this explicitly because GitHub drops `secrets: inherit` cross-owner. Forward from a repo or org secret: `secrets: GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}`.'
+        description: 'Gitleaks license key. Required for organization-scoped repos under gitleaks-action v3+. The caller must forward this secret explicitly because GitHub drops secrets inherit cross-owner.'
         required: false
 
 permissions:
