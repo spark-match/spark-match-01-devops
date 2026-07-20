@@ -56,7 +56,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install checkov (pinned)
         run: pip install --quiet checkov==${{ inputs.checkov-version }}

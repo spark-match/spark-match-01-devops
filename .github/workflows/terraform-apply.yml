@@ -159,7 +159,7 @@ jobs:
           echo "Resolved env=${ENV} | gh-env=${{ inputs.gh-environment || inputs.environment }} | auto-approve=${{ inputs.auto-approve }} | drift-only=${{ inputs.drift-only }}"
 
       - name: Checkout caller repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
 
       - name: Setup Terraform ${{ inputs.terraform-version }}
@@ -323,7 +323,7 @@ jobs:
 
       - name: Notify on apply failure
         if: failure() && steps.apply.outputs.apply-success != 'true' && inputs.drift-only != 'true'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-apply-failed-${{ steps.env.outputs.environment }}
           message: |
@@ -343,7 +343,7 @@ jobs:
 
       - name: Notify on drift detected
         if: always() && inputs.drift-only == 'true' && steps.plan.outputs.has-changes == 'true'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-drift-${{ steps.env.outputs.environment }}
           message: |

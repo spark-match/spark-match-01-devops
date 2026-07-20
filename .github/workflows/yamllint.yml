@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # yamllint 1.35.1 is the last v1 release before the 2.x rewrite. Pin for
       # reproducible lint output across runner versions.
