@@ -172,9 +172,10 @@ jobs:
           terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC, apply role)
-        # Same cross-owner workaround as terraform-plan.yml: hardcode
-        # AWS_APPLY_ROLE_ARN (caller uses `secrets: inherit`, which is a no-op
-        # across owner boundaries but doesn't error).
+        # Cross-owner secret forwarding — see the same comment in
+        # terraform-plan.yml. The caller passes
+        #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+        # explicitly (required by workflow_call on this reusable).
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
