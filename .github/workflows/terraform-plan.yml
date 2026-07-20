@@ -230,13 +230,12 @@ jobs:
           AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
       - name: Configure AWS credentials (OIDC, plan role)
-        # Cross-owner secret inheritance: when caller (e.g. ahincho/orion-infrastructure)
-        # is a USER-owned repo and this reusable lives in another ORG (spark-match/*),
-        # GitHub Actions BLOCKS secrets: inherit at the workflow_call level. The
-        # caller's `secrets.AWS_PLAN_ROLE_ARN` reaches the reusable as empty.
-        # Workaround (forked at ahincho/spark-match-01-devops): hardcode the
-        # expected secret name here. Both orion and spark-match callers use
-        # `secrets: inherit` (no-op for cross-owner) plus the same AWS_PLAN_ROLE_ARN.
+        # Cross-owner secret forwarding: this reusable declares
+        #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
+        # in workflow_call. GitHub drops `secrets: inherit` across owner
+        # boundaries, so callers MUST pass the secret explicitly:
+        #   secrets:
+        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
