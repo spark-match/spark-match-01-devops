@@ -19,7 +19,7 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | Recipe | Purpose | Caller secrets |
 |---|---|---|
 | `actionlint.yml` | Validate GitHub Actions syntax | — |
-| `gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v1`) | — |
+| `gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v3`) | `GITLEAKS_LICENSE` (required for org-scoped repos under v3) |
 | `yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
 | `terraform-fmt.yml`     | `terraform fmt -check -recursive -diff` on the caller's Terraform tree | — |
 | `terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
@@ -48,7 +48,7 @@ jobs:
 
 #### `gitleaks.yml`
 
-Runs secret scanning against the full git history. Pins `gitleaks-action@v1` because `v3` triggers an upstream SHA-resolution bug on PR runs.
+Runs secret scanning against the full git history. Pinned to `gitleaks-action@v3`; for org-scoped repos callers MUST forward the `GITLEAKS_LICENSE` secret (free at gitleaks.io) because GitHub drops `secrets: inherit` across owner boundaries.
 
 Inputs:
 
@@ -322,7 +322,7 @@ The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-a
 
 See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 
-- The catalog is pinned by environment. Callers targeting `dev` reference `@dev`; callers targeting `prod` reference `@main`. This way changes are tested against dev deploys before they reach prod.
+- The catalog can be pinned by environment (`@dev` for dev callers, `@main` for prod callers) — changes are tested against dev deploys before they reach prod. The canonical consumer `orion-infrastructure` currently pins both envs to `@main` (single-tier strategy); teams that maintain a `dev` environment downstream of `main` can adopt the dual-pin strategy.
 - No SemVer in the short term. Breaking changes are communicated by PR + release notes.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
 
