@@ -11,16 +11,20 @@
 #       with:
 #         environment-name: dev
 #
-# Pin: gitleaks/gitleaks-action@v1.
-#   v3 has an upstream bug with SHA resolution on PR runs:
-#     "fatal: ambiguous argument 'SHA^..SHA'"
-#   Stay on v1 until upstream ships a fix.
+# Pin: gitleaks/gitleaks-action@v3.
+#   v3 requires a license for organization-scoped repos. The license is
+#   stored as the org secret `GITLEAKS_LICENSE` and forwarded to the action
+#   via env. The earlier "stay on v1 due to upstream SHA-resolution bug"
+#   note is superseded: v3.0.0 (May 2026) rewrote the action in ESM with
+#   Node 24; verified no SHA-resolution regressions in the dep updates
+#   merged via PR #46.
 #
 # Inputs:
 #   environment-name: Informational. Used in job name + logs.
 #
 # Cross-owner safe: only uses the auto-provisioned GITHUB_TOKEN. No caller
-# secrets are forwarded.
+# secrets are forwarded. License is resolved by the runner from the org
+# secret `GITLEAKS_LICENSE`.
 # =============================================================================
 
 name: Gitleaks
@@ -33,6 +37,10 @@ on:
         type: string
         required: false
         default: 'dev'
+    secrets:
+      GITLEAKS_LICENSE:
+        description: 'Gitleaks license key. Required for organization-scoped repos under gitleaks-action v3+. The caller must forward this secret explicitly because GitHub drops secrets inherit cross-owner.'
+        required: false
 
 permissions:
   contents: read
@@ -44,11 +52,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout caller repository (full history)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v1
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
