@@ -1,8 +1,14 @@
 # =============================================================================
 # CI - Self-test for spark-match-01-devops
 # =============================================================================
-# Trigger: Pull Request opened, synchronized or reopened targeting 'main' or
-#          'dev'.
+# Trigger:
+#   - pull_request: opened, synchronized or reopened targeting 'main' or 'dev',
+#                   gated by the path filter (lint only what changed).
+#   - push: any direct push to 'main' or 'dev' (including admin-bypass force
+#           pushes), no path filter. Guarantees the ruleset's
+#           strict_required_status_checks_policy is satisfied at every commit
+#           on the protected branches. Runs in parallel with any active PR run;
+#           concurrency: cancel-in-progress: true keeps the active one.
 #
 # Action: Run the atomic ecosystem recipes (actionlint, gitleaks, yamllint)
 #         on the repository itself. This is a self-test: if a recipe is
@@ -30,6 +36,8 @@ on:
       - '**.yml'
       - '**.yaml'
       - '**.md'
+  push:
+    branches: [main, dev]       # no paths filter — strict mode requires checks on every commit
 
 permissions:
   contents: read
