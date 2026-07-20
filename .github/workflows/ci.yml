@@ -52,6 +52,8 @@ jobs:
     uses: ./.github/workflows/gitleaks.yml
     with:
       environment-name: ci
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   yamllint:
     name: yamllint
