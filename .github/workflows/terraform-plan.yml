@@ -208,7 +208,7 @@ jobs:
           echo "Resolved environment: ${ENV}"
 
       - name: Checkout caller repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
 
       - name: Setup Terraform ${{ inputs.terraform-version }}
@@ -351,7 +351,7 @@ jobs:
 
       - name: Comment PR with plan summary
         if: steps.plan.outputs.has-changes == 'true' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-plan-${{ steps.env.outputs.environment }}
           message: |
@@ -369,7 +369,7 @@ jobs:
 
       - name: Comment PR with no-changes notice
         if: steps.plan.outputs.has-changes == 'false' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-plan-${{ steps.env.outputs.environment }}
           message: |
