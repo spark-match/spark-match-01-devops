@@ -1,0 +1,275 @@
+# =============================================================================
+# Reusable Workflow: Container Deploy (ECR push via OIDC)
+# =============================================================================
+# Atomic recipe (deploy layer). Builds a Dockerfile via `docker buildx`,
+# pushes the resulting image to an Amazon ECR repository, and tags it
+# `latest` + `<sha>` by default. Caller-supplies the ECR repository name
+# (already provisioned via Terraform in orion-infrastructure) and the OIDC
+# role ARN that has IAM permission to call `ecr:GetAuthorizationToken` +
+# `ecr:BatchGetImage` + `ecr:PutImage` + `ecr:InitiateLayerUpload` +
+# `ecr:UploadLayerPart` + `ecr:CompleteLayerUpload` + `sts:GetCallerIdentity`.
+#
+# The recipe assumes the caller has already created the ECR repository via
+# Terraform (e.g. `module.ecr_orion_agent_core.repository_name`). It does
+# NOT create the repository itself.
+#
+# Designed for orion-cognitive-agent today, but reusable for any project
+# that needs to push a container image to a pre-existing ECR repository.
+# Specific notes for cross-arch builds (linux/arm64 for Bedrock AgentCore):
+# the `platforms` input defaults to `linux/arm64`; override for amd64.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     deploy-dev:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@dev
+#       with:
+#         environment-name: dev
+#         ecr-repository: orion-agent-core-dev
+#       secrets:
+#         AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+#
+# Required GitHub Environment in caller repo:
+#   One per `environment-name` value (e.g. "dev", "prod"). Each holds the
+#   `AWS_DEPLOY_ROLE_ARN` secret scoped to that env. This is the approval
+#   gate (auto-approve when no reviewers are listed, e.g. dev).
+#
+# Required Secret in caller (per environment):
+#   AWS_DEPLOY_ROLE_ARN: OIDC role ARN with ECR push permissions. The role
+#     must have trust policy for `token.actions.githubusercontent.com` and
+#     a sub condition restricting it to the caller repo + the deploy ref.
+#     (e.g. `sub:repo:<org>/<caller>:ref:refs/heads/main`).
+#
+# Cross-owner secret forwarding: caller passes the secret explicitly via
+# `secrets:` block. See angular-spa-deploy.yml + terraform-apply.yml for
+# the same workaround.
+# =============================================================================
+
+name: Container Deploy (ECR)
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, prod, etc). Used as the GH Environment gate, job name, and concurrency key.'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region of the ECR repository.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      ecr-repository:
+        description: 'Name of the ECR repository (without registry prefix). E.g. "orion-agent-core-dev".'
+        type: string
+        required: true
+      dockerfile-path:
+        description: 'Path to the Dockerfile relative to repo root.'
+        type: string
+        required: false
+        default: 'Dockerfile'
+      context-path:
+        description: 'Build context path relative to repo root.'
+        type: string
+        required: false
+        default: '.'
+      platforms:
+        description: 'Comma-separated platforms to build (passed to docker buildx). Default linux/arm64 (Bedrock AgentCore contract); override for amd64.'
+        type: string
+        required: false
+        default: 'linux/arm64'
+      image-tags-input:
+        description: 'Comma-separated tag list. Each tag is appended to `<registry>/<repo>:<tag>`. Default: `latest`, `<github.sha short>`.'
+        type: string
+        required: false
+        default: 'latest,__GITHUB_SHA_SHORT__'
+      cache-scope:
+        description: 'GHA cache scope segment used for `cache-from type=gha,scope=<scope>`. Lets multiple recipes coexist on the same runner without cache poisoning.'
+        type: string
+        required: false
+        default: 'container-dev'
+      provenance:
+        description: 'Set `provenance: true` on `docker build-push-action` (default false for dev speed).'
+        type: boolean
+        required: false
+        default: false
+      sbom:
+        description: 'Set `sbom: true` on `docker build-push-action` (default false for dev speed).'
+        type: boolean
+        required: false
+        default: false
+      extra-buildx-args:
+        description: 'Reserved for caller-side raw passthrough. Not used in v1; do not set.'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for the deploy job. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Concurrency group keyed by env to prevent concurrent deploys to the same
+# env. cancel-in-progress: false - never cancel a deploy mid-flight (the
+# ECR push may end in a half-applied state, and the layer upload is in
+# flight).
+concurrency:
+  group: container-deploy-ecr-${{ inputs.environment-name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: "container deploy (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # GH Environment gate. Caller MUST create an environment with this name
+    # in their repo settings and add AWS_DEPLOY_ROLE_ARN to it.
+    environment: ${{ inputs.environment-name }}
+    steps:
+      - name: Validate inputs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          if [ -z "${{ inputs.environment-name }}" ]; then
+            ERRORS+=("environment-name: required")
+          fi
+          if [ -z "${{ inputs.ecr-repository }}" ]; then
+            ERRORS+=("ecr-repository: required")
+          fi
+          if ! echo "${{ inputs.ecr-repository }}" | grep -qE '^[a-z0-9][a-z0-9_-]{0,254}$'; then
+            ERRORS+=("ecr-repository: invalid format (must match ECR repo name regex)")
+          fi
+          if [ -z "${{ inputs.dockerfile-path }}" ]; then
+            ERRORS+=("dockerfile-path: required")
+          fi
+          if [ -z "${{ inputs.context-path }}" ]; then
+            ERRORS+=("context-path: required")
+          fi
+          if [ -z "${{ inputs.platforms }}" ]; then
+            ERRORS+=("platforms: required")
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            echo "::error::Corrige los inputs y reintenta."
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Verify STS identity
+        # Resolve account id via STS so the workflow is independent of an
+        # AWS_ACCOUNT_ID variable. The deploy role must allow
+        # sts:GetCallerIdentity (default in the apply/deploy IAM modules).
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query 'Account' --output text)"
+          echo "Authenticated as AWS account: ${ACCOUNT} (region: ${{ inputs.aws-region }})"
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: ${{ inputs.aws-region == 'aws-cn' && 'aws' || '' }}
+
+      - name: Resolve ECR registry
+        id: registry
+        run: |
+          set -euo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query 'Account' --output text)}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com"
+          echo "registry=${REGISTRY}" >> "${GITHUB_OUTPUT}"
+          echo "ECR registry: ${REGISTRY}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          SHA_SHORT="${GITHUB_SHA::7}"
+          REGISTRY="${{ steps.registry.outputs.registry }}"
+          REPO="${{ inputs.ecr-repository }}"
+          RAW="${{ inputs.image-tags-input }}"
+          # Allow the caller to encode the short SHA with __GITHUB_SHA_SHORT__
+          # (escaped so it survives YAML interpolation).
+          RAW="${RAW//__GITHUB_SHA_SHORT__/${SHA_SHORT}}"
+
+          TAGS=""
+          IFS=',' read -ra WANTED <<< "$RAW"
+          for RAW_TAG in "${WANTED[@]}"; do
+            TAG_TRIM="$(echo -n "$RAW_TAG" | xargs)"
+            [ -z "$TAG_TRIM" ] && continue
+            TAGS="${TAGS:+${TAGS},}${REGISTRY}/${REPO}:${TAG_TRIM}"
+          done
+          if [ -z "$TAGS" ]; then
+            echo "::error::image-tags-input resolved to empty tag list"
+            exit 1
+          fi
+          echo "tags=${TAGS}" >> "${GITHUB_OUTPUT}"
+          echo "Will push tags: ${TAGS}"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.context-path }}
+          file: ${{ inputs.dockerfile-path }}
+          push: true
+          platforms: ${{ inputs.platforms }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=${{ inputs.cache-scope }}
+          cache-to: type=gha,scope=${{ inputs.cache-scope }},mode=max
+          provenance: ${{ inputs.provenance }}
+          sbom: ${{ inputs.sbom }}
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          {
+            echo "## Container Deploy (ECR) - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
+            echo "| ECR repository | \`${{ inputs.ecr-repository }}\` |"
+            echo "| Dockerfile | \`${{ inputs.dockerfile-path }}\` |"
+            echo "| Build context | \`${{ inputs.context-path }}\` |"
+            echo "| Platforms | \`${{ inputs.platforms }}\` |"
+            echo "| Image tags | \`${{ steps.tags.outputs.tags }}\` |"
+            echo "| Cache scope | \`${{ inputs.cache-scope }}\` |"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo "Triggered by: @${{ github.actor }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify on deploy failure
+        if: failure()
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: container-deploy-ecr-failed-${{ inputs.environment-name }}
+          message: |
+            ## Container Deploy (ECR) Failed - `${{ inputs.environment-name }}`
+
+            ECR repository: `${{ inputs.ecr-repository }}`
+            Image tags attempted: `${{ steps.tags.outputs.tags }}`
+            Commit: `${{ github.sha }}`
+            Author: @${{ github.actor }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Please investigate. Layer uploads may be partially complete.
