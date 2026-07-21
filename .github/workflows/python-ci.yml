@@ -159,11 +159,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
-          GROUPS="${{ inputs.dependency-groups }}"
-          if [ -z "$GROUPS" ]; then
+          # Read groups into a bash array; whitespace-separated tokens.
+          IFS=' ' read -r -a GROUPS <<< "${{ inputs.dependency-groups }}"
+          if [ "${#GROUPS[@]}" -eq 0 ] || [ -z "${GROUPS[0]:-}" ]; then
             uv sync
           else
-            uv sync --group $GROUPS
+            uv sync --group "${GROUPS[@]}"
           fi
 
       - name: Lint (ruff format check)
