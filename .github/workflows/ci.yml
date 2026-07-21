@@ -1,5 +1,5 @@
 # =============================================================================
-# CI - Self-test for spark-match-01-devops
+# CI - Lint & Security for spark-match-01-devops
 # =============================================================================
 # Trigger:
 #   - pull_request: opened, synchronized or reopened targeting 'main' or 'dev',
@@ -11,27 +11,21 @@
 #           concurrency: cancel-in-progress: true keeps the active one.
 #
 # Action: Run the atomic ecosystem recipes (actionlint, gitleaks, yamllint)
-#         plus a Python QA self-test of the `python-ci.yml` recipe. This is a
-#         self-test: if a recipe is broken, ci.yml shows red and the team
-#         fixes it before consumers (orion-backend, orion-infrastructure,
-#         etc.) get a bad reference.
+#         against this repository so a broken recipe is caught here before
+#         consumers (orion-backend, orion-infrastructure, orion-cognitive-
+#         agent, etc.) get a bad reference. Python/node/deploy recipes are
+#         validated directly by caller repos on their own PRs (see
+#         `docs/VERSIONING.md` § strategy).
 #
 # Each job calls the corresponding reusable workflow via a local path
-# (`./ecosystem/<name>.yml`). When merged, the same recipes become available
-# to external repos via
-#   spark-match/spark-match-01-devops/.github/workflows/ecosystem/<name>.yml@dev
+# (`./.github/workflows/<name>.yml`). When merged, the same recipes become
+# available to external repos via
+#   spark-match/spark-match-01-devops/.github/workflows/<name>.yml@dev
 #
-# Other layers (node/eslint, deploy/sam-deploy, deploy/terraform-*)
-# are NOT exercised here since the devops repo itself has no Node project
-# or SAM stack to deploy. They are exercised by the consumer repos.
-#
-# The Python QA self-test runs against `tests/fixtures/python-project/`,
-# a minimal dummy project that dogfoods the `python-ci.yml` recipe with
-# two dependency groups (`dev`, `lint`) on a single Python version
-# (3.12 hardcoded in the recipe; multi-version matrix is blocked by the
-# upstream GHA bug documented in `DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md`
-# and DIAGNOSTICO-GHA-MATRIX-CROSSOWNER-UPDATE.md — see § 8 of
-# `docs/PYTHON-CI.md` for the full back-reference).
+# Other layers (node/eslint, deploy/sam-deploy, deploy/terraform-*,
+# python/python-ci, etc.) are NOT exercised here since the devops repo
+# itself has no Node project, SAM stack, or Python package to lint. They
+# are validated directly by the consumer repos.
 # =============================================================================
 
 name: CI - Lint & Security
@@ -50,10 +44,6 @@ on:
 
 permissions:
   contents: read
-  # Required by the python-ci.yml recipe's sticky PR coverage comment
-  # step (gated by `permissions-write: true`). The step is skipped when
-  # the input is false, so this permission is idle in most runs.
-  pull-requests: write
 
 # Cancel in-progress runs for the same PR + branch. Saves runner minutes on
 # rapid pushes. The cancel-in-progress: true is safe for lint jobs (idempotent).
@@ -81,50 +71,3 @@ jobs:
     uses: ./.github/workflows/yamllint.yml
     with:
       environment-name: ci
-
-  python-qa:
-    name: python-qa-self-test
-    # Cross-owner reference pinned to @main (Sprint B promotion @ fd14f27).
-    # Mirrors the reference consumed by external callers (e.g.
-    # orion-cognitive-agent@main uses spark-match-01-devops/.github/
-    # workflows/python-ci.yml@main). When merging a recipe change to a
-    # branch other than main (e.g. `dev`), local-path should be used
-    # to avoid the chicken-and-egg where @main doesn't yet contain the
-    # changes. See `docs/PYTHON-CI.md` § 7 (canonical caller patterns).
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
-    with:
-      environment-name: ci
-      working-directory: tests/fixtures/python-project
-      commands: lint:ruff-format,lint:ruff-check,lint:bandit,lock:check,typecheck:mypy,test:pytest,coverage:upload,security:pip-audit
-      dependency-groups: dev lint security
-      lock-check: true
-      frozen: true
-      ruff-targets: example tests
-      mypy-targets: example
-      pytest-targets: tests
-
-  python-qa-lint-only:
-    name: python-qa-self-test (sync-mode=lint-only)
-    # Sprint C regression: validates the new `sync-mode: lint-only` input.
-    # Same recipe, same fixture, but only the lint commands and only the
-    # `lint` dependency group is installed. Catches:
-    #   - input wiring (Validate inputs accepts `lint-only`)
-    #   - sync step (uv sync --only-group lint succeeds on the fixture)
-    #   - downstream step guards (only ruff-format + ruff-check are listed,
-    #     so all other steps are skipped via the `if: contains(...)` gates).
-    # Note: `lint:bandit` is NOT included here because bandit is in the
-    # fixture's `security` group, not `lint`. Adding bandit to the
-    # `commands` would force the sync step to either skip the sync-mode
-    # (defeating the test) or fail when uv can't find bandit. So this
-    # test exercises the pure-lint path: ruff + mypy-less-format-only +
-    # pytest-less.
-    # Uses LOCAL path (not @main) because this Sprint C input is not yet
-    # on main when this PR lands. Once promoted, swap to @main.
-    uses: ./.github/workflows/python-ci.yml
-    with:
-      environment-name: ci-lint-only
-      working-directory: tests/fixtures/python-project
-      commands: lint:ruff-format,lint:ruff-check
-      dependency-groups: lint
-      sync-mode: lint-only
-      ruff-targets: example tests
