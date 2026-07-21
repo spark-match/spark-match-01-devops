@@ -27,7 +27,11 @@
 #
 # The Python QA self-test runs against `tests/fixtures/python-project/`,
 # a minimal dummy project that dogfoods the `python-ci.yml` recipe with
-# two dependency groups (`dev`, `lint`) and a Python matrix `[3.11, 3.12]`.
+# two dependency groups (`dev`, `lint`) on a single Python version
+# (3.12 hardcoded in the recipe; multi-version matrix is blocked by the
+# upstream GHA bug documented in `DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md`
+# and DIAGNOSTICO-GHA-MATRIX-CROSSOWNER-UPDATE.md — see § 8 of
+# `docs/PYTHON-CI.md` for the full back-reference).
 # =============================================================================
 
 name: CI - Lint & Security
@@ -79,7 +83,6 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
-      python-versions: '["3.11","3.12"]'
       working-directory: tests/fixtures/python-project
       commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
       dependency-groups: dev lint
