@@ -141,19 +141,19 @@ on:
         default: ''
       permissions-write:
         description: 'Opt-in sticky PR coverage comment via marocchino/sticky-pull-request-comment@v2. Off by default; on requires the caller repo to allow `pull-requests: write` on this workflow.'
-        type: string
+        type: boolean
         required: false
-        default: 'false'
+        default: false
       lock-check:
         description: 'Run `uv lock --check` before sync (drift detector between pyproject.toml and uv.lock). Exits non-zero if the lockfile is out of date.'
-        type: string
+        type: boolean
         required: false
-        default: 'false'
+        default: false
       frozen:
         description: 'Pass `--frozen` to `uv sync` (no lock regeneration; prod callers). Mutually beneficial with `lock-check: true`.'
-        type: string
+        type: boolean
         required: false
-        default: 'false'
+        default: false
       setup-uv-version:
         description: 'uv version to install via astral-sh/setup-uv.'
         type: string
@@ -222,15 +222,10 @@ jobs:
               ERRORS+=("coverage-threshold: must be a non-negative number (e.g. '80' or '75.5'), got '${{ inputs.coverage-threshold }}'")
             fi
           fi
-          if [ "${{ inputs.permissions-write }}" != "true" ] && [ "${{ inputs.permissions-write }}" != "false" ]; then
-            ERRORS+=("permissions-write: must be 'true' or 'false', got '${{ inputs.permissions-write }}'")
-          fi
-          if [ "${{ inputs.lock-check }}" != "true" ] && [ "${{ inputs.lock-check }}" != "false" ]; then
-            ERRORS+=("lock-check: must be 'true' or 'false', got '${{ inputs.lock-check }}'")
-          fi
-          if [ "${{ inputs.frozen }}" != "true" ] && [ "${{ inputs.frozen }}" != "false" ]; then
-            ERRORS+=("frozen: must be 'true' or 'false', got '${{ inputs.frozen }}'")
-          fi
+          # permissions-write, lock-check, frozen are typed as boolean in the
+          # workflow_call.inputs block (GHA coerces); bash sees them as
+          # the literal strings 'true' / 'false' after substitution. No
+          # explicit validation needed beyond type coercion.
           case "${{ inputs.commands }}" in
             *none*) ;;   # explicit "none" = caller wants only the manual steps (rare)
             *security:pip-audit*|*lint:ruff-format-fix*|*lint:ruff-check-fix*|*lock:check*|*lint:bandit*|*lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*) ;;
