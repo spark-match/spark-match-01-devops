@@ -90,7 +90,6 @@ jobs:
     # local-path invocation; after merge a follow-up chore PR can flip
     # this back to `uses: .../python-ci.yml@main`.
     uses: ./.github/workflows/python-ci.yml
-    uses: ./.github/workflows/python-ci.yml
     with:
       environment-name: ci
       working-directory: tests/fixtures/python-project
