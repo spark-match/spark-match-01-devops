@@ -99,6 +99,11 @@ on:
         type: string
         required: false
         default: ''
+      working-directory:
+        description: 'Working directory for npm install + build (where caller package.json lives). All relative paths (artifact-path) are resolved against this. Default = repo root.'
+        type: string
+        required: false
+        default: '.'
     secrets:
       AWS_DEPLOY_ROLE_ARN:
         description: 'OIDC role ARN for the deploy job. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
@@ -124,6 +129,13 @@ jobs:
     # GH Environment gate. Caller MUST create an environment with this name
     # in their repo settings and add AWS_DEPLOY_ROLE_ARN to it.
     environment: ${{ inputs.environment-name }}
+    # Working directory para npm install + build. artifact-path se resuelve
+    # relativo a este directorio. defaults.run aplica a todos los steps
+    # del job (el step de validacion lo sobreescribe explicitamente con '.'
+    # para poder ejecutarse antes de checkout).
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Validate inputs
         # working-directory: . because the caller's working directory may
@@ -171,9 +183,17 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          # Cache key segregado por environment-name (dev vs prod). Aunque
+          # el contenido del cache npm es content-addressed desde
+          # package-lock.json (teoricamente seguro compartir entre envs),
+          # la segregacion previene cache poisoning si un futuro caller
+          # pasa flags npm distintos por env (e.g. --omit=dev en prod).
+          # hashFiles acotado a un solo package-lock.json (no `**`) para
+          # evitar que cambios en lockfiles anidados (workspaces futuros)
+          # invaliden el cache sin motivo.
+          key: ${{ runner.os }}-node${{ inputs.node-version }}-env${{ inputs.environment-name }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
           restore-keys: |
-            ${{ runner.os }}-node${{ inputs.node-version }}-
+            ${{ runner.os }}-node${{ inputs.node-version }}-env${{ inputs.environment-name }}-
 
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@v6
@@ -194,7 +214,6 @@ jobs:
         run: npm run ${{ inputs.build-script }}
 
       - name: Verify build output exists
-        working-directory: .
         run: |
           set -euo pipefail
           ARTIFACT="${{ inputs.artifact-path }}"
