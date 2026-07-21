@@ -76,7 +76,7 @@ jobs:
 
   python-qa:
     name: python-qa-self-test
-    uses: ./.github/workflows/python-ci.yml
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
       python-versions: '["3.11","3.12"]'
