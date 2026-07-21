@@ -1,0 +1,291 @@
+# =============================================================================
+# Reusable Workflow: Angular SPA Deploy (S3 + CloudFront)
+# =============================================================================
+# Atomic recipe (deploy layer). Builds an Angular SPA via `npm ci` +
+# `npm run build` and deploys the resulting static bundle to an S3 bucket
+# fronted by CloudFront. Performs:
+#   1. `aws s3 sync --delete` (uploads new assets, removes stale ones).
+#   2. `aws cloudfront create-invalidation --paths "/*"` (cache busting).
+#
+# Designed for orion-frontend (Angular 22 with the new application builder).
+# The build output is expected at `dist/<project>/browser/` (Angular 22
+# default) but is configurable via `artifact-path`.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     deploy-dev:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/angular-spa-deploy.yml@main
+#       with:
+#         environment-name: dev
+#         s3-bucket: orion-frontend-dev
+#         cloudfront-distribution-id: E1ABC2DEF3GHIJ
+#       secrets:
+#         AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+#
+# Required GitHub Environment in caller repo:
+#   Create one GH Environment per value passed via environment-name
+#   (e.g. "dev", "prod"). Each environment should hold the
+#   AWS_DEPLOY_ROLE_ARN secret scoped to it. This is the approval gate.
+#
+# Required Secret in caller (per environment):
+#   AWS_DEPLOY_ROLE_ARN: OIDC role ARN to assume for the deploy. The role
+#     must have trust policy for `token.actions.githubusercontent.com` and
+#     permissions for `s3:GetObject|PutObject|DeleteObject|ListBucket` on the
+#     SPA bucket + `cloudfront:CreateInvalidation` on the SPA distribution
+#     + `sts:GetCallerIdentity` (the `iam-angular-spa-deploy-dev` Terraform
+#     module in orion-infrastructure creates exactly this shape).
+#
+# Required variables (repo-scoped) in caller:
+#   None required. The caller wires s3-bucket and cloudfront-distribution-id
+#   directly via `with:` inputs (typically hardcoded per environment in the
+#   caller workflow, mirroring how terraform-plan/apply callers work in
+#   orion-infrastructure).
+#
+# Cross-owner secret forwarding: when caller is in a different owner
+# than spark-match, the secret name MUST match `AWS_DEPLOY_ROLE_ARN` here
+# and in the caller's environments. See terraform-plan.yml for the same
+# workaround.
+# =============================================================================
+
+name: Angular SPA Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, prod, etc). Used as the GH Environment gate, job name, and concurrency key.'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region of the S3 bucket and CloudFront distribution.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      s3-bucket:
+        description: 'S3 bucket name hosting the SPA assets (e.g. "orion-frontend-dev").'
+        type: string
+        required: true
+      cloudfront-distribution-id:
+        description: 'CloudFront distribution ID to invalidate (e.g. "E1ABC2DEF3GHIJ").'
+        type: string
+        required: true
+      cloudfront-invalidation-paths:
+        description: 'Paths to invalidate on CloudFront. Default "/*" (everything).'
+        type: string
+        required: false
+        default: '/*'
+      node-version:
+        description: 'Node.js version for build.'
+        type: string
+        required: false
+        default: '24'
+      build-script:
+        description: 'npm script that builds the SPA (e.g. "build" for Angular default).'
+        type: string
+        required: false
+        default: 'build'
+      artifact-path:
+        description: 'Path to the built SPA bundle relative to repo root. Angular 22 default is "dist/<project>/browser".'
+        type: string
+        required: false
+        default: 'dist/orion-frontend/browser'
+      api-url:
+        description: 'Frontend env var API_URL injected at build time. Empty = no injection (callers MUST set this when the SPA hits a backend).'
+        type: string
+        required: false
+        default: ''
+      sync-extra-args:
+        description: 'Additional raw flags passed to `aws s3 sync` (e.g. "--cache-control max-age=31536000"). Use sparingly.'
+        type: string
+        required: false
+        default: ''
+      working-directory:
+        description: 'Working directory for npm install + build (where caller package.json lives). All relative paths (artifact-path) are resolved against this. Default = repo root.'
+        type: string
+        required: false
+        default: '.'
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for the deploy job. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Concurrency group keyed by env to prevent concurrent deploys to the same
+# env. cancel-in-progress: false - never cancel a deploy mid-flight (the
+# S3 sync may end up in a half-applied state, and the CF invalidation is
+# already in flight).
+concurrency:
+  group: angular-spa-deploy-${{ inputs.environment-name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: "deploy (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # GH Environment gate. Caller MUST create an environment with this name
+    # in their repo settings and add AWS_DEPLOY_ROLE_ARN to it.
+    environment: ${{ inputs.environment-name }}
+    # Working directory para npm install + build. artifact-path se resuelve
+    # relativo a este directorio. defaults.run aplica a todos los steps
+    # del job (el step de validacion lo sobreescribe explicitamente con '.'
+    # para poder ejecutarse antes de checkout).
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Validate inputs
+        # working-directory: . because the caller's working directory may
+        # not exist before checkout.
+        working-directory: .
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          if [ -z "${{ inputs.s3-bucket }}" ]; then
+            ERRORS+=("s3-bucket: requerido")
+          fi
+          if [ -z "${{ inputs.cloudfront-distribution-id }}" ]; then
+            ERRORS+=("cloudfront-distribution-id: requerido")
+          fi
+          if ! echo "${{ inputs.cloudfront-distribution-id }}" | grep -qE '^[A-Z0-9]+$'; then
+            ERRORS+=("cloudfront-distribution-id: formato invalido (debe ser alphanumeric uppercase, e.g. 'E1ABC2DEF3GHIJ')")
+          fi
+          if [ -z "${{ inputs.artifact-path }}" ]; then
+            ERRORS+=("artifact-path: requerido")
+          fi
+          if [ -z "${{ inputs.build-script }}" ]; then
+            ERRORS+=("build-script: requerido")
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            echo "::error::Corrige los inputs y reintenta."
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          # Cache key segregado por environment-name (dev vs prod). Aunque
+          # el contenido del cache npm es content-addressed desde
+          # package-lock.json (teoricamente seguro compartir entre envs),
+          # la segregacion previene cache poisoning si un futuro caller
+          # pasa flags npm distintos por env (e.g. --omit=dev en prod).
+          # hashFiles acotado a un solo package-lock.json (no `**`) para
+          # evitar que cambios en lockfiles anidados (workspaces futuros)
+          # invaliden el cache sin motivo.
+          key: ${{ runner.os }}-node${{ inputs.node-version }}-env${{ inputs.environment-name }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-node${{ inputs.node-version }}-env${{ inputs.environment-name }}-
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SPA
+        env:
+          # Inyecta API_URL al bundle si el caller lo proveyo. El caller
+          # es responsable de configurar `define` en angular.json para
+          # que el builder reemplace `import.meta.env.API_URL` en build
+          # time. Si no se pasa api-url, la variable queda vacia.
+          API_URL: ${{ inputs.api-url }}
+        run: npm run ${{ inputs.build-script }}
+
+      - name: Verify build output exists
+        run: |
+          set -euo pipefail
+          ARTIFACT="${{ inputs.artifact-path }}"
+          if [ ! -d "$ARTIFACT" ]; then
+            echo "::error::Build artifact path '$ARTIFACT' does not exist. Verify build-script and artifact-path inputs."
+            exit 1
+          fi
+          if [ ! -f "$ARTIFACT/index.html" ]; then
+            echo "::error::Build artifact at '$ARTIFACT' is missing index.html. Not a valid SPA bundle."
+            exit 1
+          fi
+          echo "Build artifact OK at $ARTIFACT"
+          # shellcheck disable=SC2012
+          ls -la "$ARTIFACT" | head -20
+
+      - name: Sync to S3 (delete stale files)
+        run: |
+          set -euo pipefail
+          SYNC_ARGS="--delete"
+          if [ -n "${{ inputs.sync-extra-args }}" ]; then
+            SYNC_ARGS="$SYNC_ARGS ${{ inputs.sync-extra-args }}"
+          fi
+          echo "Running: aws s3 sync ${{ inputs.artifact-path }}/ s3://${{ inputs.s3-bucket }}/ $SYNC_ARGS"
+          # shellcheck disable=SC2086
+          aws s3 sync "${{ inputs.artifact-path }}/" "s3://${{ inputs.s3-bucket }}/" $SYNC_ARGS
+
+      - name: CloudFront invalidation
+        run: |
+          set -euo pipefail
+          PATHS="${{ inputs.cloudfront-invalidation-paths }}"
+          echo "Creating CloudFront invalidation on distribution ${{ inputs.cloudfront-distribution-id }} for paths: $PATHS"
+          # Use --no-paginate so the output is readable in CI logs.
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ inputs.cloudfront-distribution-id }}" \
+            --paths "$PATHS" \
+            --no-paginate \
+            --output json
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          {
+            echo "## Angular SPA Deploy - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
+            echo "| S3 bucket | \`${{ inputs.s3-bucket }}\` |"
+            echo "| CloudFront distribution | \`${{ inputs.cloudfront-distribution-id }}\` |"
+            echo "| Invalidation paths | \`${{ inputs.cloudfront-invalidation-paths }}\` |"
+            echo "| Build artifact | \`${{ inputs.artifact-path }}\` |"
+            echo ""
+            if [ "${{ inputs.api-url }}" != "" ]; then
+              echo "API_URL injected at build time."
+            fi
+            echo "Commit: ${{ github.sha }}"
+            echo "Triggered by: @${{ github.actor }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify on deploy failure
+        if: failure()
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: angular-spa-deploy-failed-${{ inputs.environment-name }}
+          message: |
+            ## Angular SPA Deploy Failed - `${{ inputs.environment-name }}`
+
+            S3 bucket: `${{ inputs.s3-bucket }}`
+            CloudFront distribution: `${{ inputs.cloudfront-distribution-id }}`
+            Commit: ${{ github.sha }}
+            Author: @${{ github.actor }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Please investigate. The S3 bucket may have partial changes if the sync step failed.
