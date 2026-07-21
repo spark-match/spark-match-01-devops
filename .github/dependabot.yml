@@ -59,5 +59,7 @@ updates:
     dependabot:
       secrets:
         GITLEAKS_LICENSE:
-          description: "License key for gitleaks/gitleaks-action@v3 (organization-tier). Mirrors the repo-level secret of the same name. Without this, dependabot-triggered PRs fail gitleaks with 'missing gitleaks license'."
+          description: "License key for gitleaks-action@v3 (org-tier). Mirrors the
+            repo-level secret. Without this, Dependabot-triggered PRs fail
+            gitleaks with 'missing gitleaks license'."
           required: false
