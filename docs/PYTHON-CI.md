@@ -87,10 +87,11 @@ override as needed.
 | `coverage-threshold` | string | no | `""` | Numeric threshold (e.g. `"80"` or `"75.5"`) enforced via `coverage report --fail-under=N`. Empty disables. Requires `.coverage` to exist (caller adds `--cov` to `pytest-args`). |
 | `permissions-write` | boolean | no | `false` | Opt-in sticky PR coverage comment via `marocchino/sticky-pull-request-comment@v2`. The recipe grants `pull-requests: write` at the workflow level; if `permissions-write` is `false` (default) the step is skipped. |
 
-### 3.4 Sync flags (Sprint B)
+### 3.4 Sync flags (Sprint B + C)
 
 | Input | Type | Required | Default | Notes |
 |---|:---:|:---:|---|---|
+| `sync-mode` | string | no | `full` | Scope of `uv sync`. `full` installs the groups in `dependency-groups`. `runtime-only` runs `uv sync --no-dev` (skip dev/test deps for prod-only jobs). `lint-only` runs `uv sync --only-group lint` (cheap PR gate). See § 7 for example usages. |
 | `lock-check` | boolean | no | `false` | Drift detector: runs `uv lock --check` before sync. Exits non-zero if `uv.lock` is out of date relative to `pyproject.toml`. |
 | `frozen` | boolean | no | `false` | Pass `--frozen` to `uv sync` (no lock regeneration). Recommended for prod callers. Pairs naturally with `lock-check: true`. |
 
@@ -338,11 +339,23 @@ These are tracked in `PENDIENTES-CI-CD.md`.
 - `lint:ruff-format-fix` / `lint:ruff-check-fix` commands (mutating, no commit) — see § 5.1 + § 8.2.
 - `lock:check` command (alias for the `lock-check: true` input) — see § 5.3.
 
-### 8.1 Still pending (Sprint C / separate)
+### 8.1 Closed in Sprint C
 
-- `sync-mode` input ∈ {full, runtime-only, lint-only} — Sprint C.
-- `actions/checkout@v8` bump — separate track.
-- `runner-images`-preset for ARM64 — separate track.
+- `sync-mode` input ∈ {full, runtime-only, lint-only} — landed in Sprint C.
+- `actions/checkout` track: now at `v7.0.1` (latest upstream as of 2026-07-20;
+  there is no `v8` yet). No bump pending.
+- ARM64 runner preset: supported via `runs-on: ubuntu-24.04-arm` (and the
+  next-gen GitHub-hosted ARM64 labels as they appear). The recipe does not
+  need any code change — `runs-on` is a free string input. See § 3.1.
+
+### 8.2 Other open (still tracked separately)
+
+- PyPy / GraalPy alternative interpreters: the recipe hardcodes
+  `python-version: ["3.12"]` because of the upstream GHA bug (see § 8.0
+  ref `DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md`). Once the upstream bug is
+  fixed, `python-versions: '"3.12","pypy3.10"'` style invocation will work.
+- Pre-cache of wheels in S3 (cross-branch, cross-runner GHA cache miss):
+  deferred — only justified if we observe low cache-hit ratios.
 
 ---
 
