@@ -43,7 +43,7 @@ test gate. Deploy reusables live under `deploy/` (out of scope).
 |---|---|---|
 | `ahincho/orion-cognitive-agent` | monorepo, single `pyproject.toml`, dependency group `bedrock` is runtime-only | `dependency-groups: dev bedrock` |
 | `spark-match/spark-match-08-deep-agent` | placeholder — to be wired up when the project's CI migrates from legacy `pip` to `uv` | `dependency-groups: dev` |
-| `spark-match/spark-match-01-devops` itself (self-test, Sprint D) | `tests/fixtures/python-project/` with two custom groups (`dev`, `lint`); invokes `@main` because the dev-branch recipe still carries the IFS+here-string bash bug from PR #60 era (see § 8 below) | `working-directory: tests/fixtures/python-project`, `dependency-groups: dev lint`, no `python-versions` (recipe hardcodes 3.12) |
+| `spark-match/spark-match-01-devops` itself (self-test, Sprint D) | `tests/fixtures/python-project/` with two custom groups (`dev`, `lint`) | `working-directory: tests/fixtures/python-project`, `dependency-groups: dev lint` |
 
 If you have a new Python caller, copy the row that most resembles your
 layout and confirm the recipe runs locally with
@@ -53,29 +53,58 @@ layout and confirm the recipe runs locally with
 
 ## 3. Inputs
 
+Grouped by concern. Defaults tuned for `orion-cognitive-agent`; callers
+override as needed.
+
+### 3.1 Core
+
 | Input | Type | Required | Default | Notes |
 |---|:---:|:---:|---|---|
-| `environment-name` | string | yes | — | Job name suffix + optional GH Environment gate. Conventions: `ci` (PR gate), `dev` (post-merge on `dev` branch), `prod` (post-merge on `main`/release). |
-| `python-versions` | string (JSON list) | no | `"3.12"` | JSON list passed to `fromJSON()` to build the matrix. Examples: `'"3.12"'`, `'"3.11","3.12"'`, `'"3.10","3.11","3.12","3.13"'`. |
-| `working-directory` | string | no | `.` | Path containing `pyproject.toml` (relative to repo root). For monorepos or fixture invocations. |
-| `commands` | CSV string | no | `lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload` | Ordered subset of pipeline steps. Use `none` to opt out of all automatic steps (rare). See § 5. |
-| `dependency-groups` | string (space-separated tokens) | no | `dev` | Extra `uv sync --group` groups. Examples: `dev bedrock`, `dev lint`, `dev bedrock market`. Empty = `uv sync` (no groups). |
-| `ruff-targets` | CSV string | no | `src tests` | Passed to `ruff format --check` and `ruff check`. |
-| `mypy-targets` | CSV string | no | `src` | Passed to `mypy`. |
-| `pytest-targets` | string | no | `tests` | Passed to `pytest` (single path; multi-path support is on the backlog). |
-| `coverage-output` | string | no | `coverage.xml` | Path under `working-directory` uploaded as a job artifact. |
-| `setup-uv-version` | string | no | `latest` | Pinned in `astral-sh/setup-uv@v6`. Use a specific version for reproducibility (`0.11.2`, etc.). |
-| `cache-suffix` | string | no | `""` (derived) | Suffix for the GH Actions cache key. Default (empty) makes the recipe fall back to `environment-name`. Set explicitly only for finer partition. See `docs/VERSIONING.md` § "Cache semantics" and `docs/CACHE.md` § 1. |
+| `environment-name` | string | yes | — | Job name suffix + optional GH Environment gate. |
+| `working-directory` | string | no | `.` | Path containing `pyproject.toml` (and optional `uv.lock`). |
+| `commands` | CSV string | no | `lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload` | Ordered subset of pipeline steps. See § 5. `none` opts out of all automatic steps. |
+| `dependency-groups` | string (space-separated) | no | `dev` | Extra `uv sync --group` groups. For security commands add `security`. |
+| `runs-on` | string | no | `ubuntu-latest` | Runner label. Override for windows/macos/arm64 callers (`windows-latest`, `macos-latest`, `ubuntu-24.04-arm`). |
 | `timeout-minutes` | number | no | `20` | Job-level timeout. Increase for slow coverage suites. |
-| `fail-fast` | boolean | no | `false` | `strategy.matrix.fail-fast`. Flip on for fast-fail on multi-version callers. |
+| `fail-fast` | boolean | no | `false` | `strategy.matrix.fail-fast`. |
+
+### 3.2 Pipeline scopes
+
+| Input | Type | Required | Default | Notes |
+|---|:---:|:---:|---|---|
+| `ruff-targets` | CSV string | no | `src tests` | Passed to `ruff format/check[/--fix]`. |
+| `mypy-targets` | CSV string | no | `src` | Passed to `mypy`. |
+| `pytest-targets` | string | no | `tests` | First positional arg of `pytest`. |
+| `setup-uv-version` | string | no | `latest` | Pinned in `astral-sh/setup-uv@v6`. |
+| `cache-suffix` | string | no | `""` (derived) | Cache key suffix; falls back to `environment-name`. See § 4 + `docs/VERSIONING.md`. |
+
+### 3.3 Coverage + reporting (Sprint B)
+
+| Input | Type | Required | Default | Notes |
+|---|:---:|:---:|---|---|
+| `coverage-output` | string | no | `coverage.xml` | Path under `working-directory` uploaded as an artifact. |
+| `pytest-args` | string | no | `""` | Free-form args appended after `pytest --tb=short <pytest-targets>`. Example: `'-n auto -p no:cacheprovider'`. For coverage data, add `--cov=<pkg> --cov-report=xml:<coverage-output>`. |
+| `coverage-threshold` | string | no | `""` | Numeric threshold (e.g. `"80"` or `"75.5"`) enforced via `coverage report --fail-under=N`. Empty disables. Requires `.coverage` to exist (caller adds `--cov` to `pytest-args`). |
+| `permissions-write` | boolean | no | `false` | Opt-in sticky PR coverage comment via `marocchino/sticky-pull-request-comment@v2`. The recipe grants `pull-requests: write` at the workflow level; if `permissions-write` is `false` (default) the step is skipped. |
+
+### 3.4 Sync flags (Sprint B)
+
+| Input | Type | Required | Default | Notes |
+|---|:---:|:---:|---|---|
+| `lock-check` | boolean | no | `false` | Drift detector: runs `uv lock --check` before sync. Exits non-zero if `uv.lock` is out of date relative to `pyproject.toml`. |
+| `frozen` | boolean | no | `false` | Pass `--frozen` to `uv sync` (no lock regeneration). Recommended for prod callers. Pairs naturally with `lock-check: true`. |
 
 ### Input validation
 
 The recipe runs a `Validate inputs` step before any other work. It bails
-out with `::error::` annotations if `environment-name`,
-`working-directory` or `python-versions` are empty, or if `commands`
-contains an unknown pipeline step. This keeps caller-side mistakes from
-producing confusing later errors.
+out with `::error::` annotations if:
+
+- `environment-name`, `working-directory`, or `runs-on` are empty.
+- `coverage-threshold` is set but non-numeric.
+- `permissions-write`, `lock-check`, or `frozen` is not `"true"`/`"false"`.
+- `commands` contains an unknown pipeline step.
+
+This keeps caller-side mistakes from producing confusing later errors.
 
 ---
 
@@ -113,15 +142,40 @@ per-Python-version + per-project isolation) see `docs/VERSIONING.md`
 ## 5. Valid pipeline commands
 
 The `commands` input is an ordered CSV. Steps run in the order listed.
+Commands are grouped by concern; commands within a group are mutually
+exclusive alternatives unless noted (e.g. `lint:ruff-format` and
+`lint:ruff-format-fix` are alternatives — never use both at once).
+
+### 5.1 Format / lint / typecheck
 
 | Command | Purpose | Underlying call |
 |---|---|---|
 | `lint:ruff-format` | Verify formatting | `uv run ruff format --check <ruff-targets>` |
+| `lint:ruff-format-fix` | Apply formatting (mutates files; **no commit**) | `uv run ruff format <ruff-targets>` |
 | `lint:ruff-check` | Static lint (rules) | `uv run ruff check <ruff-targets>` |
+| `lint:ruff-check-fix` | Apply safe autofixes (mutates files; **no commit**) | `uv run ruff check --fix <ruff-targets>` |
+| `lint:bandit` | Security linter (B101 skipped by default) | `uv run bandit --recursive <ruff-targets> --skip B101` |
 | `typecheck:mypy` | Static type check | `uv run mypy <mypy-targets>` |
-| `test:pytest` | Unit tests | `uv run pytest --tb=short <pytest-targets>` |
-| `coverage:upload` | Artifact upload of `<coverage-output>` | `actions/upload-artifact@v4`, always-run (uses `if: always()`) so partial failures still produce the artifact |
-| `none` | Opt out of all automatic steps | Manual `uv run ...` only |
+
+### 5.2 Tests + coverage
+
+| Command | Purpose | Underlying call |
+|---|---|---|
+| `test:pytest` | Unit tests | `uv run pytest --tb=short <pytest-targets> <pytest-args>` |
+| `coverage:upload` | Upload `<coverage-output>` artifact | `actions/upload-artifact@v4`, `if: always()` |
+
+### 5.3 Lockfile + security
+
+| Command | Purpose | Underlying call |
+|---|---|---|
+| `lock:check` | Drift detector between `pyproject.toml` and `uv.lock` | `uv lock --check` |
+| `security:pip-audit` | Audit transitive deps for known vulnerabilities | `uv run pip-audit --strict` |
+
+### 5.4 Escape hatch
+
+| Command | Purpose | Notes |
+|---|---|---|
+| `none` | Opt out of all automatic steps | Reserved for callers who want only manual `uv run ...` steps in addition to the recipe's required Validate / Checkout / Install uv / Set up Python. |
 
 Unknown commands bail out in `Validate inputs` with the list of allowed
 values. This is intentional: silent step skipping caused several Sprint 0
@@ -169,13 +223,12 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
-      python-versions: '"3.12"'
       working-directory: .
       commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
       dependency-groups: dev bedrock
 ```
 
-### 7.2 Multi-Python matrix with fail-fast
+### 7.2 Multi-Python matrix with fail-fast (post-upstream-fix)
 
 ```yaml
 jobs:
@@ -183,16 +236,58 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
     with:
       environment-name: ci
-      python-versions: '"3.11","3.12","3.13"'
+      # python-versions: '"3.11","3.12","3.13"'  # uncomment post GHA-bug-fix
       working-directory: .
       commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest
       dependency-groups: dev
-      cache-suffix: ${{ inputs.environment-name }}-${{ inputs.python-versions }}
+      cache-suffix: ${{ inputs.environment-name }}
       timeout-minutes: 30
       fail-fast: true
 ```
 
-### 7.3 Self-test: invoke on a fixture inside the same repo (Sprint D pattern)
+### 7.3 Sprint B security-heavy caller
+
+```yaml
+# Caller that runs pip-audit + bandit on every PR.
+jobs:
+  qa:
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    with:
+      environment-name: ci
+      working-directory: .
+      commands: lint:ruff-format,lint:ruff-check,lint:bandit,lock:check,typecheck:mypy,test:pytest,coverage:upload,security:pip-audit
+      dependency-groups: dev security
+      lock-check: true
+      pytest-args: '-p no:cacheprovider'
+      coverage-output: cobertura.xml
+      coverage-threshold: '85'
+```
+
+The caller's `[dependency-groups]` MUST include `security` when `security:pip-audit`
+or `lint:bandit` are in `commands`, otherwise those steps fail with
+`command not found`.
+
+### 7.4 Sprint B prod caller with frozen sync
+
+```yaml
+jobs:
+  qa:
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    with:
+      environment-name: prod
+      working-directory: .
+      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest
+      dependency-groups: dev bedrock
+      lock-check: true
+      frozen: true
+      timeout-minutes: 30
+```
+
+`lock-check: true` verifies the locked dep set is still coherent; `frozen: true`
+prevents the post-deploy install from regenerating `uv.lock` (caller is expected
+to have already promoted the lockfile).
+
+### 7.5 Self-test: invoke on a fixture inside the same repo (Sprint D pattern)
 
 ```yaml
 # .github/workflows/ci.yml — self-test of python-ci.yml itself
@@ -208,8 +303,10 @@ jobs:
       # see DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md). The self-test therefore
       # exercises the single-version variant.
       working-directory: tests/fixtures/python-project
-      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
-      dependency-groups: dev lint
+      commands: lint:ruff-format,lint:ruff-check,lock:check,typecheck:mypy,test:pytest,coverage:upload,lint:bandit,security:pip-audit
+      dependency-groups: dev lint security
+      lock-check: true
+      frozen: true
       ruff-targets: example tests
       mypy-targets: example
       pytest-targets: tests
@@ -217,43 +314,35 @@ jobs:
 
 This pattern is what `spark-match-01-devops/.github/workflows/ci.yml`
 runs on every PR. The fixture (`tests/fixtures/python-project/`) is a
-two-module, three-test dummy project with `dev` + `lint` dependency
-groups; it exists solely to dogfood the recipe.
+two-module, three-test dummy project with `dev`, `lint`, and `security`
+dependency groups; it exists solely to dogfood the recipe. The `lock-check` and
+`frozen` inputs are exercised on the fixture (which has a real `uv.lock`)
+to validate those features each PR.
 
 ---
 
 ## 8. Known limitations / backlog
 
-These are tracked in `PENDIENTES-CI-CD.md` and explicitly **not**
-implemented yet:
+These are tracked in `PENDIENTES-CI-CD.md`.
 
-- `pytest-args` (extra flags like `-n auto`, `--maxfail=1 -p no:cacheprovider`) — Sprint B.
-- `coverage-threshold` (fail under `coverage report --fail-under=N`) — Sprint B.
-- `permissions-write` opt-in for sticky PR comments with coverage delta — Sprint B.
-- `lock-check` (`uv lock --check` before sync) — Sprint B.
-- `frozen` (`uv sync --frozen` for prod callers) — Sprint B.
-- `pip-audit` extra command — Sprint B.
+### 8.0 Already shipped (Sprint B)
+
+- `pytest-args` (free-form pytest flags) — see § 3.3.
+- `coverage-threshold` (`coverage report --fail-under=N`) — see § 3.3.
+- `permissions-write` (sticky PR coverage comment opt-in) — see § 3.3 + § 5.2.
+- `lock-check` (`uv lock --check` drift detector) — see § 3.4.
+- `frozen` (`uv sync --frozen` for prod callers) — see § 3.4.
+- `runs-on` (override runner label for windows/macos/arm64) — see § 3.1.
+- `security:pip-audit` command — see § 5.3.
+- `lint:bandit` command — see § 5.1.
+- `lint:ruff-format-fix` / `lint:ruff-check-fix` commands (mutating, no commit) — see § 5.1 + § 8.2.
+- `lock:check` command (alias for the `lock-check: true` input) — see § 5.3.
+
+### 8.1 Still pending (Sprint C / separate)
+
 - `sync-mode` input ∈ {full, runtime-only, lint-only} — Sprint C.
 - `actions/checkout@v8` bump — separate track.
-
-Once Sprint B lands, this document should be extended with the new
-inputs (mirror the table in § 3).
-
-#### 8.1 Hardcoded Python version (Sprint D followup)
-
-As shipped on `@main`, the recipe matrix is hardcoded to `["3.12"]`
-because cross-owner `workflow_call` invocations reject
-`strategy.matrix.*` references to `${{ inputs.* }}` in
-
-`on.workflow_call` callers. Diagnosed in
-`DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md`. A bug report has been drafted
-(`GHA-BUG-REPORT-DRAFT.md`) and is pending submission to
-`support@github.com`.
-
-When that bug is fixed upstream AND `python-versions` becomes a real
-input again, the self-test fixture can be re-introduced with a
-multi-version matrix (e.g. `["3.11","3.12"]`) to exercise the new
-input. Until then, callers and self-tests target 3.12.
+- `runner-images`-preset for ARM64 — separate track.
 
 ---
 
