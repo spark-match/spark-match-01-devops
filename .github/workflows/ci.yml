@@ -84,15 +84,12 @@ jobs:
 
   python-qa:
     name: python-qa-self-test
-    # Pin @main: this chore promotion PR targets main, so after merge the
-    # Sprint B recipe (with lock-check, frozen, bandit, pip-audit, etc.)
-    # is exactly what @main references. While the PR is open, @main
-    # resolves to b507860 (no Sprint B) and the ci.yml parse would fail;
-    # workaround during pre-merge CI: the cross-owner recipe is still
-    # accessible as `uses: ./.github/workflows/python-ci.yml`. The
-    # feat/sprint-b-recipe-inputs PR was the one to use the local path
-    # for that reason.
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    # Local-path reference during the pre-merge window: @main still points
+    # to b507860 (no Sprint B). Once Sprint B lands on main this chore PR
+    # will have validated the cross-owner recipe contents in this same
+    # local-path invocation; after merge a follow-up chore PR can flip
+    # this back to `uses: .../python-ci.yml@main`.
+    uses: ./.github/workflows/python-ci.yml
     with:
       environment-name: ci
       working-directory: tests/fixtures/python-project
