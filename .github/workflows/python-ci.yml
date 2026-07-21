@@ -97,7 +97,7 @@ on:
         required: false
         default: 'latest'
       cache-suffix:
-        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). When empty (default), the recipe auto-composes it as `<environment-name>-<python-versions>` so the cache is scoped per-environment + per-Python-version. Set explicitly only if you need a finer partition.'
+        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). When empty (default), the recipe falls back to `environment-name` so the cache is scoped per-environment. Set explicitly only if you need a finer partition. Per-Python-version isolation is implicit (each matrix leg is a separate job).'
         type: string
         required: false
         default: ''
@@ -168,7 +168,7 @@ jobs:
         with:
           version: ${{ inputs.setup-uv-version }}
           enable-cache: true
-          cache-suffix: ${{ inputs.cache-suffix != '' && inputs.cache-suffix || format('{0}-{1}', inputs.environment-name, inputs.python-versions) }}
+          cache-suffix: ${{ inputs.cache-suffix || inputs.environment-name }}
           cache-dependency-glob: |
             ${{ inputs.working-directory }}/pyproject.toml
             ${{ inputs.working-directory }}/uv.lock
@@ -229,7 +229,7 @@ jobs:
             echo "| Python versions | \`${{ inputs.python-versions }}\` (active: \`${{ matrix.python-version }}\`) |"
             echo "| Working directory | \`${{ inputs.working-directory }}\` |"
             echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
-            echo "| Cache suffix | \`${{ inputs.cache-suffix != '' && inputs.cache-suffix || format('{0}-{1}', inputs.environment-name, inputs.python-versions) }}\` |"
+            echo "| Cache suffix | \`${{ inputs.cache-suffix || inputs.environment-name }}\` |"
             echo "| Timeout (min) | \`${{ inputs.timeout-minutes }}\` |"
             echo "| Fail-fast | \`${{ inputs.fail-fast }}\` |"
             echo "| Pipeline steps | \`${{ inputs.commands }}\` |"
