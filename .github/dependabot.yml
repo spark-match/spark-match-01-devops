@@ -49,3 +49,15 @@ updates:
       third-party-actions:
         patterns:
           - "*"
+    # Forward the Gitleaks license to Dependabot-triggered workflows so the
+    # gitleaks.yml recipe can run. By default GitHub does NOT forward repo
+    # secrets to Dependabot contexts (security: keep blast radius small).
+    # Adding the secret here grants the access to workflows run by
+    # Dependabot PRs only. To complete the wiring, also add the secret at
+    # GitHub Settings -> Code security and analysis -> Dependabot ->
+    # Secrets (UI step; not automatable via YAML).
+    dependabot:
+      secrets:
+        GITLEAKS_LICENSE:
+          description: "License key for gitleaks/gitleaks-action@v3 (organization-tier). Mirrors the repo-level secret of the same name. Without this, dependabot-triggered PRs fail gitleaks with 'missing gitleaks license'."
+          required: false
