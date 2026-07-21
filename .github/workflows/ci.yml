@@ -113,7 +113,9 @@ jobs:
     #   - downstream step guards (the non-lint commands are simply not
     #     listed in `commands`, so they are skipped; lint-only must succeed
     #     with just the `lint` group).
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    # Uses LOCAL path (not @main) because this Sprint C input is not yet
+    # on main when this PR lands. Once promoted, swap to @main.
+    uses: ./.github/workflows/python-ci.yml
     with:
       environment-name: ci-lint-only
       working-directory: tests/fixtures/python-project
