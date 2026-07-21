@@ -84,8 +84,10 @@ jobs:
     with:
       environment-name: ci
       working-directory: tests/fixtures/python-project
-      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
-      dependency-groups: dev lint
+      commands: lint:ruff-format,lint:ruff-check,lint:bandit,lock:check,typecheck:mypy,test:pytest,coverage:upload,security:pip-audit
+      dependency-groups: dev lint security
+      lock-check: true
+      frozen: true
       ruff-targets: example tests
       mypy-targets: example
       pytest-targets: tests
