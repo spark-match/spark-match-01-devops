@@ -7,8 +7,18 @@
 #
 # Schedule: weekly on Mondays at 06:00 UTC.
 # Labels: every PR gets "dependencies" so triage is easy.
-# Groups: all action updates are batched into a single PR to reduce noise.
+# Groups: all action updates are batched into named groups to reduce noise.
 # Commit prefix: "ci" so the history groups well with other CI changes.
+#
+# Group rationale:
+#   - aws-actions: stable cadence from AWS (configure-aws-credentials,
+#     setup-sam). Bundling avoids cross-PR conflicts.
+#   - actions/*:  actions/checkout, actions/setup-node, etc. - generic GH
+#     ecosystem, generally backward-compatible within major.
+#   - marocchino: pinned to v3 (sticky-pull-request-comment). Grouped
+#     separately so it doesn't get mixed with major bumps.
+#   - third-party: anything else (rhysd/actionlint via raw URL is not
+#     on this list - it stays manual).
 # =============================================================================
 
 version: 2
@@ -26,6 +36,16 @@ updates:
     labels:
       - "dependencies"
     groups:
-      github-actions:
+      aws-actions:
+        patterns:
+          - "aws-actions/*"
+      actions-ecosystem:
+        patterns:
+          - "actions/*"
+          - "github/*"
+      marocchino:
+        patterns:
+          - "marocchino/*"
+      third-party-actions:
         patterns:
           - "*"
