@@ -80,7 +80,12 @@ jobs:
 
   python-qa:
     name: python-qa-self-test
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    # Local-path reference: the Sprint B recipe (this PR) is what we
+    # need to exercise. Pinning `@main` would fail GHA parse because
+    # `lock-check` / `frozen` / etc. don't exist on the @main recipe
+    # until Sprint B is promoted. Switching back to `@main` happens as
+    # a follow-up commit in the chore promotion PR.
+    uses: ./.github/workflows/python-ci.yml
     with:
       environment-name: ci
       working-directory: tests/fixtures/python-project
