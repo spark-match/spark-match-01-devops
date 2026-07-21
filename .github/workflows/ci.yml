@@ -11,9 +11,10 @@
 #           concurrency: cancel-in-progress: true keeps the active one.
 #
 # Action: Run the atomic ecosystem recipes (actionlint, gitleaks, yamllint)
-#         on the repository itself. This is a self-test: if a recipe is
-#         broken, ci.yml shows red and the team fixes it before consumers
-#         (orion-backend, orion-infrastructure, etc.) get a bad reference.
+#         plus a Python QA self-test of the `python-ci.yml` recipe. This is a
+#         self-test: if a recipe is broken, ci.yml shows red and the team
+#         fixes it before consumers (orion-backend, orion-infrastructure,
+#         etc.) get a bad reference.
 #
 # Each job calls the corresponding reusable workflow via a local path
 # (`./ecosystem/<name>.yml`). When merged, the same recipes become available
@@ -23,6 +24,14 @@
 # Other layers (node/eslint, deploy/sam-deploy, deploy/terraform-*)
 # are NOT exercised here since the devops repo itself has no Node project
 # or SAM stack to deploy. They are exercised by the consumer repos.
+#
+# The Python QA self-test runs against `tests/fixtures/python-project/`,
+# a minimal dummy project that dogfoods the `python-ci.yml` recipe with
+# two dependency groups (`dev`, `lint`) on a single Python version
+# (3.12 hardcoded in the recipe; multi-version matrix is blocked by the
+# upstream GHA bug documented in `DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md`
+# and DIAGNOSTICO-GHA-MATRIX-CROSSOWNER-UPDATE.md — see § 8 of
+# `docs/PYTHON-CI.md` for the full back-reference).
 # =============================================================================
 
 name: CI - Lint & Security
@@ -68,3 +77,15 @@ jobs:
     uses: ./.github/workflows/yamllint.yml
     with:
       environment-name: ci
+
+  python-qa:
+    name: python-qa-self-test
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    with:
+      environment-name: ci
+      working-directory: tests/fixtures/python-project
+      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
+      dependency-groups: dev lint
+      ruff-targets: example tests
+      mypy-targets: example
+      pytest-targets: tests
