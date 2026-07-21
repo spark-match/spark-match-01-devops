@@ -328,7 +328,7 @@ jobs:
             --no-paginate \
             --output json)"
           echo "$RESPONSE"
-          INVALIDATION_ID="$(echo "$RESPONSE" | jq -r '.Invalidation.Id // unknown')"
+          INVALIDATION_ID="$(echo "$RESPONSE" | jq -r '.Invalidation.Id // "unknown"')"
           echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
 
       - name: Deploy summary
