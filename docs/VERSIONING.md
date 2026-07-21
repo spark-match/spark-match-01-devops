@@ -47,8 +47,12 @@ Estructura actual bajo `.github/workflows/`:
 +-- tflint.yml                   # Atomic (ecosystem): tflint --recursive
 +-- checkov.yml                  # Atomic (ecosystem): checkov SCA
 +-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
++-- python-ci.yml                # Atomic (python): uv + ruff + mypy + pytest (or-cog-agent, otros proyectos Python uv-based)
 +-- sam-deploy.yml               # Atomic (deploy): sam build + deploy, samconfig env, layers build
 +-- angular-spa-deploy.yml       # Atomic (deploy): Angular SPA -> S3 + CloudFront, build + sync + invalidate
++-- container-deploy-ecr.yml     # Atomic (deploy): docker buildx + ECR push (or-cog-agent, otros proyectos container-based)
++-- latex-build.yml              # Atomic (article-side): latexmk → PDF
++-- latex-release.yml            # Atomic (article-side): release of compiled PDF
 ```
 
 ### `angular-spa-deploy.yml`
@@ -82,5 +86,10 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
 ### Como prueba de cambios
 
 1. `ci.yml` (self-test) corre los 3 ecosystem recipes sobre este repo en cada PR.
-2. Cambios que afectan a recipes de `node/` o `deploy/` requieren un caller externo para smoke test (orion-backend, orion-infrastructure).
-3. Una vez verde en `ci.yml` + smoke test en `orion-backend@dev`, el cambio se promueve a `main` con un PR `dev` -> `main`.
+2. Cambios que afectan a recipes de `python/`, `node/` o `deploy/` requieren un caller externo para smoke test:
+   - `python-ci.yml`: smoke test en `orion-cognitive-agent@dev`
+   - `node/eslint.yml`: smoke test en `orion-frontend@dev`
+   - `deploy/sam-deploy.yml`: smoke test en `orion-backend@dev`
+   - `deploy/container-deploy-ecr.yml`: smoke test en `orion-cognitive-agent@dev`
+   - `deploy/terraform-plan.yml` + `deploy/terraform-apply.yml`: smoke test en `orion-infrastructure@dev`
+3. Una vez verde en `ci.yml` + smoke test en el caller externo, el cambio se promueve a `main` con un PR `dev` -> `main`.
