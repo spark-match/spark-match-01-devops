@@ -83,6 +83,33 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
 - **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (ahincho/orion-backend -> spark-match).
 - **Pin de herramientas externas.** actionlint v1.7.7, yamllint 1.35.1, eslint version parametrizable via input, terraform version parametrizable via input, sam-cli version parametrizable via input.
 
+### Cache semantics (per-environment + per-Python-version)
+
+A partir del recipe `python-ci.yml` v3.1, las dependencias gestionadas por
+`uv` se cachean en GH Actions con una clave **compuesta**:
+
+```
+cache-key = setup-uv-ubuntu-latest-<cache-suffix>-<hash(pyproject+uv.lock)>
+```
+
+donde `<cache-suffix>` se deriva por defecto de
+`environment-name` + `python-versions`. Esto garantiza tres
+aislamientos:
+
+| Dimension | Mecanismo | Razon |
+|---|---|---|
+| **per-ambiente** | `cache-suffix` incluye `environment-name` | `ci`, `dev`, `prod` no comparten cache aunque lockfiles colisionen (e.g. `--group bedrock` vs `--group market`) |
+| **per-Python-version** | (a) `cache-suffix` incluye `python-versions` + (b) cada matrix leg es un job GH Actions separado | un caller que valida `python-versions: '"3.11","3.12"'` no envenena la cache de un pin `3.12`-only |
+| **per-proyecto** | `cache-dependency-glob` hashea `pyproject.toml` + `uv.lock` | monorepos con multiples `working-directory` no comparten |
+
+**Override:** un caller puede pasar `cache-suffix` explicitamente
+(e.g. `'${{ inputs.environment-name }}-${{ inputs.python-versions }}-${{ github.run_id }}'`)
+si quiere purga cache en cada run (raro; casi siempre no se necesita).
+
+**Backward compatibility:** recipes con un solo `python-version` y un
+solo `environment-name` ven `cache-suffix` igual al hash anterior. Los
+callers existentes no requieren cambios.
+
 ### Como prueba de cambios
 
 1. `ci.yml` (self-test) corre los 3 ecosystem recipes sobre este repo en cada PR.
