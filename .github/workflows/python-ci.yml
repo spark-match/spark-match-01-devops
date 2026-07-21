@@ -398,7 +398,7 @@ jobs:
 
       - name: Sticky coverage PR comment
         if: ${{ always() && inputs.permissions-write == 'true' && contains(inputs.commands, 'coverage:upload') }}
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: python-ci-coverage-${{ inputs.environment-name }}
           message: |
