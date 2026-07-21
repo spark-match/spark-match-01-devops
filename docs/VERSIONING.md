@@ -119,7 +119,7 @@ callers existentes no requieren cambios.
 1. `ci.yml` (self-test) corre los 3 ecosystem recipes (actionlint, gitleaks,
    yamllint) **mas el nuevo self-test de `python-ci.yml`** sobre este repo
    en cada PR. El self-test de Python corre contra
-   `tests/fixtures/python-project/` con un solo Python (3.12, hardcoded en
+`tests/fixtures/python-project/` con un solo Python (3.12, hardcoded en
    el recipe por el bug cross-owner de GHA — ver `docs/PYTHON-CI.md` § 8.1)
    y grupos de dependencias `dev lint`. Esto dogfood el recipe localmente;
    los cambios puramente recipe-internos (no caller-specific) ya no
