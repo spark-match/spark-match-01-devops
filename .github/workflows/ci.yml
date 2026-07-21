@@ -50,6 +50,10 @@ on:
 
 permissions:
   contents: read
+  # Required by the python-ci.yml recipe's sticky PR coverage comment
+  # step (gated by `permissions-write: true`). The step is skipped when
+  # the input is false, so this permission is idle in most runs.
+  pull-requests: write
 
 # Cancel in-progress runs for the same PR + branch. Saves runner minutes on
 # rapid pushes. The cancel-in-progress: true is safe for lint jobs (idempotent).
@@ -80,12 +84,22 @@ jobs:
 
   python-qa:
     name: python-qa-self-test
+    # Pin @main: this chore promotion PR targets main, so after merge the
+    # Sprint B recipe (with lock-check, frozen, bandit, pip-audit, etc.)
+    # is exactly what @main references. While the PR is open, @main
+    # resolves to b507860 (no Sprint B) and the ci.yml parse would fail;
+    # workaround during pre-merge CI: the cross-owner recipe is still
+    # accessible as `uses: ./.github/workflows/python-ci.yml`. The
+    # feat/sprint-b-recipe-inputs PR was the one to use the local path
+    # for that reason.
     uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
       working-directory: tests/fixtures/python-project
-      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
-      dependency-groups: dev lint
+      commands: lint:ruff-format,lint:ruff-check,lint:bandit,lock:check,typecheck:mypy,test:pytest,coverage:upload,security:pip-audit
+      dependency-groups: dev lint security
+      lock-check: true
+      frozen: true
       ruff-targets: example tests
       mypy-targets: example
       pytest-targets: tests
