@@ -192,6 +192,20 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+          # Resolve lowercase runner OS (linux | windows | macos) and lowercase
+          # env name for the canonical cache key. GH Actions expression language
+          # has no `lower()` function, so we lower-case in shell and expose via
+          # $GITHUB_ENV for downstream steps (actions/cache key).
+          LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          case "$LOWER_OS" in
+            linux|windows|macos) ;;
+            *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
+          esac
+          echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
+
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -212,16 +226,17 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          # Canonical cache key convention (lowercase):
+          # Canonical cache key convention (lowercase, see docs/CACHE.md):
           #   <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
-          # - os         : lower(runner.os)           linux | windows | macos
-          # - nodeVersion: inputs.node-version        (e.g. 24)
-          # - pkgmanager : inputs.pkg-manager         (npm | pnpm | yarn | bun)
-          # - env        : lower(inputs.env)          dev | prod | ci
+          # - os         : ${{ env.lower_os }}        linux | windows | macos
+          #                   (lowercased in the Validate inputs step above)
+          # - nodeVersion: ${{ inputs.node-version }} (e.g. 24)
+          # - pkgmanager : ${{ inputs.pkg-manager }}  (npm | pnpm | yarn | bun)
+          # - env        : ${{ env.env_name }}        (lowercased env name)
           # - H          : sha256(<lockfile-name>)    single file (no glob)
-          key: ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ lower(inputs.environment-name) }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
+          key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
-            ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ lower(inputs.environment-name) }}-
+            ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
 
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@v6

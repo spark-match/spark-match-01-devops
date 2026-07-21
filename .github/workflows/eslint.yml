@@ -80,6 +80,22 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
 
     steps:
+      - name: Resolve cache key tags
+        # Lowercase runner.os + environment-name into env vars so the
+        # canonical cache key convention can be expressed in actions/cache
+        # (GH Actions expression language has no `lower()` function).
+        run: |
+          set -euo pipefail
+          LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          case "$LOWER_OS" in
+            linux|windows|macos) ;;
+            *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
+          esac
+          echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} eslint=${{ inputs.eslint-version }} env=$ENV_NAME"
+
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -95,14 +111,14 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          # Canonical cache key convention (lowercase):
+          # Canonical cache key convention (lowercase, see docs/CACHE.md):
           #   <os>-node-<nodeVersion>-<pkgmanager>-eslint<major>-<env>-<H>
           # - eslint<major> is intentionally between pkgmanager and env so
           #   rollback to a previous ESLint major invalidates the cache
           #   without affecting other recipes in the same env.
-          key: ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ lower(inputs.environment-name) }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
+          key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
-            ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ lower(inputs.environment-name) }}-
+            ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ env.env_name }}-
 
       - name: Install dependencies
         run: npm ci
