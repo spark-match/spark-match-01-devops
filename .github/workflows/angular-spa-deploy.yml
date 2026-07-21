@@ -257,6 +257,7 @@ jobs:
         run: npm run ${{ inputs.build-script }}
 
       - name: Verify build output exists
+        id: artifact
         run: |
           set -euo pipefail
           ARTIFACT="${{ inputs.artifact-path }}"
@@ -269,10 +270,35 @@ jobs:
             exit 1
           fi
           echo "Build artifact OK at $ARTIFACT"
+          # Capture bundle fingerprint + size for the deploy summary.
+          MAIN_JS="$(grep -oE 'main-[A-Za-z0-9_-]+\.js' "$ARTIFACT/index.html" | head -1 || true)"
+          STYLES="$(grep -oE 'styles-[A-Za-z0-9_-]+\.css' "$ARTIFACT/index.html" | head -1 || true)"
+          FILE_COUNT="$(find "$ARTIFACT" -type f | wc -l | tr -d ' ')"
+          TOTAL_BYTES="$(find "$ARTIFACT" -type f -printf '%s\n' | awk '{s+=$1} END {print s+0}')"
+          {
+            echo "main_js=$MAIN_JS"
+            echo "styles=$STYLES"
+            echo "file_count=$FILE_COUNT"
+            echo "total_bytes=$TOTAL_BYTES"
+          } >> "$GITHUB_OUTPUT"
+          echo "Bundle: main_js=${MAIN_JS:-n/a} styles=${STYLES:-n/a} files=${FILE_COUNT} bytes=${TOTAL_BYTES}"
           # shellcheck disable=SC2012
           ls -la "$ARTIFACT" | head -20
 
+      - name: Resolve CloudFront domain
+        id: cf_domain
+        # Non-blocking lookup of the distribution domain for the summary.
+        run: |
+          set -euo pipefail
+          DOMAIN="$(aws cloudfront get-distribution \
+            --id "${{ inputs.cloudfront-distribution-id }}" \
+            --query 'Distribution.DomainName' \
+            --output text 2>/dev/null || echo unknown)"
+          echo "domain=$DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "CloudFront domain: $DOMAIN"
+
       - name: Sync to S3 (delete stale files)
+        id: sync
         run: |
           set -euo pipefail
           SYNC_ARGS="--delete"
@@ -280,20 +306,30 @@ jobs:
             SYNC_ARGS="$SYNC_ARGS ${{ inputs.sync-extra-args }}"
           fi
           echo "Running: aws s3 sync ${{ inputs.artifact-path }}/ s3://${{ inputs.s3-bucket }}/ $SYNC_ARGS"
+          # Capture sync counts (uploaded / deleted) for the summary.
           # shellcheck disable=SC2086
-          aws s3 sync "${{ inputs.artifact-path }}/" "s3://${{ inputs.s3-bucket }}/" $SYNC_ARGS
+          SYNC_OUTPUT="$(aws s3 sync "${{ inputs.artifact-path }}/" "s3://${{ inputs.s3-bucket }}/" $SYNC_ARGS 2>&1)"
+          echo "$SYNC_OUTPUT"
+          UPLOADED="$(printf '%s\n' "$SYNC_OUTPUT" | grep -c '^upload:' || true)"
+          DELETED="$(printf '%s\n' "$SYNC_OUTPUT" | grep -c '^delete:' || true)"
+          echo "uploaded_count=$UPLOADED" >> "$GITHUB_OUTPUT"
+          echo "deleted_count=$DELETED" >> "$GITHUB_OUTPUT"
 
       - name: CloudFront invalidation
+        id: invalidation
         run: |
           set -euo pipefail
           PATHS="${{ inputs.cloudfront-invalidation-paths }}"
           echo "Creating CloudFront invalidation on distribution ${{ inputs.cloudfront-distribution-id }} for paths: $PATHS"
           # Use --no-paginate so the output is readable in CI logs.
-          aws cloudfront create-invalidation \
+          RESPONSE="$(aws cloudfront create-invalidation \
             --distribution-id "${{ inputs.cloudfront-distribution-id }}" \
             --paths "$PATHS" \
             --no-paginate \
-            --output json
+            --output json)"
+          echo "$RESPONSE"
+          INVALIDATION_ID="$(echo "$RESPONSE" | jq -r '.Invalidation.Id // "unknown"')"
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
 
       - name: Deploy summary
         if: always()
@@ -303,18 +339,31 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
+            echo "| Status | \${{ job.status }} |"
             echo "| Environment | \`${{ inputs.environment-name }}\` |"
             echo "| AWS region | \`${{ inputs.aws-region }}\` |"
             echo "| S3 bucket | \`${{ inputs.s3-bucket }}\` |"
             echo "| CloudFront distribution | \`${{ inputs.cloudfront-distribution-id }}\` |"
+            echo "| CloudFront domain | \`${{ steps.cf_domain.outputs.domain }}\` |"
             echo "| Invalidation paths | \`${{ inputs.cloudfront-invalidation-paths }}\` |"
+            echo "| Invalidation id | \`${{ steps.invalidation.outputs.invalidation_id }}\` |"
             echo "| Build artifact | \`${{ inputs.artifact-path }}\` |"
+            echo "| Bundle fingerprint | \`${{ steps.artifact.outputs.main_js }}\` + \`${{ steps.artifact.outputs.styles }}\` |"
+            echo "| Files in bundle | ${{ steps.artifact.outputs.file_count }} |"
+            echo "| Bundle bytes | ${{ steps.artifact.outputs.total_bytes }} |"
+            echo "| S3 uploaded | ${{ steps.sync.outputs.uploaded_count }} |"
+            echo "| S3 deleted | ${{ steps.sync.outputs.deleted_count }} |"
             echo ""
-            if [ "${{ inputs.api-url }}" != "" ]; then
+            if [ -n "${{ inputs.api-url }}" ]; then
               echo "API_URL injected at build time."
+            else
+              echo "API_URL: empty (caller did not pass api-url)."
             fi
-            echo "Commit: ${{ github.sha }}"
-            echo "Triggered by: @${{ github.actor }}"
+            echo ""
+            echo "**Live URL**: https://${{ steps.cf_domain.outputs.domain }}/"
+            echo "**Commit**: \`${{ github.sha }}\`"
+            echo "**Triggered by**: @${{ github.actor }}"
+            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify on deploy failure

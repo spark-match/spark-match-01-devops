@@ -1,0 +1,107 @@
+# =============================================================================
+# Reusable Workflow: lambda-permission-source-arn - custom SAM guard
+# =============================================================================
+# Atomic recipe (ecosystem layer). Asserts that every AWS::Lambda::Permission
+# in the caller's SAM templates declares a SourceArn or SourceAccount.
+#
+# This is a custom check (Python stdlib regex scan) because cfn-nag does NOT
+# validate SourceArn/SourceAccount presence on Lambda::Permission. Its Lambda
+# rules only cover (W24) action is InvokeFunction and (F45) EventSourceToken
+# is not plaintext. The rationale and threat model are in
+#   orion-infrastructure/docs/adr/0007-api-gateway-authorizer-trust-policy.md
+# (cross-API confusion vulnerability when a Lambda authorizer is shared
+# across multiple HTTP APIs in the same account).
+#
+# Originally in orion-backend (scripts/check-lambda-permission-source-arn.py,
+# PRs #102, #104). Promoted to a shared recipe so any SAM-based ORION service
+# can pick it up without duplicating the script.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     lambda-permission-source-arn:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/lambda-permission-source-arn.yml@main
+#       with:
+#         environment-name: dev
+#         scan-paths: 'template.yaml contexts/'   # default
+#
+# Notes:
+#   - Pair this with cfn-nag.yml for full static-analysis coverage; the
+#     two recipes cover orthogonal rule sets.
+#   - The script is pure Python stdlib (no pip install). Tested on
+#     Python 3.11+; defaults to 3.12 to match the runner default.
+#   - Script lives at `scripts/check_lambda_permission_source_arn.py`
+#     in this repo. Callers do not need to copy it.
+#
+# Cross-owner safe: pure stdlib script, no secrets forwarded.
+# =============================================================================
+
+name: lambda-permission-source-arn
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      python-version:
+        description: 'Python version.'
+        type: string
+        required: false
+        default: '3.12'
+      scan-paths:
+        description: 'Space-separated roots to scan. Each root is resolved recursively for template.yaml files.'
+        type: string
+        required: false
+        default: 'template.yaml contexts/'
+
+permissions:
+  contents: read
+
+jobs:
+  lambda-permission-source-arn:
+    name: "lambda-permission-source-arn (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Resolve recipe directory
+        # When this reusable runs in the caller's repo, $GITHUB_ACTION_PATH
+        # is the directory of the calling action/workflow inside the
+        # CALLER's checkout (because the reusable is fetched by ref and
+        # GitHub copies its files into the runner workspace). To run the
+        # canonical script, we instead pull the file from the reusable's
+        # source repo via the GitHub API.
+        #
+        # Simpler approach: ship the script as a step input via a raw URL
+        # to the @main branch of this repo. The URL is parameterized so
+        # future forks can override without editing the workflow.
+        id: recipe
+        run: |
+          set -euo pipefail
+          RECIPE_OWNER="spark-match"
+          RECIPE_REPO="spark-match-01-devops"
+          RECIPE_REF="main"
+          SCRIPT_PATH="scripts/check_lambda_permission_source_arn.py"
+          URL="https://raw.githubusercontent.com/${RECIPE_OWNER}/${RECIPE_REPO}/${RECIPE_REF}/${SCRIPT_PATH}"
+          echo "Fetching canonical script from ${URL}"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            --output /tmp/check_lambda_permission_source_arn.py \
+            "${URL}"
+          chmod +x /tmp/check_lambda_permission_source_arn.py
+          python3 -c "import py_compile; py_compile.compile('/tmp/check_lambda_permission_source_arn.py', doraise=True)"
+          echo "Script fetched and syntax-checked."
+
+      - name: Run lambda-permission-source-arn check
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086
+          python3 /tmp/check_lambda_permission_source_arn.py ${{ inputs.scan-paths }}

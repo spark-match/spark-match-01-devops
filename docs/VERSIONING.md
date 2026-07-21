@@ -119,9 +119,10 @@ callers existentes no requieren cambios.
 1. `ci.yml` (self-test) corre los 3 ecosystem recipes (actionlint, gitleaks,
    yamllint) **mas el nuevo self-test de `python-ci.yml`** sobre este repo
    en cada PR. El self-test de Python corre contra
-   `tests/fixtures/python-project/` con matrix `[3.11, 3.12]` y grupos de
-   dependencias `dev lint`. Esto dogfood el recipe localmente; los
-   cambios puramente recipe-internos (no caller-specific) ya no
+`tests/fixtures/python-project/` con un solo Python (3.12, hardcoded en
+   el recipe por el bug cross-owner de GHA — ver `docs/PYTHON-CI.md` § 8.1)
+   y grupos de dependencias `dev lint`. Esto dogfood el recipe localmente;
+   los cambios puramente recipe-internos (no caller-specific) ya no
    requieren smoke test externo obligatorio.
 2. Cambios que afectan a recipes de `python/`, `node/` o `deploy/` aun pueden requerir un caller externo para smoke test cuando el layout del caller introduce variables que el self-test interno no cubre:
    - `python-ci.yml`: smoke test en `orion-cognitive-agent@dev` (caller canonico de produccion)

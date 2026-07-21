@@ -84,11 +84,12 @@ jobs:
 
   python-qa:
     name: python-qa-self-test
-    # Local-path reference: the Sprint B recipe (this PR) is what we
-    # need to exercise. Pinning `@main` would fail GHA parse because
-    # `lock-check` / `frozen` / etc. don't exist on the @main recipe
-    # until Sprint B is promoted. Switching back to `@main` happens as
-    # a follow-up commit in the chore promotion PR.
+    # Local-path reference during the pre-merge window: @main still points
+    # to b507860 (no Sprint B). Once Sprint B lands on main this chore PR
+    # will have validated the cross-owner recipe contents in this same
+    # local-path invocation; after merge a follow-up chore PR can flip
+    # this back to `uses: .../python-ci.yml@main`.
+    uses: ./.github/workflows/python-ci.yml
     uses: ./.github/workflows/python-ci.yml
     with:
       environment-name: ci

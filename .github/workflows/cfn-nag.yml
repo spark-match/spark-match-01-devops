@@ -1,0 +1,112 @@
+# =============================================================================
+# Reusable Workflow: cfn-nag - CloudFormation static analysis
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs cfn-nag against the caller's SAM
+# templates with a caller-provided config file. cfn-nag is the de-facto
+# CloudFormation linter for AWS; it ships with rules that flag overly
+# permissive IAM, missing encryption, public S3 buckets, etc.
+#
+# cfn-nag has known gaps (it does NOT validate Lambda::Permission
+# SourceArn/SourceAccount, only action/eventSourceToken), so pair this
+# recipe with the lambda-permission-source-arn reusable for full coverage.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     cfn-nag:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/cfn-nag.yml@main
+#       with:
+#         environment-name: dev
+#         cfn-nag-version: '0.8.10'    # default; pin for reproducibility
+#         ruby-version: '3.3'          # default
+#         scan-paths: 'template.yaml contexts/'  # default
+#         config-path: '.cfn-nag.yml'  # default; omit to use cfn-nag defaults
+#
+# Notes:
+#   - cfn-nag is a Ruby gem; we install it via `gem install cfn-nag`.
+#     The `cfn_nag_scan` binary (underscore, not cfn-nag) is what actually
+#     runs the scan.
+#   - `--output-format txt` is the default; switch to `json` for
+#     downstream tooling that needs structured output.
+#   - Config file path is optional. Callers that need to override the
+#     default ruleset can ship a `.cfn-nag.yml` and point `config-path`
+#     at it. The config file lives in the caller's repo (caller-controlled).
+#   - cfn-nag 0.8.10 + Ruby 3.3 are the canonical pin (matches
+#     orion-backend PR #102, validated end-to-end with SAM CLI 1.163).
+#
+# Cross-owner safe: pure CLI check, no secrets forwarded.
+# =============================================================================
+
+name: cfn-nag
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      cfn-nag-version:
+        description: 'cfn-nag gem version (X.Y.Z). Pin for reproducible lint output.'
+        type: string
+        required: false
+        default: '0.8.10'
+      ruby-version:
+        description: 'Ruby version.'
+        type: string
+        required: false
+        default: '3.3'
+      scan-paths:
+        description: 'Space-separated paths/globs to scan. Default = SAM root template + contexts/ subdir.'
+        type: string
+        required: false
+        default: 'template.yaml contexts/'
+      config-path:
+        description: 'Optional path to a caller-provided .cfn-nag.yml config (omit to use defaults).'
+        type: string
+        required: false
+        default: '.cfn-nag.yml'
+      output-format:
+        description: 'cfn-nag output format (txt, json, csv).'
+        type: string
+        required: false
+        default: 'txt'
+
+permissions:
+  contents: read
+
+jobs:
+  cfn-nag:
+    name: "cfn-nag (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Setup Ruby ${{ inputs.ruby-version }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby-version }}
+          # Bundler not required: we install cfn-nag as a system gem.
+
+      - name: Install cfn-nag (pinned ${{ inputs.cfn-nag-version }})
+        # `gem install` (no `bundle install`) because the caller does not
+        # ship a Gemfile. The cfn-nag gem ships both the `cfn-nag` CLI
+        # wrapper and the `cfn_nag_scan` underscore binary; only the
+        # latter is needed for scans.
+        run: gem install cfn-nag --no-document --version "${{ inputs.cfn-nag-version }}"
+
+      - name: Run cfn-nag
+        # `cfn_nag_scan` (underscore binary) takes the same args as the
+        # hyphen wrapper. We pass --input-directory + --output-format so
+        # the recipe works regardless of how the caller lays out their
+        # templates.
+        run: |
+          set -euo pipefail
+          ARGS=(--input-directory . --output-format "${{ inputs.output-format }}")
+          if [ -f "${{ inputs.config-path }}" ]; then
+            ARGS+=(--config-path "${{ inputs.config-path }}")
+          fi
+          # shellcheck disable=SC2086
+          cfn_nag_scan "${ARGS[@]}"
