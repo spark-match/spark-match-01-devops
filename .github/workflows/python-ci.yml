@@ -168,7 +168,7 @@ jobs:
         with:
           version: ${{ inputs.setup-uv-version }}
           enable-cache: true
-          cache-suffix: ${{ inputs.cache-suffix || inputs.environment-name }}
+          cache-suffix: ${{ inputs.cache-suffix }}
           cache-dependency-glob: |
             ${{ inputs.working-directory }}/pyproject.toml
             ${{ inputs.working-directory }}/uv.lock
