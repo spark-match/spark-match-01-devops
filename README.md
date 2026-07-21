@@ -226,6 +226,56 @@ jobs:
       # lint-script defaults to "lint"
 ```
 
+### python
+
+#### `python-ci.yml`
+
+Runs a Python project's QA pipeline using `uv` for dependency management, then `ruff` + `mypy` + `pytest` for static analysis + tests. Designed for projects that pin Python in `.python-version` and lock via `uv.lock`. The recipe is GENERIC: it does not assume a specific project layout beyond `pyproject.toml` + `uv.lock` in `working-directory`.
+
+Each step is gated by an entry in the CSV `commands` input, so callers can opt into any subset (e.g. skip `mypy` on a legacy codebase, or skip `coverage:upload` if the project doesn't generate coverage). Defaults run the full QA set + upload coverage as an artifact.
+
+Inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment-name | string | — (required) | Used as job name + optional GH Environment gate. |
+| python-versions | string | `"3.12"` | JSON list, fed into the matrix via `fromJSON()`. Use `'"3.11","3.12"'` for multi-version. |
+| working-directory | string | `.` | Where `pyproject.toml` + `uv.lock` live. |
+| commands | string | `lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload` | CSV; valid steps: `lint:ruff-format`, `lint:ruff-check`, `typecheck:mypy`, `test:pytest`, `coverage:upload`, `none` (manual-mode only). |
+| dependency-groups | string | `dev` | Passed to `uv sync --group` (space-separated). Use `dev bedrock` to also enable a `bedrock` group. |
+| ruff-targets | string | `src tests` | CSV of paths for `ruff format/check`. |
+| mypy-targets | string | `src` | CSV of paths for `mypy`. |
+| pytest-targets | string | `tests` | Path for `pytest`. |
+| coverage-output | string | `coverage.xml` | Artifact path uploaded (when `coverage:upload` is in `commands`). |
+| setup-uv-version | string | `latest` | uv version pinned via `astral-sh/setup-uv@v6`. |
+
+Required secrets: none (ecosystem-style, no AWS).
+
+Usage (typical orion-cognitive-agent layout — both `dev` and `bedrock` groups):
+
+```yaml
+jobs:
+  python-ci:
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+    with:
+      environment-name: ci
+      python-versions: '"3.12"'
+      working-directory: '.'
+      dependency-groups: 'dev bedrock'
+      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
+```
+
+Usage (multi-version matrix):
+
+```yaml
+jobs:
+  python-ci:
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+    with:
+      environment-name: ci
+      python-versions: '"3.11","3.12"'
+```
+
 ### deploy
 
 #### `angular-spa-deploy.yml`
@@ -303,6 +353,47 @@ jobs:
       stack-name: orion-backend-dev
       sam-config-env: default
       s3-bucket: orion-sam-artifacts-dev
+    secrets:
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+```
+
+The caller workflow must also declare `id-token: write` at the workflow or job level (GitHub mints the OIDC JWT from the caller's permissions context).
+
+#### `container-deploy-ecr.yml`
+
+Builds a Dockerfile via `docker buildx` and pushes the resulting image to an existing Amazon ECR repository. The caller is responsible for provisioning the ECR repository via Terraform (no `ecr create-repository` here) and for holding the deploy-role OIDC trust policy. Designed for `orion-cognitive-agent` today, but reusable for any project that pushes a container image to a pre-existing ECR repository. Default platform is `linux/arm64` (Bedrock AgentCore contract); override with `amd64` if needed.
+
+The recipe does NOT create the ECR repository. It expects the caller to pass a `ecr-repository` name that already exists with proper ECR pull/push policies.
+
+Inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment-name | string | — (required) | GH Environment gate + job name + concurrency key. |
+| aws-region | string | `us-east-1` | ECR repository region. |
+| ecr-repository | string | — (required) | ECR repository name (no registry prefix). Must match `^[a-z0-9][a-z0-9_-]{0,254}$`. |
+| dockerfile-path | string | `Dockerfile` | Path to the Dockerfile relative to repo root. |
+| context-path | string | `.` | Build context relative to repo root. |
+| platforms | string | `linux/arm64` | Comma-separated `docker buildx` platforms. Use `linux/amd64` for x86_64 deploys. |
+| image-tags-input | string | `latest,__GITHUB_SHA_SHORT__` | Comma-separated tag list; `__GITHUB_SHA_SHORT__` expands to the first 7 chars of `${{ github.sha }}`. |
+| cache-scope | string | `container-dev` | GHA cache key segment (`cache-from type=gha,scope=<scope>`). Lets multiple recipes coexist on the same runner without cross-contamination. |
+| provenance | string | `false` | `provenance:` flag for `docker build-push-action`. |
+| sbom | string | `false` | `sbom:` flag for `docker build-push-action`. |
+| extra-buildx-args | string | `''` | Raw extra args passed through. Rarely needed. |
+
+Required secrets (caller-side, scoped to the GitHub Environment):
+
+- `AWS_DEPLOY_ROLE_ARN` — IAM role with trust policy for `token.actions.githubusercontent.com`, `sub` restricted to `repo:<owner>/<caller>:ref:refs/heads/main`, and permissions for `ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, and `sts:GetCallerIdentity`. The `module.iam_orion_agent_core_deploy` Terraform module in `orion-infrastructure` produces exactly this shape.
+
+Usage (typical orion-cognitive-agent):
+
+```yaml
+jobs:
+  deploy-dev:
+    uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@dev
+    with:
+      environment-name: dev
+      ecr-repository: orion-agent-core-dev
     secrets:
       AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
 ```
