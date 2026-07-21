@@ -84,12 +84,14 @@ jobs:
 
   python-qa:
     name: python-qa-self-test
-    # Local-path reference during the pre-merge window: @main still points
-    # to b507860 (no Sprint B). Once Sprint B lands on main this chore PR
-    # will have validated the cross-owner recipe contents in this same
-    # local-path invocation; after merge a follow-up chore PR can flip
-    # this back to `uses: .../python-ci.yml@main`.
-    uses: ./.github/workflows/python-ci.yml
+    # Cross-owner reference pinned to @main (Sprint B promotion @ fd14f27).
+    # Mirrors the reference consumed by external callers (e.g.
+    # orion-cognitive-agent@main uses spark-match-01-devops/.github/
+    # workflows/python-ci.yml@main). When merging a recipe change to a
+    # branch other than main (e.g. `dev`), local-path should be used
+    # to avoid the chicken-and-egg where @main doesn't yet contain the
+    # changes. See `docs/PYTHON-CI.md` § 7 (canonical caller patterns).
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
       working-directory: tests/fixtures/python-project
