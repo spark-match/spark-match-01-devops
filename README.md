@@ -443,7 +443,7 @@ Required secrets: `AWS_APPLY_ROLE_ARN` (passed explicitly).
 
 These are not consumed by other Spark Match repos but are kept here for this repo's own CI:
 
-- `ci.yml` — Pull request-triggered self-test. Calls the three pure-lint ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break. The four terraform ecosystem recipes (`terraform-fmt`, `terraform-validate`, `tflint`, `checkov`) are NOT exercised here because this repo has no Terraform code to lint; they are validated by consumer repos like `orion-infrastructure`.
+- `ci.yml` — Pull request-triggered lint & security pass. Calls the three pure-lint ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break. The Python, Node and deploy recipes (`python-ci`, `eslint`, `node-test`, `sam-deploy`, `container-deploy-ecr`, `terraform-plan`, `terraform-apply`) are NOT exercised here because this repo has no Node project, SAM stack, Python package or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
 - `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main` / `dev`, on pull requests, and weekly.
 
 The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-article` repository's toolchain and are not part of the orion stack.
@@ -528,7 +528,7 @@ Changes to the catalog follow the git workflow in this repo:
 1. Branch from `dev` with a Conventional Commits scope (`chore(cookbook): ...`, `feat(node): ...`, `fix(deploy): ...`).
 2. Open a pull request against `dev`.
 3. Code owners review (see `.github/CODEOWNERS`).
-4. After `ci.yml` self-test is green and at least one external caller (for example `orion-backend`) has validated the change in `dev`, the PR is promoted `dev` to `main` by a second PR.
+4. After `ci.yml` is green and at least one external caller (for example `orion-backend` for SAM changes, `orion-cognitive-agent` for Python/container changes, `orion-infrastructure` for Terraform changes) has smoke-tested the change in `dev`, the PR is promoted `dev` to `main` by a second PR.
 5. Branch is deleted on merge (ruleset policy).
 
 When adding a new recipe:
