@@ -50,6 +50,10 @@ on:
 
 permissions:
   contents: read
+  # Required by the python-ci.yml recipe's sticky PR coverage comment
+  # step (gated by `permissions-write: true`). The step is skipped when
+  # the input is false, so this permission is idle in most runs.
+  pull-requests: write
 
 # Cancel in-progress runs for the same PR + branch. Saves runner minutes on
 # rapid pushes. The cancel-in-progress: true is safe for lint jobs (idempotent).
