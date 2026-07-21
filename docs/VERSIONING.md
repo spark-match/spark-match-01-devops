@@ -116,18 +116,25 @@ callers existentes no requieren cambios.
 
 ### Como prueba de cambios
 
-1. `ci.yml` (self-test) corre los 3 ecosystem recipes (actionlint, gitleaks,
-   yamllint) **mas el nuevo self-test de `python-ci.yml`** sobre este repo
-   en cada PR. El self-test de Python corre contra
-   `tests/fixtures/python-project/` con un solo Python (3.12, hardcoded en
-   el recipe por el bug cross-owner de GHA — ver `docs/PYTHON-CI.md` § 8.1)
-   y grupos de dependencias `dev lint`. Esto dogfood el recipe localmente;
-   los cambios puramente recipe-internos (no caller-specific) ya no
-   requieren smoke test externo obligatorio.
-2. Cambios que afectan a recipes de `python/`, `node/` o `deploy/` aun pueden requerir un caller externo para smoke test cuando el layout del caller introduce variables que el self-test interno no cubre:
-   - `python-ci.yml`: smoke test en `orion-cognitive-agent@dev` (caller canonico de produccion)
-   - `node/eslint.yml`: smoke test en `orion-frontend@dev`
-   - `deploy/sam-deploy.yml`: smoke test en `orion-backend@dev`
-   - `deploy/container-deploy-ecr.yml`: smoke test en `orion-cognitive-agent@dev`
-   - `deploy/terraform-plan.yml` + `deploy/terraform-apply.yml`: smoke test en `orion-infrastructure@dev`
-3. Una vez verde en `ci.yml` (+ smoke test externo cuando aplique), el cambio se promueve a `main` con un PR `dev` -> `main`.
+1. `ci.yml` corre los 3 ecosystem recipes (actionlint, gitleaks, yamllint)
+   sobre este repo en cada PR. Detecta regresiones de lint/secret/yaml-format
+   en el catalog mismo, pero **no** ejecuta los reusables de `python/`,
+   `node/` ni `deploy/` — este repo no tiene proyecto Node, SAM, Python ni
+   Terraform donde correrlos.
+2. Cada recipe se valida cuando un caller repo la invoca desde su propio
+   PR. Mapeo canonico (`dev` branch mientras la feature no esta en `main`,
+   `@main` una vez promovida):
+   - `python-ci.yml`: `orion-cognitive-agent@dev` (caller canonico de produccion)
+   - `eslint.yml`, `node-test.yml`: `orion-frontend@dev`
+   - `sam-deploy.yml`: `orion-backend@dev`
+   - `container-deploy-ecr.yml`: `orion-cognitive-agent@dev`
+   - `terraform-plan.yml`, `terraform-apply.yml`, y los ecosystem
+     recipes de Terraform (`terraform-fmt`, `terraform-validate`,
+     `tflint`, `checkov`, `cfn-nag`): `orion-infrastructure@dev`
+   - `actionlint.yml`, `gitleaks.yml`, `yamllint.yml`, `lambda-permission-source-arn.yml`:
+     `ci.yml` local (ver punto 1)
+3. Si la PR cambia un input o agrega un paso al recipe, el reviewer pide
+   smoke test explicito del caller correspondiente antes de promover
+   `dev` -> `main`. Es responsabilidad del PR author, no automatizable
+   sin reintroducir la dependencia cross-owner que esta arquitectura
+   evito.

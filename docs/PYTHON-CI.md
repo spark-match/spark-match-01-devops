@@ -43,7 +43,6 @@ test gate. Deploy reusables live under `deploy/` (out of scope).
 |---|---|---|
 | `ahincho/orion-cognitive-agent` | monorepo, single `pyproject.toml`, dependency group `bedrock` is runtime-only | `dependency-groups: dev bedrock` |
 | `spark-match/spark-match-08-deep-agent` | placeholder — to be wired up when the project's CI migrates from legacy `pip` to `uv` | `dependency-groups: dev` |
-| `spark-match/spark-match-01-devops` itself (self-test, Sprint D) | `tests/fixtures/python-project/` with two custom groups (`dev`, `lint`) | `working-directory: tests/fixtures/python-project`, `dependency-groups: dev lint` |
 
 If you have a new Python caller, copy the row that most resembles your
 layout and confirm the recipe runs locally with
@@ -287,38 +286,6 @@ jobs:
 `lock-check: true` verifies the locked dep set is still coherent; `frozen: true`
 prevents the post-deploy install from regenerating `uv.lock` (caller is expected
 to have already promoted the lockfile).
-
-### 7.5 Self-test: invoke on a fixture inside the same repo (Sprint D pattern)
-
-```yaml
-# .github/workflows/ci.yml — self-test of python-ci.yml itself
-jobs:
-  python-qa-self-test:
-    name: "Python QA (self-test)"
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
-    with:
-      environment-name: ci
-      # python-versions intentionally omitted: the shipping recipe hardcodes
-      # the Python matrix to "3.12" because of the upstream GHA bug
-      # (strategy.matrix cannot reference inputs.* on cross-owner workflow_call;
-      # see DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md). The self-test therefore
-      # exercises the single-version variant.
-      working-directory: tests/fixtures/python-project
-      commands: lint:ruff-format,lint:ruff-check,lock:check,typecheck:mypy,test:pytest,coverage:upload,lint:bandit,security:pip-audit
-      dependency-groups: dev lint security
-      lock-check: true
-      frozen: true
-      ruff-targets: example tests
-      mypy-targets: example
-      pytest-targets: tests
-```
-
-This pattern is what `spark-match-01-devops/.github/workflows/ci.yml`
-runs on every PR. The fixture (`tests/fixtures/python-project/`) is a
-two-module, three-test dummy project with `dev`, `lint`, and `security`
-dependency groups; it exists solely to dogfood the recipe. The `lock-check` and
-`frozen` inputs are exercised on the fixture (which has a real `uv.lock`)
-to validate those features each PR.
 
 ---
 
