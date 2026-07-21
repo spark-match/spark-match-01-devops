@@ -2,25 +2,26 @@
 # Reusable Workflow: ESLint - JS/TS linting for Node workspaces
 # =============================================================================
 # Atomic recipe (node layer). Runs `npm run <lint-script>` in the caller's
-# repository with the requested Node and ESLint versions. Caches npm
-# dependencies to keep runs fast.
+# repository with the requested Node and ESLint versions. Caches package
+# manager dependencies to keep runs fast.
 #
 # USAGE (in caller repo):
 #   jobs:
 #     eslint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@main
 #       with:
 #         environment-name: dev
 #         eslint-version: 10    # major version (cache key)
-#         # lint-script defaults to "lint" (matches orion-backend convention)
+#         # lint-script defaults to "lint"
 #
 # Notes:
 #   - Assumes caller has `npm run <lint-script>` defined in package.json.
 #   - eslint-version is parametrized so callers can advance / stay behind
 #     the latest major without forking this recipe (e.g. orion-frontend
 #     may stay on v9 while orion-backend is on v10).
-#   - Cache key includes eslint-version to avoid cache poisoning when a
-#     caller rolls back the major.
+#   - Cache key follows the canonical convention
+#     <os>-node-<nodeVersion>-<pkgmanager>-eslint<major>-<env>-<H>
+#     (eslint-version inserted between pkgmanager and env). See docs/CACHE.md.
 #
 # Cross-owner safe: no caller secrets forwarded.
 # =============================================================================
@@ -40,6 +41,16 @@ on:
         type: string
         required: false
         default: '24'
+      pkg-manager:
+        description: 'JavaScript package manager (used for install + cache key). One of: npm, pnpm, yarn, bun.'
+        type: string
+        required: false
+        default: 'npm'
+      lockfile-name:
+        description: 'Lockfile name relative to working-directory. Default "package-lock.json" (npm). Override to "pnpm-lock.yaml", "yarn.lock", or "bun.lockb" for other managers.'
+        type: string
+        required: false
+        default: 'package-lock.json'
       eslint-version:
         description: 'ESLint major version. Used in the npm cache key so rollback to a previous major does not hit a stale cache. Pass the major only (e.g. "10" for ESLint 10.x.x).'
         type: string
@@ -76,20 +87,22 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
+          # Disable setup-node's built-in package manager cache to avoid
+          # double caching with our explicit actions/cache step below.
+          package-manager-cache: false
 
-      - name: Cache npm dependencies
+      - name: Cache ${{ inputs.pkg-manager }} dependencies
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          # Cache key incluye environment-name para segregar caches por
-          # ambiente (dev vs prod). Aunque el contenido del cache npm es
-          # content-addressed desde package-lock.json (teoricamente seguro
-          # compartir entre envs), la segregacion previene cache poisoning
-          # si un futuro caller pasa flags npm distintos por env
-          # (e.g. --omit=dev en prod).
-          key: ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-env${{ inputs.environment-name }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+          # Canonical cache key convention (lowercase):
+          #   <os>-node-<nodeVersion>-<pkgmanager>-eslint<major>-<env>-<H>
+          # - eslint<major> is intentionally between pkgmanager and env so
+          #   rollback to a previous ESLint major invalidates the cache
+          #   without affecting other recipes in the same env.
+          key: ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ lower(inputs.environment-name) }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
-            ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-env${{ inputs.environment-name }}-
+            ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ lower(inputs.environment-name) }}-
 
       - name: Install dependencies
         run: npm ci

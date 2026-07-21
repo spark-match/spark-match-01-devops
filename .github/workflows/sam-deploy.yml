@@ -85,6 +85,21 @@ on:
         type: string
         required: false
         default: '24'
+      pkg-manager:
+        description: 'JavaScript package manager (used for install + cache key). One of: npm, pnpm, yarn, bun.'
+        type: string
+        required: false
+        default: 'npm'
+      lockfile-name:
+        description: 'Lockfile name relative to working-directory. Default "package-lock.json" (npm). Override to "pnpm-lock.yaml", "yarn.lock", or "bun.lockb" for other managers.'
+        type: string
+        required: false
+        default: 'package-lock.json'
+      working-directory:
+        description: 'Working directory for npm (where caller package.json lives). Default = repo root.'
+        type: string
+        required: false
+        default: '.'
       sam-cli-version:
         description: 'aws-actions/setup-sam version.'
         type: string
@@ -157,14 +172,23 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
+          # Disable setup-node's built-in package manager cache to avoid
+          # double caching with our explicit actions/cache step below.
+          package-manager-cache: false
 
-      - name: Cache npm dependencies
+      - name: Cache ${{ inputs.pkg-manager }} dependencies
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          # Canonical cache key convention (lowercase):
+          #   <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
+          # Previously this recipe missed env from the key, allowing dev
+          # and prod to share a single cache. Including env removes that
+          # shared state. hashFiles narrowed from a glob to single file
+          # so workspace lockfile churn does not invalidate the cache.
+          key: ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ lower(inputs.environment-name) }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
-            ${{ runner.os }}-node${{ inputs.node-version }}-
+            ${{ lower(runner.os) }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ lower(inputs.environment-name) }}-
 
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@v6
