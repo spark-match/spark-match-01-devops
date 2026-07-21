@@ -29,7 +29,7 @@ Si en algun momento queremos publicar versiones estables de los reusables para t
 
 Mientras tanto, los callers internos referencian `@dev` o `@main` segun el ambiente destino.
 
-## Catalogo de recipes (v2)
+## Catalogo de recipes (v3)
 
 Estructura actual bajo `.github/workflows/`:
 
@@ -42,9 +42,27 @@ Estructura actual bajo `.github/workflows/`:
 +-- actionlint.yml               # Atomic (ecosystem): GH Actions syntax validation
 +-- gitleaks.yml                 # Atomic (ecosystem): secret scanning (gitleaks v1 pin)
 +-- yamllint.yml                 # Atomic (ecosystem): YAML files
++-- terraform-fmt.yml            # Atomic (ecosystem): terraform fmt
++-- terraform-validate.yml       # Atomic (ecosystem): terraform init -backend=false + validate
++-- tflint.yml                   # Atomic (ecosystem): tflint --recursive
++-- checkov.yml                  # Atomic (ecosystem): checkov SCA
 +-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
 +-- sam-deploy.yml               # Atomic (deploy): sam build + deploy, samconfig env, layers build
++-- angular-spa-deploy.yml       # Atomic (deploy): Angular SPA -> S3 + CloudFront, build + sync + invalidate
 ```
+
+### `angular-spa-deploy.yml`
+
+Build de un SPA Angular via `npm ci` + `npm run build`, sync a S3 con
+`--delete`, y `cloudfront create-invalidation`. Inputs clave: `s3-bucket`,
+`cloudfront-distribution-id`, `node-version`, `build-script`, `artifact-path`,
+`api-url` (env var de frontend inyectada al build). Secret: `AWS_DEPLOY_ROLE_ARN`
+(restringido al bucket + distribution especifico via trust policy + inline IAM
+policy del modulo `iam-angular-spa-deploy-dev` en `orion-infrastructure`).
+
+Pattern complementario a `sam-deploy.yml`: este no usa SAM, sino
+directamente `aws s3 sync` + `aws cloudfront create-invalidation`. Adecuado
+para SPAs Angular/React/Vue estaticos sin backend serverless.
 
 ### Por que no usamos subcarpetas (limitacion de GH Actions)
 

@@ -228,6 +228,45 @@ jobs:
 
 ### deploy
 
+#### `angular-spa-deploy.yml`
+
+Builds an Angular SPA via `npm ci` + `npm run build`, syncs the resulting bundle to S3 with `--delete`, and triggers a CloudFront invalidation. Designed for SPAs (Angular / React / Vue) hosted on S3 + CloudFront with OAC. Injects `API_URL` as a build-time env var so the SPA can target a backend per environment.
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | — (required) | Becomes the GH Environment gate. Caller must define the environment and hold the role secret there. |
+| `aws-region` | string | `us-east-1` | Region of the S3 bucket and CloudFront distribution. |
+| `s3-bucket` | string | — (required) | SPA bucket name (e.g. `orion-frontend-dev`). |
+| `cloudfront-distribution-id` | string | — (required) | CloudFront distribution ID for invalidation. |
+| `cloudfront-invalidation-paths` | string | `/*` | Paths to invalidate. |
+| `node-version` | string | `24` | Node version for build. |
+| `build-script` | string | `build` | npm script that builds the SPA. |
+| `artifact-path` | string | `dist/orion-frontend/browser` | Path to the built bundle. |
+| `api-url` | string | `''` | Build-time env var `API_URL` for the SPA. |
+| `sync-extra-args` | string | `''` | Extra flags for `aws s3 sync`. |
+
+Required secrets (caller-side, scoped to the GitHub Environment):
+
+- `AWS_DEPLOY_ROLE_ARN` — IAM role with trust policy for `token.actions.githubusercontent.com`, scoped to the SPA bucket (`s3:GetObject|PutObject|DeleteObject|ListBucket`) and the SPA distribution (`cloudfront:CreateInvalidation`). The `iam-angular-spa-deploy-dev` Terraform module in `orion-infrastructure` creates exactly this shape.
+
+Usage:
+
+```yaml
+jobs:
+  deploy-dev:
+    uses: spark-match/spark-match-01-devops/.github/workflows/angular-spa-deploy.yml@main
+    with:
+      environment-name: dev
+      aws-region: us-east-1
+      s3-bucket: orion-frontend-dev
+      cloudfront-distribution-id: E1ABC2DEF3GHIJ
+      api-url: https://api.orion.dev
+    secrets:
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+```
+
 #### `sam-deploy.yml`
 
 Builds and deploys an AWS SAM application via OIDC. Handles checkout, node setup, npm cache, OIDC credentials, `npm ci`, the Lambda Layers build script, SAM CLI install, `sam validate --lint`, `sam build --use-container`, and `sam deploy --config-env <env>` with idempotent flags (`--no-confirm-changeset`, `--no-fail-on-empty-changeset`). The caller must already have `samconfig.toml` with sections `[default]`, `[prod]`, etc., and a Layers build script in `package.json`.
@@ -346,6 +385,7 @@ spark-match-01-devops/
         sam-deploy.yml            deploy
         terraform-plan.yml        deploy
         terraform-apply.yml       deploy
+        angular-spa-deploy.yml    deploy (Angular SPA -> S3 + CloudFront)
         codeql.yml                self (security)
         latex-build.yml           article-side
         latex-release.yml         article-side
