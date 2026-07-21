@@ -34,6 +34,13 @@
 #   - pytest-targets      path for `pytest` (default "tests")
 #   - coverage-output     coverage file path to upload (default "coverage.xml")
 #   - setup-uv-version    uv version (default "latest")
+#   - cache-suffix        suffix for GH Actions cache key (default empty; falls
+#                         back to `environment-name` in the step). Ensures the
+#                         cache scope is per-environment. Per-Python-version
+#                         isolation is implicit (each matrix leg is a separate
+#                         job). See docs/VERSIONING.md §"Cache semantics".
+#   - timeout-minutes     job timeout in minutes (default 20)
+#   - fail-fast           strategy.matrix.fail-fast (default false)
 # =============================================================================
 
 name: Python CI
@@ -90,6 +97,21 @@ on:
         type: string
         required: false
         default: 'latest'
+      cache-suffix:
+        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). When empty (default), the recipe falls back to `environment-name` so the cache is scoped per-environment. Set explicitly only if you need a finer partition. Per-Python-version isolation is implicit (each matrix leg is a separate job).'
+        type: string
+        required: false
+        default: ''
+      timeout-minutes:
+        description: 'Job timeout in minutes. Tune up for very large coverage / test suites.'
+        type: number
+        required: false
+        default: 20
+      fail-fast:
+        description: 'strategy.matrix.fail-fast. When true, a failure in one matrix leg cancels the others.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -106,9 +128,9 @@ jobs:
     # the run; the caller's environment-name should match.
     environment: ${{ inputs.environment-name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ inputs.fail-fast }}
       matrix:
         python-version: ${{ fromJSON(inputs.python-versions) }}
 
@@ -147,6 +169,7 @@ jobs:
         with:
           version: ${{ inputs.setup-uv-version }}
           enable-cache: true
+          cache-suffix: ${{ inputs.cache-suffix }}
           cache-dependency-glob: |
             ${{ inputs.working-directory }}/pyproject.toml
             ${{ inputs.working-directory }}/uv.lock
@@ -207,6 +230,9 @@ jobs:
             echo "| Python versions | \`${{ inputs.python-versions }}\` (active: \`${{ matrix.python-version }}\`) |"
             echo "| Working directory | \`${{ inputs.working-directory }}\` |"
             echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
+            echo "| Cache suffix | \`${{ inputs.cache-suffix || inputs.environment-name }}\` |"
+            echo "| Timeout (min) | \`${{ inputs.timeout-minutes }}\` |"
+            echo "| Fail-fast | \`${{ inputs.fail-fast }}\` |"
             echo "| Pipeline steps | \`${{ inputs.commands }}\` |"
             echo "| Commit | \`${{ github.sha }}\` |"
             echo "| Triggered by | @${{ github.actor }} |"
