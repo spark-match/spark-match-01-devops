@@ -455,6 +455,32 @@ See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 - The catalog can be pinned by environment (`@dev` for dev callers, `@main` for prod callers) — changes are tested against dev deploys before they reach prod. The canonical consumer `orion-infrastructure` currently pins both envs to `@main` (single-tier strategy); teams that maintain a `dev` environment downstream of `main` can adopt the dual-pin strategy.
 - No SemVer in the short term. Breaking changes are communicated by PR + release notes.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
+- Current catalog version: **v4** (PR #62, #65, #67 from July 2026).
+
+## Cache key convention
+
+All node-consuming recipes (`eslint.yml`, `angular-spa-deploy.yml`,
+`sam-deploy.yml`, `node-test.yml`) use the canonical cache key:
+
+```
+<os>-node-<nodeVersion>-<pkgmanager>-<env>[-<recipeTag>]-<H>
+```
+
+- `os` lowercased (`linux`/`windows`/`macos`).
+- `nodeVersion` (e.g. `24`).
+- `pkgmanager` (`npm` | `pnpm` | `yarn` | `bun`).
+- `env` lowercased (`dev` | `prod` | `ci`).
+- `recipeTag` recipe-specific (only `eslint.yml` uses it, for ESLint major isolation).
+- `<H>` is `sha256(<lockfile-name>)` of a single file (no glob).
+
+Compared to v3, this:
+- drops `setup-node@v7`'s built-in cache (which would produce a conflicting `node-cache-<os>-<arch>-<pkgmgr>-<H>` key lacking `env` and `nodeVersion`).
+- lowercases OS so `linux-` and `Linux-` don't produce two cache blobs for the same content.
+- includes `pkgmanager` so npm and pnpm consumers don't share keys.
+- includes `env` so dev and prod are isolated per GH Environment.
+
+Full rationale, examples, extension guide, and migration notes:
+[`docs/CACHE.md`](docs/CACHE.md).
 
 ## Repository layout
 
