@@ -155,7 +155,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Sync dependencies (groups: ${{ inputs.dependency-groups }})
+      - name: "Sync dependencies (groups=${{ inputs.dependency-groups }})"
         working-directory: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
