@@ -207,6 +207,7 @@ jobs:
             exit 1
           fi
           echo "Build artifact OK at $ARTIFACT"
+          # shellcheck disable=SC2012
           ls -la "$ARTIFACT" | head -20
 
       - name: Sync to S3 (delete stale files)
