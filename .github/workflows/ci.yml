@@ -75,11 +75,11 @@ jobs:
       environment-name: ci
 
   python-qa:
-    name: "Python QA (self-test)"
+    name: python-qa-self-test
     uses: ./.github/workflows/python-ci.yml
     with:
       environment-name: ci
-      python-versions: '"3.11","3.12"'
+      python-versions: '["3.11","3.12"]'
       working-directory: tests/fixtures/python-project
       commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
       dependency-groups: dev lint
