@@ -1,15 +1,20 @@
 # =============================================================================
 # Reusable Workflow: Angular SPA Deploy (S3 + CloudFront)
 # =============================================================================
-# Atomic recipe (deploy layer). Builds an Angular SPA via `npm ci` +
-# `npm run build` and deploys the resulting static bundle to an S3 bucket
-# fronted by CloudFront. Performs:
+# Atomic recipe (deploy layer). Builds an Angular/React/Vue SPA via the
+# declared package manager (`pkg-manager`: npm|pnpm|yarn|bun) and deploys
+# the resulting static bundle to an S3 bucket fronted by CloudFront.
+# Performs:
 #   1. `aws s3 sync --delete` (uploads new assets, removes stale ones).
 #   2. `aws cloudfront create-invalidation --paths "/*"` (cache busting).
 #
 # Designed for orion-frontend (Angular 22 with the new application builder).
 # The build output is expected at `dist/<project>/browser/` (Angular 22
 # default) but is configurable via `artifact-path`.
+#
+# Cache key convention (enforced, see `Cache npm/pnpm/yarn dependencies` step):
+#   <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
+# See docs/CACHE.md for the full convention rationale.
 #
 # USAGE (in caller repo):
 #   jobs:
@@ -79,6 +84,16 @@ on:
         type: string
         required: false
         default: '24'
+      pkg-manager:
+        description: 'JavaScript package manager (used for install + cache key). One of: npm, pnpm, yarn, bun.'
+        type: string
+        required: false
+        default: 'npm'
+      lockfile-name:
+        description: 'Lockfile name relative to working-directory. Default "package-lock.json" (npm). Override to "pnpm-lock.yaml", "yarn.lock", or "bun.lockb" for other managers.'
+        type: string
+        required: false
+        default: 'package-lock.json'
       build-script:
         description: 'npm script that builds the SPA (e.g. "build" for Angular default).'
         type: string
@@ -160,6 +175,12 @@ jobs:
           if [ -z "${{ inputs.build-script }}" ]; then
             ERRORS+=("build-script: requerido")
           fi
+          if ! echo "${{ inputs.pkg-manager }}" | grep -qE '^(npm|pnpm|yarn|bun)$'; then
+            ERRORS+=("pkg-manager: '${{ inputs.pkg-manager }}' invalido (esperado uno de: npm, pnpm, yarn, bun)")
+          fi
+          if ! echo "${{ inputs.node-version }}" | grep -qE '^[0-9]+$'; then
+            ERRORS+=("node-version: '${{ inputs.node-version }}' invalido (esperado entero, e.g. '24')")
+          fi
 
           if [ ${#ERRORS[@]} -gt 0 ]; then
             echo "::error::Input validation failed:"
@@ -171,6 +192,20 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+          # Resolve lowercase runner OS (linux | windows | macos) and lowercase
+          # env name for the canonical cache key. GH Actions expression language
+          # has no `lower()` function, so we lower-case in shell and expose via
+          # $GITHUB_ENV for downstream steps (actions/cache key).
+          LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          case "$LOWER_OS" in
+            linux|windows|macos) ;;
+            *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
+          esac
+          echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
+
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -178,22 +213,30 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
+          # Disable setup-node's built-in package manager cache. We manage
+          # the cache ourselves in the next step to enforce the canonical
+          # convention `<os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>`
+          # (lowercase, includes pkgmanager + env). The built-in cache uses
+          # `node-cache-Linux-x64-npm-<H>` which is incompatible with the
+          # per-env isolation we need when multiple GH Environments (dev,
+          # prod, ci) coexist for the same caller repo.
+          package-manager-cache: false
 
-      - name: Cache npm dependencies
+      - name: Cache ${{ inputs.pkg-manager }} dependencies
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          # Cache key segregado por environment-name (dev vs prod). Aunque
-          # el contenido del cache npm es content-addressed desde
-          # package-lock.json (teoricamente seguro compartir entre envs),
-          # la segregacion previene cache poisoning si un futuro caller
-          # pasa flags npm distintos por env (e.g. --omit=dev en prod).
-          # hashFiles acotado a un solo package-lock.json (no `**`) para
-          # evitar que cambios en lockfiles anidados (workspaces futuros)
-          # invaliden el cache sin motivo.
-          key: ${{ runner.os }}-node${{ inputs.node-version }}-env${{ inputs.environment-name }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+          # Canonical cache key convention (lowercase, see docs/CACHE.md):
+          #   <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
+          # - os         : ${{ env.lower_os }}        linux | windows | macos
+          #                   (lowercased in the Validate inputs step above)
+          # - nodeVersion: ${{ inputs.node-version }} (e.g. 24)
+          # - pkgmanager : ${{ inputs.pkg-manager }}  (npm | pnpm | yarn | bun)
+          # - env        : ${{ env.env_name }}        (lowercased env name)
+          # - H          : sha256(<lockfile-name>)    single file (no glob)
+          key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
-            ${{ runner.os }}-node${{ inputs.node-version }}-env${{ inputs.environment-name }}-
+            ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
 
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@v6
