@@ -49,3 +49,20 @@ updates:
       third-party-actions:
         patterns:
           - "*"
+
+# =============================================================================
+# Known limitation: gitleaks.yml depends on the repo secret `GITLEAKS_LICENSE`,
+# but GitHub does NOT forward repo-level secrets to Dependabot contexts (by
+# design - secrets have a tighter blast radius). As a result, every
+# Dependabot-triggered PR fails the gitleaks check with:
+#   "missing gitleaks license. Go grab one at gitleaks.io..."
+#
+# This is a known limitation that has to be fixed via the GitHub UI (no
+# YAML schema field to enable this; dependabot.yml schema rejects any
+# `dependabot:` block I tried). The admin must:
+#   GitHub -> repository Settings -> Code security and analysis ->
+#   Dependabot -> Secrets -> Add secret named `GITLEAKS_LICENSE` with the
+#   same value as the repo-level `GITLEAKS_LICENSE` secret.
+# Until that UI step is done, all Dependabot bumps close or stay red on
+# gitleaks (see PR #69 closed 2026-07-21 for an example).
+# =============================================================================
