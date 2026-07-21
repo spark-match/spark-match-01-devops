@@ -11,21 +11,25 @@
 # USAGE (in caller repo):
 #   jobs:
 #     python-ci:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
 #       with:
 #         environment-name: ci
-#         python-versions: '"3.12"'        # JSON list for matrix support
 #         working-directory: '.'
 #         commands: lint:ruff-format, lint:ruff-check, typecheck:mypy, test:pytest, coverage:upload
 #
 # Required secrets: none (this is an ecosystem-style recipe, no AWS).
 #
 # Required GH Environment: caller may optionally create an "env" for the
-# matrix step.environment to gate the run; recommended but not enforced.
+# environment gate; recommended but not enforced.
+#
+# Python version is HARDCODED at 3.12 in the matrix. Multi-version matrix
+# is removed because `strategy.matrix` with `${{ inputs.* }}` is rejected by
+# GitHub Actions when this recipe is invoked cross-owner
+# (see DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md). To support a different version,
+# update this single value (and bump via SemVer when released).
 #
 # Inputs (defaults tuned for orion-cognitive-agent; callers override):
 #   - environment-name    job name + env gate (e.g. "ci")
-#   - python-versions     JSON list for matrix (default '"3.12"')
 #   - working-directory   where uv operates (default "." = repo root)
 #   - commands            ordered list of pipeline steps to run
 #   - dependency-groups   extra `uv sync --group` groups (e.g. "dev bedrock")
@@ -36,11 +40,9 @@
 #   - setup-uv-version    uv version (default "latest")
 #   - cache-suffix        suffix for GH Actions cache key (default empty; falls
 #                         back to `environment-name` in the step). Ensures the
-#                         cache scope is per-environment. Per-Python-version
-#                         isolation is implicit (each matrix leg is a separate
-#                         job). See docs/VERSIONING.md §"Cache semantics".
+#                         cache scope is per-environment. See
+#                         docs/VERSIONING.md §"Cache semantics".
 #   - timeout-minutes     job timeout in minutes (default 20)
-#   - fail-fast           strategy.matrix.fail-fast (default false)
 # =============================================================================
 
 name: Python CI
@@ -52,11 +54,6 @@ on:
         description: 'Target environment identifier. Used in the job name and optional GH Environment gate.'
         type: string
         required: true
-      python-versions:
-        description: 'JSON list of Python versions for the matrix (e.g. ''"3.12"'' or ''"3.11","3.12"'').'
-        type: string
-        required: false
-        default: '"3.12"'
       working-directory:
         description: 'Directory containing pyproject.toml (and uv.lock if present).'
         type: string
@@ -98,7 +95,7 @@ on:
         required: false
         default: 'latest'
       cache-suffix:
-        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). When empty (default), the recipe falls back to `environment-name` so the cache is scoped per-environment. Set explicitly only if you need a finer partition. Per-Python-version isolation is implicit (each matrix leg is a separate job).'
+        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). When empty (default), the recipe falls back to `environment-name` so the cache is scoped per-environment. Set explicitly only if you need a finer partition.'
         type: string
         required: false
         default: ''
@@ -107,11 +104,6 @@ on:
         type: number
         required: false
         default: 20
-      fail-fast:
-        description: 'strategy.matrix.fail-fast. When true, a failure in one matrix leg cancels the others.'
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -124,15 +116,16 @@ concurrency:
 jobs:
   qa:
     name: "Python QA (${{ inputs.environment-name }})"
-    # Optional env gate. Callers can create an "env" GH Environment to gate
-    # the run; the caller's environment-name should match.
     environment: ${{ inputs.environment-name }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    # NOTE: matrix is intentionally HARDCODED to a single Python version.
+    # Per GHA bug, `strategy.matrix` cannot reference `${{ inputs.* }}` when the
+    # recipe is invoked cross-owner (see DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md).
     strategy:
-      fail-fast: ${{ inputs.fail-fast }}
+      fail-fast: false
       matrix:
-        python-version: ${{ fromJSON(inputs.python-versions) }}
+        python-version: ["3.12"]
 
     steps:
       - name: Validate inputs
@@ -145,9 +138,6 @@ jobs:
           fi
           if [ -z "${{ inputs.working-directory }}" ]; then
             ERRORS+=("working-directory: required")
-          fi
-          if [ -z "${{ inputs.python-versions }}" ]; then
-            ERRORS+=("python-versions: required")
           fi
           case "${{ inputs.commands }}" in
             *none*) ;;   # explicit "none" = caller wants only the manual steps (rare)
@@ -182,7 +172,6 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
-          # Read groups into a bash array; whitespace-separated tokens.
           IFS=' ' read -r -a GROUPS <<< "${{ inputs.dependency-groups }}"
           if [ "${#GROUPS[@]}" -eq 0 ] || [ -z "${GROUPS[0]:-}" ]; then
             uv sync
@@ -227,12 +216,11 @@ jobs:
             echo "| Field | Value |"
             echo "|:---|:---|"
             echo "| Environment | \`${{ inputs.environment-name }}\` |"
-            echo "| Python versions | \`${{ inputs.python-versions }}\` (active: \`${{ matrix.python-version }}\`) |"
+            echo "| Python version | \`${{ matrix.python-version }}\` (hardcoded single-version matrix) |"
             echo "| Working directory | \`${{ inputs.working-directory }}\` |"
             echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
             echo "| Cache suffix | \`${{ inputs.cache-suffix || inputs.environment-name }}\` |"
             echo "| Timeout (min) | \`${{ inputs.timeout-minutes }}\` |"
-            echo "| Fail-fast | \`${{ inputs.fail-fast }}\` |"
             echo "| Pipeline steps | \`${{ inputs.commands }}\` |"
             echo "| Commit | \`${{ github.sha }}\` |"
             echo "| Triggered by | @${{ github.actor }} |"
