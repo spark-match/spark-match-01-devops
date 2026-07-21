@@ -97,10 +97,10 @@ on:
         required: false
         default: 'latest'
       cache-suffix:
-        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). Default is derived from environment-name + python-versions, scoping cache per-environment and per-Python-version. Override only if you need a finer-grained partition.'
+        description: 'Suffix appended to the GH Actions cache key for uv (setup-uv cache-suffix). When empty (default), the recipe auto-composes it as `<environment-name>-<python-versions>` so the cache is scoped per-environment + per-Python-version. Set explicitly only if you need a finer partition.'
         type: string
         required: false
-        default: '${{ inputs.environment-name }}-${{ inputs.python-versions }}'
+        default: ''
       timeout-minutes:
         description: 'Job timeout in minutes. Tune up for very large coverage / test suites.'
         type: number
@@ -153,12 +153,6 @@ jobs:
             *lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*) ;;
             *) ERRORS+=("commands: unknown pipeline step in '${{ inputs.commands }}'. Valid steps: lint:ruff-format, lint:ruff-check, typecheck:mypy, test:pytest, coverage:upload, none.") ;;
           esac
-          # timeout-minutes + fail-fast + cache-suffix: defensive log only.
-          # GitHub Actions already type-validates these (number/bool/string);
-          # the recipe treats empty strings as "use action-default".
-          if [ -z "${{ inputs.cache-suffix }}" ]; then
-            echo "::warning::cache-suffix is empty; cache will use setup-uv default key (not scoped per-environment)."
-          fi
           if [ ${#ERRORS[@]} -gt 0 ]; then
             echo "::error::Input validation failed:"
             for E in "${ERRORS[@]}"; do echo "::error::  - $E"; done
@@ -174,7 +168,7 @@ jobs:
         with:
           version: ${{ inputs.setup-uv-version }}
           enable-cache: true
-          cache-suffix: ${{ inputs.cache-suffix }}
+          cache-suffix: ${{ inputs.cache-suffix != '' && inputs.cache-suffix || format('{0}-{1}', inputs.environment-name, inputs.python-versions) }}
           cache-dependency-glob: |
             ${{ inputs.working-directory }}/pyproject.toml
             ${{ inputs.working-directory }}/uv.lock
@@ -235,7 +229,7 @@ jobs:
             echo "| Python versions | \`${{ inputs.python-versions }}\` (active: \`${{ matrix.python-version }}\`) |"
             echo "| Working directory | \`${{ inputs.working-directory }}\` |"
             echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
-            echo "| Cache suffix | \`${{ inputs.cache-suffix }}\` |"
+            echo "| Cache suffix | \`${{ inputs.cache-suffix != '' && inputs.cache-suffix || format('{0}-{1}', inputs.environment-name, inputs.python-versions) }}\` |"
             echo "| Timeout (min) | \`${{ inputs.timeout-minutes }}\` |"
             echo "| Fail-fast | \`${{ inputs.fail-fast }}\` |"
             echo "| Pipeline steps | \`${{ inputs.commands }}\` |"
