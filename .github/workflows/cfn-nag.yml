@@ -99,14 +99,31 @@ jobs:
 
       - name: Run cfn-nag
         # `cfn_nag_scan` (underscore binary) takes the same args as the
-        # hyphen wrapper. We pass --input-directory + --output-format so
-        # the recipe works regardless of how the caller lays out their
-        # templates.
+        # hyphen wrapper. We use --input-path per file (not --input-directory)
+        # to avoid scanning build artifacts like .aws-sam/build/template.yaml
+        # (SAM CLI transform output), which cfn-nag cannot parse reliably
+        # (it references nested stack files that do not exist in the build
+        # dir and exit 255). Iterating per-file with the glob is what the
+        # orion-backend inline cfn-nag setup did before this promotion.
         run: |
           set -euo pipefail
-          ARGS=(--input-directory . --output-format "${{ inputs.output-format }}")
+          shopt -s globstar nullglob
+          TEMPLATES=( template.yaml contexts/**/template.yaml )
+          CONFIGS=()
           if [ -f "${{ inputs.config-path }}" ]; then
-            ARGS+=(--config-path "${{ inputs.config-path }}")
+            CONFIGS+=(--config-path "${{ inputs.config-path }}")
           fi
-          # shellcheck disable=SC2086
-          cfn_nag_scan "${ARGS[@]}"
+          SCAN_FAILED=0
+          for tpl in "${TEMPLATES[@]}"; do
+            [ -f "$tpl" ] || continue
+            echo "=== Scanning $tpl ==="
+            # shellcheck disable=SC2086
+            if ! cfn_nag_scan --input-path "$tpl" --output-format "${{ inputs.output-format }}" "${CONFIGS[@]}"; then
+              echo "::warning::cfn-nag exited non-zero on $tpl (continuing so all templates are reported)"
+              SCAN_FAILED=1
+            fi
+          done
+          if [ "$SCAN_FAILED" = "1" ]; then
+            echo "::error::cfn-nag reported FAIL findings on at least one template."
+            exit 1
+          fi
