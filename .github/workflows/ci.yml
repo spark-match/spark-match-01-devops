@@ -102,3 +102,22 @@ jobs:
       ruff-targets: example tests
       mypy-targets: example
       pytest-targets: tests
+
+  python-qa-lint-only:
+    name: python-qa-self-test (sync-mode=lint-only)
+    # Sprint C regression: validates the new `sync-mode: lint-only` input.
+    # Same recipe, same fixture, but only the lint commands and only the
+    # `lint` dependency group is installed. Catches:
+    #   - input wiring (Validate inputs accepts `lint-only`)
+    #   - sync step (uv sync --only-group lint succeeds on the fixture)
+    #   - downstream step guards (the non-lint commands are simply not
+    #     listed in `commands`, so they are skipped; lint-only must succeed
+    #     with just the `lint` group).
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    with:
+      environment-name: ci-lint-only
+      working-directory: tests/fixtures/python-project
+      commands: lint:ruff-format,lint:ruff-check,lint:bandit
+      dependency-groups: lint
+      sync-mode: lint-only
+      ruff-targets: example tests

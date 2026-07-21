@@ -61,6 +61,10 @@
 #     permissions-write   opt-in sticky PR comment (default false)
 #
 #   Sync flags:
+#     sync-mode           dependency installation scope (default "full"):
+#                          full          = uv sync with all groups in `dependency-groups`
+#                          runtime-only  = uv sync --no-dev (skip dev/test deps)
+#                          lint-only     = uv sync --only-group lint (only linting)
 #     lock-check          run `uv lock --check` before sync (default false)
 #     frozen              pass `--frozen` to uv sync (default false)
 #
@@ -149,6 +153,20 @@ on:
         type: boolean
         required: false
         default: false
+      sync-mode:
+        description: |
+          Sync scope for `uv sync`. Lets callers skip expensive dev/test groups for
+          lint-only or runtime-only jobs.
+            full          Install all groups listed in `dependency-groups` (default; same
+                          as before this input existed).
+            runtime-only  `uv sync --no-dev`. Use for production-style jobs that only
+                          need runtime deps to build a wheel/deploy artifact.
+            lint-only     `uv sync --only-group lint`. Use for cheap PR gates that only
+                          run `lint:ruff-format` + `lint:ruff-check`. Requires the caller
+                          pyproject.toml to declare a `[dependency-groups]` named `lint`.
+        type: string
+        required: false
+        default: 'full'
       frozen:
         description: 'Pass `--frozen` to `uv sync` (no lock regeneration; prod callers). Mutually beneficial with `lock-check: true`.'
         type: boolean
@@ -226,6 +244,10 @@ jobs:
           # workflow_call.inputs block (GHA coerces); bash sees them as
           # the literal strings 'true' / 'false' after substitution. No
           # explicit validation needed beyond type coercion.
+          case "${{ inputs.sync-mode }}" in
+            full|runtime-only|lint-only) ;;
+            *) ERRORS+=("sync-mode: must be one of 'full', 'runtime-only', 'lint-only', got '${{ inputs.sync-mode }}'") ;;
+          esac
           case "${{ inputs.commands }}" in
             *none*) ;;   # explicit "none" = caller wants only the manual steps (rare)
             *security:pip-audit*|*lint:ruff-format-fix*|*lint:ruff-check-fix*|*lock:check*|*lint:bandit*|*lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*) ;;
@@ -255,7 +277,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: "Sync dependencies (groups=${{ inputs.dependency-groups }} lock-check=${{ inputs.lock-check }} frozen=${{ inputs.frozen }})"
+      - name: "Sync dependencies (sync-mode=${{ inputs.sync-mode }} groups=${{ inputs.dependency-groups }} lock-check=${{ inputs.lock-check }} frozen=${{ inputs.frozen }})"
         working-directory: ${{ inputs.working-directory }}
         env:
           UV_PRINT_ENV: "1"
@@ -266,19 +288,24 @@ jobs:
             echo "Running uv lock --check (input lock-check=true)"
             uv lock --check
           fi
-          # Build --group flags from space-separated input. Avoids the IFS +
-          # here-string + `${GROUPS[@]}` array expansion that previously
-          # exited with code 1 when `set -u` flagged an unset index.
-          args=()
-          for g in ${{ inputs.dependency-groups }}; do
-            args+=(--group "$g")
-          done
-          # Compose sync command. `--frozen` flags go after the --group
-          # args; uv accepts them in any order.
+          # Build sync args. Sprint C adds the `sync-mode` knob that lets a
+          # caller skip dev/test groups for fast lint-only or prod-only jobs.
           sync_args=()
-          if [ "${#args[@]}" -gt 0 ]; then
-            sync_args+=("${args[@]}")
-          fi
+          case "${{ inputs.sync-mode }}" in
+            full)
+              for g in ${{ inputs.dependency-groups }}; do
+                sync_args+=(--group "$g")
+              done
+              ;;
+            runtime-only)
+              sync_args+=(--no-dev)
+              ;;
+            lint-only)
+              sync_args+=(--only-group lint)
+              ;;
+          esac
+          # Apply `--frozen` if requested. uv accepts it in any order with the
+          # group flags, so we just append.
           if [ "${{ inputs.frozen }}" = "true" ]; then
             sync_args+=("--frozen")
           fi
@@ -411,6 +438,7 @@ jobs:
             echo "| Working directory | \`${{ inputs.working-directory }}\` |"
             echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
             echo "| Cache suffix | \`${{ inputs.cache-suffix || inputs.environment-name }}\` |"
+            echo "| Sync mode | \`${{ inputs.sync-mode }}\` |"
             echo "| Lock check | \`${{ inputs.lock-check }}\` |"
             echo "| Frozen | \`${{ inputs.frozen }}\` |"
             echo "| Timeout (min) | \`${{ inputs.timeout-minutes }}\` |"
