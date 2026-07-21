@@ -81,9 +81,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+          # Cache key incluye environment-name para segregar caches por
+          # ambiente (dev vs prod). Aunque el contenido del cache npm es
+          # content-addressed desde package-lock.json (teoricamente seguro
+          # compartir entre envs), la segregacion previene cache poisoning
+          # si un futuro caller pasa flags npm distintos por env
+          # (e.g. --omit=dev en prod).
+          key: ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-env${{ inputs.environment-name }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
           restore-keys: |
-            ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-
+            ${{ runner.os }}-node${{ inputs.node-version }}-eslint${{ inputs.eslint-version }}-env${{ inputs.environment-name }}-
 
       - name: Install dependencies
         run: npm ci
