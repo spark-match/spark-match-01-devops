@@ -62,10 +62,10 @@ on:
         required: false
         default: 'template.yaml contexts/'
       config-path:
-        description: 'Optional path to a caller-provided .cfn-nag.yml config (omit to use defaults).'
+        description: 'Reserved for future use. The current cfn_nag_scan binary (cfn-nag 0.8.10) does NOT accept a config-path flag; .cfn-nag.yml in the caller repo is informational only.'
         type: string
         required: false
-        default: '.cfn-nag.yml'
+        default: ''
       output-format:
         description: 'cfn-nag output format (txt, json, csv).'
         type: string
@@ -105,20 +105,19 @@ jobs:
         # (it references nested stack files that do not exist in the build
         # dir and exit 255). Iterating per-file with the glob is what the
         # orion-backend inline cfn-nag setup did before this promotion.
+        #
+        # Note: cfn_nag_scan 0.8.10 does NOT support `--config-path`; the
+        # .cfn-nag.yml file in the caller repo is informational only (the
+        # original orion-backend inline setup never passed it either).
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
           TEMPLATES=( template.yaml contexts/**/template.yaml )
-          CONFIGS=()
-          if [ -f "${{ inputs.config-path }}" ]; then
-            CONFIGS+=(--config-path "${{ inputs.config-path }}")
-          fi
           SCAN_FAILED=0
           for tpl in "${TEMPLATES[@]}"; do
             [ -f "$tpl" ] || continue
             echo "=== Scanning $tpl ==="
-            # shellcheck disable=SC2086
-            if ! cfn_nag_scan --input-path "$tpl" --output-format "${{ inputs.output-format }}" "${CONFIGS[@]}"; then
+            if ! cfn_nag_scan --input-path "$tpl" --output-format "${{ inputs.output-format }}"; then
               echo "::warning::cfn-nag exited non-zero on $tpl (continuing so all templates are reported)"
               SCAN_FAILED=1
             fi
