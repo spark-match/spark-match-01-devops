@@ -170,13 +170,22 @@ jobs:
 
       - name: "Sync dependencies (groups=${{ inputs.dependency-groups }})"
         working-directory: ${{ inputs.working-directory }}
+        env:
+          UV_PRINT_ENV: "1"
         run: |
           set -euo pipefail
-          IFS=' ' read -r -a GROUPS <<< "${{ inputs.dependency-groups }}"
-          if [ "${#GROUPS[@]}" -eq 0 ] || [ -z "${GROUPS[0]:-}" ]; then
+          # Build --group flags from space-separated input. Avoids the IFS +
+          # here-string + `${GROUPS[@]}` array expansion that previously exited
+          # with code 1 when empty / when `set -u` flagged an unset index.
+          args=()
+          # shellcheck disable=SC2206
+          for g in ${{ inputs.dependency-groups }}; do
+            args+=(--group "$g")
+          done
+          if [ "${#args[@]}" -eq 0 ]; then
             uv sync
           else
-            uv sync --group "${GROUPS[@]}"
+            uv sync "${args[@]}"
           fi
 
       - name: Lint (ruff format check)
