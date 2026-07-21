@@ -110,13 +110,24 @@ si quiere purga cache en cada run (raro; casi siempre no se necesita).
 solo `environment-name` ven `cache-suffix` igual al hash anterior. Los
 callers existentes no requieren cambios.
 
+> Ver tambien: `docs/PYTHON-CI.md` § 4 ("Cache key formula") para la
+> referencia canonica del recipe `python-ci.yml`, y `docs/CACHE.md` § 1
+> para la convencion cross-ecosystem (node, terraform, etc.).
+
 ### Como prueba de cambios
 
-1. `ci.yml` (self-test) corre los 3 ecosystem recipes sobre este repo en cada PR.
-2. Cambios que afectan a recipes de `python/`, `node/` o `deploy/` requieren un caller externo para smoke test:
-   - `python-ci.yml`: smoke test en `orion-cognitive-agent@dev`
+1. `ci.yml` (self-test) corre los 3 ecosystem recipes (actionlint, gitleaks,
+   yamllint) **mas el nuevo self-test de `python-ci.yml`** sobre este repo
+   en cada PR. El self-test de Python corre contra
+   `tests/fixtures/python-project/` con un solo Python (3.12, hardcoded en
+   el recipe por el bug cross-owner de GHA — ver `docs/PYTHON-CI.md` § 8.1)
+   y grupos de dependencias `dev lint`. Esto dogfood el recipe localmente;
+   los cambios puramente recipe-internos (no caller-specific) ya no
+   requieren smoke test externo obligatorio.
+2. Cambios que afectan a recipes de `python/`, `node/` o `deploy/` aun pueden requerir un caller externo para smoke test cuando el layout del caller introduce variables que el self-test interno no cubre:
+   - `python-ci.yml`: smoke test en `orion-cognitive-agent@dev` (caller canonico de produccion)
    - `node/eslint.yml`: smoke test en `orion-frontend@dev`
    - `deploy/sam-deploy.yml`: smoke test en `orion-backend@dev`
    - `deploy/container-deploy-ecr.yml`: smoke test en `orion-cognitive-agent@dev`
    - `deploy/terraform-plan.yml` + `deploy/terraform-apply.yml`: smoke test en `orion-infrastructure@dev`
-3. Una vez verde en `ci.yml` + smoke test en el caller externo, el cambio se promueve a `main` con un PR `dev` -> `main`.
+3. Una vez verde en `ci.yml` (+ smoke test externo cuando aplique), el cambio se promueve a `main` con un PR `dev` -> `main`.
