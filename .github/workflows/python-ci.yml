@@ -1,0 +1,212 @@
+# =============================================================================
+# Reusable Workflow: Python CI (uv + ruff + mypy + pytest)
+# =============================================================================
+# Atomic recipe (python layer). Runs a Python project QA pipeline using
+# `uv` for dependency management + `ruff` + `mypy` + `pytest`. Designed for
+# projects that mirror the orion-cognitive-agent stack (pin in `.python-version`,
+# lock file `uv.lock`, dev groups in `pyproject.toml`). The recipe is
+# GENERIC: it does not assume a specific project layout beyond `pyproject.toml`
+# + `uv.lock` in `working-directory`.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     python-ci:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+#       with:
+#         environment-name: ci
+#         python-versions: '"3.12"'        # JSON list for matrix support
+#         working-directory: '.'
+#         commands: lint:ruff-format, lint:ruff-check, typecheck:mypy, test:pytest, coverage:upload
+#
+# Required secrets: none (this is an ecosystem-style recipe, no AWS).
+#
+# Required GH Environment: caller may optionally create an "env" for the
+# matrix step.environment to gate the run; recommended but not enforced.
+#
+# Inputs (defaults tuned for orion-cognitive-agent; callers override):
+#   - environment-name    job name + env gate (e.g. "ci")
+#   - python-versions     JSON list for matrix (default '"3.12"')
+#   - working-directory   where uv operates (default "." = repo root)
+#   - commands            ordered list of pipeline steps to run
+#   - dependency-groups   extra `uv sync --group` groups (e.g. "dev bedrock")
+#   - ruff-targets        CSV of paths for `ruff format/check` (default "src tests")
+#   - mypy-targets        CSV of paths for `mypy` (default "src")
+#   - pytest-targets      path for `pytest` (default "tests")
+#   - coverage-output     coverage file path to upload (default "coverage.xml")
+#   - setup-uv-version    uv version (default "latest")
+# =============================================================================
+
+name: Python CI
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment identifier. Used in the job name and optional GH Environment gate.'
+        type: string
+        required: true
+      python-versions:
+        description: 'JSON list of Python versions for the matrix (e.g. ''"3.12"'' or ''"3.11","3.12"'').'
+        type: string
+        required: false
+        default: '"3.12"'
+      working-directory:
+        description: 'Directory containing pyproject.toml (and uv.lock if present).'
+        type: string
+        required: false
+        default: '.'
+      commands:
+        description: 'Ordered pipeline steps to run, CSV (subset of: lint:ruff-format, lint:ruff-check, typecheck:mypy, test:pytest, coverage:upload, none). Default runs all four QA steps + uploads coverage.'
+        type: string
+        required: false
+        default: 'lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload'
+      dependency-groups:
+        description: 'Extra `uv sync --group` groups (space-separated). Caller sets this to opt into optional dependency sets (e.g. "dev bedrock").'
+        type: string
+        required: false
+        default: 'dev'
+      ruff-targets:
+        description: 'CSV of paths passed to `ruff format/check`.'
+        type: string
+        required: false
+        default: 'src tests'
+      mypy-targets:
+        description: 'CSV of paths passed to `mypy`.'
+        type: string
+        required: false
+        default: 'src'
+      pytest-targets:
+        description: 'Path passed to `pytest`.'
+        type: string
+        required: false
+        default: 'tests'
+      coverage-output:
+        description: 'Coverage file path uploaded as an artifact.'
+        type: string
+        required: false
+        default: 'coverage.xml'
+      setup-uv-version:
+        description: 'uv version to install via astral-sh/setup-uv.'
+        type: string
+        required: false
+        default: 'latest'
+
+permissions:
+  contents: read
+
+# Concurrency keyed by caller + env to keep lint runs cancelable per branch.
+concurrency:
+  group: python-ci-${{ inputs.environment-name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa:
+    name: "Python QA (${{ inputs.environment-name }})"
+    # Optional env gate. Callers can create an "env" GH Environment to gate
+    # the run; the caller's environment-name should match.
+    environment: ${{ inputs.environment-name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+
+    steps:
+      - name: Validate inputs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          ERRORS=()
+          if [ -z "${{ inputs.environment-name }}" ]; then
+            ERRORS+=("environment-name: required")
+          fi
+          if [ -z "${{ inputs.working-directory }}" ]; then
+            ERRORS+=("working-directory: required")
+          fi
+          if [ -z "${{ inputs.python-versions }}" ]; then
+            ERRORS+=("python-versions: required")
+          fi
+          case "${{ inputs.commands }}" in
+            *none*) ;;   # explicit "none" = caller wants only the manual steps (rare)
+            *lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*) ;;
+            *) ERRORS+=("commands: unknown pipeline step in '${{ inputs.commands }}'. Valid steps: lint:ruff-format, lint:ruff-check, typecheck:mypy, test:pytest, coverage:upload, none.") ;;
+          esac
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do echo "::error::  - $E"; done
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ inputs.setup-uv-version }}
+          enable-cache: true
+          cache-dependency-glob: |
+            ${{ inputs.working-directory }}/pyproject.toml
+            ${{ inputs.working-directory }}/uv.lock
+
+      - name: Set up Python ${{ matrix.python-version }}
+        working-directory: ${{ inputs.working-directory }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies (groups: ${{ inputs.dependency-groups }})
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          GROUPS="${{ inputs.dependency-groups }}"
+          if [ -z "$GROUPS" ]; then
+            uv sync
+          else
+            uv sync --group $GROUPS
+          fi
+
+      - name: Lint (ruff format check)
+        if: ${{ contains(inputs.commands, 'lint:ruff-format') }}
+        working-directory: ${{ inputs.working-directory }}
+        run: uv run ruff format --check ${{ inputs.ruff-targets }}
+
+      - name: Lint (ruff check)
+        if: ${{ contains(inputs.commands, 'lint:ruff-check') }}
+        working-directory: ${{ inputs.working-directory }}
+        run: uv run ruff check ${{ inputs.ruff-targets }}
+
+      - name: Type check (mypy)
+        if: ${{ contains(inputs.commands, 'typecheck:mypy') }}
+        working-directory: ${{ inputs.working-directory }}
+        run: uv run mypy ${{ inputs.mypy-targets }}
+
+      - name: Run tests (pytest)
+        if: ${{ contains(inputs.commands, 'test:pytest') }}
+        working-directory: ${{ inputs.working-directory }}
+        run: uv run pytest --tb=short ${{ inputs.pytest-targets }}
+
+      - name: Upload coverage report
+        if: ${{ always() && contains(inputs.commands, 'coverage:upload') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: ${{ inputs.working-directory }}/${{ inputs.coverage-output }}
+          if-no-files-found: ignore
+
+      - name: QA summary
+        if: always()
+        run: |
+          {
+            echo "## Python CI - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| Python versions | \`${{ inputs.python-versions }}\` (active: \`${{ matrix.python-version }}\`) |"
+            echo "| Working directory | \`${{ inputs.working-directory }}\` |"
+            echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
+            echo "| Pipeline steps | \`${{ inputs.commands }}\` |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Triggered by | @${{ github.actor }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
