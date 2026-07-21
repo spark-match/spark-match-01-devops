@@ -1,0 +1,139 @@
+# =============================================================================
+# Reusable Workflow: Node Test - unit tests for JS/TS workspaces
+# =============================================================================
+# Atomic recipe (node layer). Runs `npm run <test-script>` in the caller's
+# repository with the requested Node version. Caches package manager
+# dependencies per the canonical cache key convention (docs/CACHE.md).
+#
+# Optimized for Angular 22 (which uses vitest via @angular/build:unit-test)
+# and conventional JS/TS unit-test runners (vitest, jest, mocha). Callers
+# control the actual test command via `test-script` and an optional
+# `pre-test-script` (useful when tests need a generation step, like
+# Angular's prebuild hook that materializes API_URL into a generated file).
+#
+# USAGE (in caller repo):
+#   jobs:
+#     test:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@main
+#       with:
+#         environment-name: ci
+#         pre-test-script: prebuild   # optional (Angular callers)
+#         test-script: test -- --watch=false
+#
+# Notes:
+#   - Defaults to npm + package-lock.json + test script 'test'. Override for
+#     pnpm/yarn/bun or for custom test scripts.
+#   - Cache key follows the canonical convention:
+#       <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
+#     See docs/CACHE.md for the full convention rationale.
+#
+# Cross-owner safe: no caller secrets forwarded.
+# =============================================================================
+
+name: Node Test
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational, used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      node-version:
+        description: 'Node.js version (passed to actions/setup-node).'
+        type: string
+        required: false
+        default: '24'
+      pkg-manager:
+        description: 'JavaScript package manager (used for install + cache key). One of: npm, pnpm, yarn, bun.'
+        type: string
+        required: false
+        default: 'npm'
+      lockfile-name:
+        description: 'Lockfile name relative to working-directory. Default "package-lock.json" (npm). Override for other managers.'
+        type: string
+        required: false
+        default: 'package-lock.json'
+      pre-test-script:
+        description: 'Optional npm script to run before the test suite (e.g. "prebuild" for Angular callers that generate a config file). Empty = skip.'
+        type: string
+        required: false
+        default: ''
+      test-script:
+        description: 'npm script that runs the unit test suite (e.g. "test", or "test -- --watch=false" with extra flags).'
+        type: string
+        required: false
+        default: 'test'
+      working-directory:
+        description: 'Working directory for npm (where the caller package.json lives). Default = repo root.'
+        type: string
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: "unit tests (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Resolve cache key tags
+        # Lowercase runner.os + environment-name into env vars for the
+        # canonical cache key convention. See docs/CACHE.md.
+        run: |
+          set -euo pipefail
+          LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          case "$LOWER_OS" in
+            linux|windows|macos) ;;
+            *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
+          esac
+          echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          # Disable setup-node's built-in package manager cache to avoid
+          # double caching with our explicit actions/cache step below.
+          package-manager-cache: false
+
+      - name: Cache ${{ inputs.pkg-manager }} dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          # Canonical cache key convention (lowercase, see docs/CACHE.md):
+          #   <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
+          key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
+          restore-keys: |
+            ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pre-test hook
+        if: inputs.pre-test-script != ''
+        # Optional script for callers that need a generation step before
+        # tests run. Example (Angular): pre-test-script=prebuild runs the
+        # scripts/pre-build-api-config.mjs hook to materialize
+        # src/environments/api-config.generated.ts before vitest spins up.
+        run: npm run ${{ inputs.pre-test-script }}
+
+      - name: Run unit tests
+        # Honoring caller-defined test scripts. Examples:
+        #   - "test"                   (default)
+        #   - "test -- --watch=false"  (Angular 22 + vitest)
+        #   - "test:coverage"          (jest with coverage)
+        run: npm run ${{ inputs.test-script }}
