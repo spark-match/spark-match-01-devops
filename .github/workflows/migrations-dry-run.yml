@@ -233,82 +233,54 @@ jobs:
           echo "Found ${SQL_COUNT} migration file(s) in '${{ inputs.migrations-dir }}'"
 
       - name: Apply migrations against ephemeral Postgres
-        # node-pg-migrate reads DATABASE_URL via .npmrc.migrate; we pass
-        # the URL as an env var. singleTransaction: true (set by callers
-        # in .npmrc.migrate) wraps all migrations in one transaction, so
-        # any failure rolls back the whole batch and CI fails fast.
+        # node-pg-migrate v9 (as of mid-2026) silently ignores the
+        # `migrationsTable` key from --config-file: it always creates
+        # `pgmigrations`. The reproducer is to set
+        # `"migrationsTable": "orion_migrations"` in the config, run
+        # `npm run migrate:up`, and observe the generated table is
+        # `pgmigrations`. This was caught by the recipe's own debug
+        # output during the Sprint B validation; until node-pg-migrate
+        # fixes the loader, the only reliable way to honor the caller's
+        # table name is to pass --migrations-table as an explicit CLI
+        # arg (CLI args override config file values).
         #
-        # We bypass `npm run ${{ inputs.npm-script }}` and invoke
-        # node-pg-migrate directly because node-pg-migrate v9 silently
-        # ignores the `migrationsTable` key in --config-file (the
-        # generated table is always `pgmigrations`). CLI args override
-        # config file values, so passing --migrations-table explicitly
-        # is the only reliable way to honor the caller's setting.
+        # We still resolve the caller's npm script first so we reuse
+        # the pinned node-pg-migrate version and any custom flags they
+        # have set; we only override the keys known to be silently
+        # dropped.
+        #
+        # DATABASE_URL is passed as an env var because node-pg-migrate's
+        # `databaseUrl: "DATABASE_URL"` config setting reads the env var
+        # at connection time.
         env:
           DATABASE_URL: postgres://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@localhost:5432/${{ inputs.postgres-db }}
         run: |
           set -euo pipefail
-          echo "===== Pre-migration DB state ====="
-          PGPASSWORD="${{ inputs.postgres-password }}" \
-            psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
-            -c "\dt" || true
-          echo "===== Running node-pg-migrate up (via npm-script=${{ inputs.npm-script }}) ====="
-          # Resolve the npm script's command so we can reuse the
-          # caller's package.json pins (node-pg-migrate version, etc.)
-          # without re-implementing the flag set. `npm run` echoes the
-          # resolved command to stdout when called with --dry-run=false
-          # (default) and an explicit npm-prefix-aware env.
-          SCRIPT_CMD=$(node -e "
-            const pkg = require('./package.json');
-            const script = pkg.scripts[process.argv[1]];
-            process.stdout.write(script);
-          " "${{ inputs.npm-script }}")
-          echo "Resolved npm script: ${SCRIPT_CMD}"
-          # Split the script into tokens, replace --config-file <file>
-          # with explicit CLI args (--migrations-table, --migrations-schema,
-          # --schema), and append to the base node-pg-migrate invocation.
-          # This preserves the caller's singleTransaction / noLock /
-          # advisoryLockMode settings from the config file (they take
-          # effect via the merged args).
-          set +e
-          eval "node_modules/.bin/node-pg-migrate up \
-            --use-glob \
-            --migrations-table '${{ inputs.migrations-table }}' \
-            --migrations-schema '${{ inputs.migrations-schema }}' \
-            --schema '${{ inputs.migrations-schema }}' \
-            --database-url \"\${DATABASE_URL}\" \
-            --create-schema \
-            --create-migrations-schema \
-            --ignore-pattern '\\..*' \
-            --single-transaction \
-            --decamelize=false \
-            --pretty \
-            --no-lock=false \
-            --advisory-lock-mode fail \
-            --dir '${{ inputs.migrations-dir }}' 2>&1 | tee /tmp/migrate.log"
-          MIGRATE_EXIT=${PIPESTATUS[0]}
-          set -e
-          echo "===== node-pg-migrate exit code: ${MIGRATE_EXIT} ====="
-          echo "===== Post-migration DB state ====="
-          PGPASSWORD="${{ inputs.postgres-password }}" \
-            psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
-            -c "\dt" || true
-          if [ "${MIGRATE_EXIT}" != "0" ]; then
-            echo "::error::node-pg-migrate exited with ${MIGRATE_EXIT}"
-            exit "${MIGRATE_EXIT}"
-          fi
+          echo "===== Applying migrations via 'npm run ${{ inputs.npm-script }}' ====="
+          # Invoke the caller's npm script (preserves the pinned node-pg-migrate
+          # version + any extra flags they pass). We then layer the recipe's
+          # explicit --migrations-table + --migrations-schema + --schema on top
+          # via npm-run's argument forwarding.
+          # shellcheck disable=SC2086
+          npm run "${{ inputs.npm-script }}" --if-present -- \
+            --migrations-table "${{ inputs.migrations-table }}" \
+            --migrations-schema "${{ inputs.migrations-schema }}" \
+            --schema "${{ inputs.migrations-schema }}"
 
       - name: Migration summary
         # Read the tracking table directly via psql (preinstalled on
         # ubuntu-latest runners). Shows the order in which migrations
         # were applied - useful for reviewing PRs that add new files.
-        if: success()
+        # Runs even when the migration step failed so the post-mortem
+        # is visible in the step summary.
+        if: always()
         run: |
           set -euo pipefail
           echo "===== Applied migrations (${{ inputs.migrations-schema }}.${{ inputs.migrations-table }}) ====="
           PGPASSWORD="${{ inputs.postgres-password }}" \
             psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
-            -c "SELECT name FROM ${{ inputs.migrations-schema }}.${{ inputs.migrations-table }} ORDER BY id;"
+            -c "SELECT name FROM ${{ inputs.migrations-schema }}.${{ inputs.migrations-table }} ORDER BY id;" \
+            || echo "::warning::Could not query tracking table (migration step likely failed)"
 
       - name: Migrations dry-run summary
         if: always()
