@@ -23,6 +23,18 @@
 #       secrets:
 #         AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
 #
+#   Note on environment gating: this recipe intentionally does NOT
+#   declare `environment:` on its job. Per GitHub Actions semantics,
+#   `environment:` declared in a reusable workflow job is resolved in
+#   the *callee* repo (spark-match-01-devops), not the caller. The
+#   cookbook has no `dev` env, so any env reference here would fail
+#   the lookup and yield a zero-jobs run (see PR #96 for the full
+#   diagnosis). The gate is therefore enforced by the caller, either
+#   at workflow level (preferred, see orion-backend/.github/workflows/
+#   migrations.yml) or at a preflight job level. The `environment-name`
+#   input is still required for the concurrency key and as a sanity
+#   check that callers know which env they are targeting.
+#
 # Lambda contract:
 #   - The recipe invokes `<function-name>` synchronously with a JSON payload.
 #     Default payload is '{}' (canonical for the current orion-backend
@@ -37,7 +49,9 @@
 # Required GitHub Environment in caller repo:
 #   Create one GH Environment per value passed via environment-name
 #   (e.g. "dev", "prod"). Each environment should hold the
-#   AWS_DEPLOY_ROLE_ARN secret scoped to it. This is the approval gate.
+#   AWS_DEPLOY_ROLE_ARN secret scoped to it. The caller is responsible
+#   for declaring `environment: <name>` at workflow or preflight-job
+#   level so the gate runs in the caller's repo (where the env exists).
 #
 # Required Secret in caller (per environment):
 #   AWS_DEPLOY_ROLE_ARN: OIDC role ARN with trust policy for
@@ -103,7 +117,7 @@ jobs:
     name: "migrate (env=${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
-    environment: ${{ inputs.environment-name }}
+    # No `environment:` here on purpose - see the file header.
     steps:
       - name: Validate inputs
         run: |

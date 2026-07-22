@@ -25,8 +25,9 @@
 #
 # Inputs:
 #   - environment-name:  informational; appears in job name and logs.
-#   - postgres-version:  Postgres major version to spin up. Default 16 (matches
-#                        orion-infrastructure modules/rds-postgres default).
+#   - postgres-version:  Postgres major version to spin up. Default 17 (matches
+#                        orion-infrastructure modules/rds-postgres default since
+#                        the 16.4 -> 17.10 major bump in Sprint C).
 #   - postgres-user/-password/-db:  credentials used by the runner to connect.
 #                                  Defaults are safe for a throwaway container.
 #   - migrations-dir:    path to the *.sql directory, relative to
@@ -60,7 +61,7 @@ on:
         description: 'Postgres major version for the service container (e.g. "16", "17").'
         type: string
         required: false
-        default: '16'
+        default: '17'
       postgres-user:
         description: 'Postgres role name to create in the container.'
         type: string
