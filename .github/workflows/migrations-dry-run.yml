@@ -1,0 +1,282 @@
+# =============================================================================
+# Reusable Workflow: migrations-dry-run
+# =============================================================================
+# Atomic recipe (ecosystem layer). Validates the caller's SQL migrations by
+# applying them against a fresh Postgres instance spun up in a service
+# container. NO AWS, NO caller secrets.
+#
+# This guards against the exact failure mode where migration files are
+# syntactically valid in isolation but their sequence is broken (e.g. an
+# UPDATE that violates a CHECK constraint the previous migration set up).
+# Without this gate, such bugs are caught only when the production Lambda
+# migrator runs, which is too late - the next smoke test fails and the
+# pipeline stalls.
+#
+# The recipe uses node-pg-migrate (the same tool the caller uses locally),
+# so the validation is faithful to the production migration runner.
+#
+# USAGE (in caller repo's ci.yml or any workflow with pull_request trigger):
+#   jobs:
+#     migrations-dry-run:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/migrations-dry-run.yml@dev
+#       with:
+#         environment-name: ci
+#         postgres-version: '16'
+#
+# Inputs:
+#   - environment-name:  informational; appears in job name and logs.
+#   - postgres-version:  Postgres major version to spin up. Default 16 (matches
+#                        orion-infrastructure modules/rds-postgres default).
+#   - postgres-user/-password/-db:  credentials used by the runner to connect.
+#                                  Defaults are safe for a throwaway container.
+#   - migrations-dir:    path to the *.sql directory, relative to
+#                        working-directory. Default 'migrations'.
+#   - migrations-table:  node-pg-migrate tracking table. Default
+#                        'orion_migrations' (matches .npmrc.migrate convention
+#                        in orion-backend).
+#   - migrations-schema: schema holding the tracking table. Default 'public'.
+#   - node-version:      Node.js version for the runner. Default 24 (matches
+#                        orion-backend's engines.node).
+#   - working-directory: where 'npm ci' runs (where package.json lives).
+#   - npm-script:        npm script that applies the migrations. Default
+#                        'migrate:up'. node-pg-migrate exits non-zero on any
+#                        migration failure.
+#   - timeout-minutes:   job-level timeout. Default 10.
+#
+# Cross-owner safe: pure CLI check, no secrets forwarded.
+# =============================================================================
+
+name: migrations-dry-run
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational; used in job name and logs).'
+        type: string
+        required: false
+        default: 'dev'
+      postgres-version:
+        description: 'Postgres major version for the service container (e.g. "16", "17").'
+        type: string
+        required: false
+        default: '16'
+      postgres-user:
+        description: 'Postgres role name to create in the container.'
+        type: string
+        required: false
+        default: 'postgres'
+      postgres-password:
+        description: 'Postgres role password (throwaway container only - never reused).'
+        type: string
+        required: false
+        default: 'postgres'
+      postgres-db:
+        description: 'Database name to create on first boot.'
+        type: string
+        required: false
+        default: 'orion_test'
+      migrations-dir:
+        description: 'Path to the *.sql directory, relative to working-directory.'
+        type: string
+        required: false
+        default: 'migrations'
+      migrations-table:
+        description: 'node-pg-migrate tracking table name (matches .npmrc.migrate migrationsTable).'
+        type: string
+        required: false
+        default: 'orion_migrations'
+      migrations-schema:
+        description: 'Schema that holds the migrations tracking table.'
+        type: string
+        required: false
+        default: 'public'
+      node-version:
+        description: 'Node.js version for the runner.'
+        type: string
+        required: false
+        default: '24'
+      working-directory:
+        description: 'Where npm ci runs (where package.json lives). All relative paths are resolved from here.'
+        type: string
+        required: false
+        default: '.'
+      npm-script:
+        description: 'npm script that applies the migrations. Must use node-pg-migrate.'
+        type: string
+        required: false
+        default: 'migrate:up'
+      timeout-minutes:
+        description: 'Job-level timeout.'
+        type: number
+        required: false
+        default: 10
+
+permissions:
+  contents: read
+
+jobs:
+  migrations-dry-run:
+    name: "migrations-dry-run (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    services:
+      postgres:
+        image: postgres:${{ inputs.postgres-version }}
+        env:
+          POSTGRES_USER: ${{ inputs.postgres-user }}
+          POSTGRES_PASSWORD: ${{ inputs.postgres-password }}
+          POSTGRES_DB: ${{ inputs.postgres-db }}
+        ports:
+          - 5432:5432
+        # Health check via pg_isready; recipe blocks on this before npm ci runs.
+        # --health-retries 5 with --health-interval 10s gives ~50s grace, enough
+        # for any Postgres image to finish initializing the cluster.
+        options: >-
+          --health-cmd "pg_isready -U ${{ inputs.postgres-user }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    # defaults.run.working-directory applies to every step in the job.
+    # The Validate inputs step overrides with '.' so the pre-check works
+    # before checkout (matches the angular-spa-deploy.yml pattern).
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Validate inputs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          if ! echo "${{ inputs.postgres-version }}" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            ERRORS+=("postgres-version: formato invalido '${{ inputs.postgres-version }}' (esperado major[.minor], e.g. '16' o '16.4')")
+          fi
+          if ! echo "${{ inputs.node-version }}" | grep -qE '^[0-9]+$'; then
+            ERRORS+=("node-version: '${{ inputs.node-version }}' invalido (esperado entero, e.g. '24')")
+          fi
+          if [ -z "${{ inputs.migrations-dir }}" ]; then
+            ERRORS+=("migrations-dir: requerido")
+          fi
+          if [ -z "${{ inputs.migrations-table }}" ]; then
+            ERRORS+=("migrations-table: requerido")
+          fi
+          if [ -z "${{ inputs.migrations-schema }}" ]; then
+            ERRORS+=("migrations-schema: requerido")
+          fi
+          if [ -z "${{ inputs.npm-script }}" ]; then
+            ERRORS+=("npm-script: requerido")
+          fi
+          if ! echo "${{ inputs.timeout-minutes }}" | grep -qE '^[0-9]+$'; then
+            ERRORS+=("timeout-minutes: '${{ inputs.timeout-minutes }}' invalido (esperado entero)")
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          # Disable setup-node's built-in cache; this recipe does not need
+          # npm cache (one-shot npm ci is fast enough on cold runners).
+          package-manager-cache: false
+
+      - name: Wait for Postgres
+        # Belt-and-braces wait beyond the service health check - ensures
+        # the cluster has fully come up before the migration step runs.
+        # node-pg-migrate's singleTransaction mode wraps every migration
+        # in one transaction, so the first query will block until PG
+        # accepts connections.
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U "${{ inputs.postgres-user }}" >/dev/null 2>&1; then
+              echo "Postgres ready after ${i} attempt(s)"
+              exit 0
+            fi
+            echo "Waiting for postgres (attempt ${i}/30)..."
+            sleep 2
+          done
+          echo "::error::Postgres did not become ready within 60s"
+          exit 1
+
+      - name: Install caller dependencies
+        # The caller's package.json pins node-pg-migrate (or whatever
+        # migration tool npm-script invokes). npm ci reproduces the
+        # pinned version exactly, which is what the production Lambda
+        # migrator's bundle also uses.
+        run: npm ci
+
+      - name: Verify migrations directory exists
+        run: |
+          set -euo pipefail
+          if [ ! -d "${{ inputs.migrations-dir }}" ]; then
+            echo "::error::migrations-dir '${{ inputs.migrations-dir }}' does not exist (relative to working-directory '${{ inputs.working-directory }}')"
+            exit 1
+          fi
+          SQL_COUNT=$(find "${{ inputs.migrations-dir }}" -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')
+          if [ "${SQL_COUNT}" = "0" ]; then
+            echo "::error::No *.sql files in '${{ inputs.migrations-dir }}' (the recipe cannot validate an empty migration set)."
+            exit 1
+          fi
+          echo "Found ${SQL_COUNT} migration file(s) in '${{ inputs.migrations-dir }}'"
+
+      - name: Apply migrations against ephemeral Postgres
+        # node-pg-migrate reads DATABASE_URL via .npmrc.migrate; we pass
+        # the URL as an env var. singleTransaction: true (set by callers
+        # in .npmrc.migrate) wraps all migrations in one transaction, so
+        # any failure rolls back the whole batch and CI fails fast.
+        env:
+          DATABASE_URL: postgres://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@localhost:5432/${{ inputs.postgres-db }}
+          # node-pg-migrate picks these up from .npmrc.migrate when the
+          # caller's package.json uses --config-file; passing them as env
+          # vars here would conflict, so we rely on the caller's config.
+          # The recipe only sets DATABASE_URL, which is the connection
+          # string. migrationsTable / migrationsSchema are caller-controlled
+          # via .npmrc.migrate.
+        run: |
+          set -euo pipefail
+          echo "===== Running 'npm run ${{ inputs.npm-script }}' ====="
+          npm run "${{ inputs.npm-script }}"
+
+      - name: Migration summary
+        # Read the tracking table directly via psql (preinstalled on
+        # ubuntu-latest runners). Shows the order in which migrations
+        # were applied - useful for reviewing PRs that add new files.
+        if: success()
+        run: |
+          set -euo pipefail
+          echo "===== Applied migrations (${{ inputs.migrations-schema }}.${{ inputs.migrations-table }}) ====="
+          PGPASSWORD="${{ inputs.postgres-password }}" \
+            psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
+            -c "SELECT name FROM ${{ inputs.migrations-schema }}.${{ inputs.migrations-table }} ORDER BY id;"
+
+      - name: Migrations dry-run summary
+        if: always()
+        run: |
+          {
+            echo "## Migrations dry-run - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Status | \${{ job.status }} |"
+            echo "| Postgres version | \`${{ inputs.postgres-version }}\` |"
+            echo "| Database | \`${{ inputs.postgres-db }}\` |"
+            echo "| Migrations dir | \`${{ inputs.migrations-dir }}\` |"
+            echo "| Tracking table | \`${{ inputs.migrations-schema }}.${{ inputs.migrations-table }}\` |"
+            echo "| npm script | \`${{ inputs.npm-script }}\` |"
+            echo "| Node | \`${{ inputs.node-version }}\` |"
+            echo ""
+            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
