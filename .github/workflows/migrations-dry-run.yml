@@ -233,21 +233,24 @@ jobs:
           echo "Found ${SQL_COUNT} migration file(s) in '${{ inputs.migrations-dir }}'"
 
       - name: Apply migrations against ephemeral Postgres
-        # node-pg-migrate v9 (as of mid-2026) silently ignores the
-        # `migrationsTable` key from --config-file: it always creates
-        # `pgmigrations`. The reproducer is to set
-        # `"migrationsTable": "orion_migrations"` in the config, run
-        # `npm run migrate:up`, and observe the generated table is
-        # `pgmigrations`. This was caught by the recipe's own debug
-        # output during the Sprint B validation; until node-pg-migrate
-        # fixes the loader, the only reliable way to honor the caller's
-        # table name is to pass --migrations-table as an explicit CLI
-        # arg (CLI args override config file values).
+        # The recipe is intentionally a thin wrapper around the caller's
+        # npm script. node-pg-migrate v9 (as of mid-2026) silently ignores
+        # several config-file keys; the canonical workaround is to pass
+        # every option as an explicit CLI arg in the caller's `migrate:*`
+        # npm scripts. See orion-backend/package.json for the reference
+        # shape.
         #
-        # We still resolve the caller's npm script first so we reuse
-        # the pinned node-pg-migrate version and any custom flags they
-        # have set; we only override the keys known to be silently
-        # dropped.
+        # The recipe does NOT forward --migrations-table, --migrations-schema,
+        # or --schema anymore. Earlier revisions did, which produced a v9
+        # parsing bug: --schema is typed [array], so duplicate occurrences
+        # (script + forwarding) parsed as ["public", "public"], and node-pg-
+        # migrate's table-creation code path called str.replace() on the
+        # array, throwing `TypeError: str.replace is not a function`.
+        #
+        # Callers MUST therefore include the relevant flags in their npm
+        # script. --if-present guards against the rare case where the
+        # caller has no script with that name (we still want the job to
+        # report cleanly instead of erroring on the missing script).
         #
         # DATABASE_URL is passed as an env var because node-pg-migrate's
         # `databaseUrl: "DATABASE_URL"` config setting reads the env var
@@ -257,15 +260,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "===== Applying migrations via 'npm run ${{ inputs.npm-script }}' ====="
-          # Invoke the caller's npm script (preserves the pinned node-pg-migrate
-          # version + any extra flags they pass). We then layer the recipe's
-          # explicit --migrations-table + --migrations-schema + --schema on top
-          # via npm-run's argument forwarding.
-          # shellcheck disable=SC2086
-          npm run "${{ inputs.npm-script }}" --if-present -- \
-            --migrations-table "${{ inputs.migrations-table }}" \
-            --migrations-schema "${{ inputs.migrations-schema }}" \
-            --schema "${{ inputs.migrations-schema }}"
+          npm run "${{ inputs.npm-script }}" --if-present
 
       - name: Migration summary
         # Read the tracking table directly via psql (preinstalled on
