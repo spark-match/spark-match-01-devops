@@ -25,6 +25,8 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | `terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
 | `tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
 | `checkov.yml`           | Static analysis with checkov (pinned 3.2.415), terraform framework, hard-fail | — |
+| `cfn-nag.yml`           | `cfn_nag_scan` over `template.yaml` and any `contexts/**/template.yaml`; ruby version pinned, supports AWS SAM guards that cfn-nag 0.8.10 covers natively. The **specific guard for `Lambda::Permission` without `SourceArn`/`SourceAccount`** is the sibling `lambda-permission-source-arn.yml` reusable (cfn-nag 0.8.10 has no rule for this case). | — |
+| `lambda-permission-source-arn.yml` | Custom SAM guard that scans `template.yaml` + `contexts/**/template.yaml` and fails when an `AWS::Lambda::Permission` resource lacks `SourceArn:` or `SourceAccount:`. The scan logic lives at `scripts/check_lambda_permission_source_arn.py` (stdlib-only Python, regex-based, comment-aware). Required because cfn-nag 0.8.10's Lambda rules only check `W24` (action) and `F45` (EventSourceToken); neither validates `SourceArn` presence, so the cross-API confusion vulnerability that AWS API Gateway exposes remains uncaught without this check. | — |
 
 #### `actionlint.yml`
 
@@ -48,7 +50,7 @@ jobs:
 
 #### `gitleaks.yml`
 
-Runs secret scanning against the full git history. Pinned to `gitleaks-action@v3`; for org-scoped repos callers MUST forward the `GITLEAKS_LICENSE` secret (free at gitleaks.io) because GitHub drops `secrets: inherit` across owner boundaries.
+Runs secret scanning against the full git history. Pinned to `gitleaks-action@v3`; for org-scoped repos callers MUST forward the `GITLEAKS_LICENSE` secret (free at gitleaks.io) because GitHub drops `secrets: inherit` across owner boundaries. The org-level Dependabot secret bucket holds `GITLEAKS_LICENSE` (visibility: all-repos) so Dependabot-triggered runs see it without per-repo setup.
 
 Inputs:
 
@@ -198,6 +200,54 @@ jobs:
       environment-name: dev
 ```
 
+#### `cfn-nag.yml`
+
+Runs [`cfn_nag_scan`](https://github.com/stelligent/cfn_nag) over `template.yaml` and every `contexts/**/template.yaml` in the caller. Reads comments to suppress findings inline (`# cfn_nag_suppress: RULE_ID reason`). Ruby version pinned via `ruby/setup-ruby@v1`; cfn-nag gem version pinned via input.
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | `dev` | Informational only. |
+| `cfn-nag-version` | string | `0.8.10` | Pinned for reproducible output. |
+| `ruby-version` | string | `3.3` | Pinned for reproducible output. |
+| `scan-paths` | string | `template.yaml contexts/` | Space-separated. |
+| `output-format` | string | (none) | Optional; pass `json` for machine-readable output. |
+
+Usage:
+
+```yaml
+jobs:
+  cfn-nag:
+    uses: spark-match/spark-match-01-devops/.github/workflows/cfn-nag.yml@dev
+    with:
+      environment-name: dev
+```
+
+#### `lambda-permission-source-arn.yml`
+
+Companion to `cfn-nag.yml`. Runs the script at `scripts/check_lambda_permission_source_arn.py` against the caller's SAM templates. Fails CI when an `AWS::Lambda::Permission` resource declares neither `SourceArn:` nor `SourceAccount:`.
+
+Why this exists: cfn-nag 0.8.10's Lambda rules (W24 = action is `InvokeFunction`, F45 = no plaintext `EventSourceToken`) do NOT check for a missing `SourceArn`. Without it, AWS API Gateway can invoke the Lambda function from any other API in the same account (cross-API confusion). The defense-in-depth is the Lambda resource policy itself, which REQUIRES `SourceArn` to scope invocation. cfn-nag ships no rule for this case, hence this guard.
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | `dev` | Informational only. |
+| `python-version` | string | `3.12` | The runner python used to invoke the script. |
+| `scan-paths` | string | `template.yaml contexts/` | Space-separated. |
+
+Usage:
+
+```yaml
+jobs:
+  lambda-permission-source-arn:
+    uses: spark-match/spark-match-01-devops/.github/workflows/lambda-permission-source-arn.yml@dev
+    with:
+      environment-name: dev
+```
+
 ### node
 
 #### `eslint.yml`
@@ -226,32 +276,71 @@ jobs:
       # lint-script defaults to "lint"
 ```
 
+#### `node-test.yml`
+
+Runs `npm run <test-script>` against a Node project's `tests/` directory with the canonical cache key (`<os>-node<nodeVersion>-<pkgManager>-<env>-<H>` per [`docs/CACHE.md`](docs/CACHE.md)). Supports an optional `pre-test-script` for callers that need a build/precompile step before tests (e.g. Angular's prebuild hook).
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | `dev` | Informational only. |
+| `node-version` | string | `24` | Passed to `actions/setup-node@v7`. |
+| `pkg-manager` | string | `npm` | `npm` \| `pnpm` \| `yarn` \| `bun`. |
+| `lockfile-name` | string | `package-lock.json` | Becomes the cache key's `<H>` segment. |
+| `pre-test-script` | string | `''` | Optional npm script to run before tests (Angular prebuild hook, etc.). Empty = skip. |
+| `test-script` | string | `test` | The npm script name in `package.json`. |
+| `working-directory` | string | `.` | Where `npm ci` runs (where `package.json` lives). |
+
+Usage:
+
+```yaml
+jobs:
+  node-test:
+    uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@dev
+    with:
+      environment-name: ci
+      test-script: test
+      pre-test-script: prebuild
+```
+
 ### python
 
 #### `python-ci.yml`
 
-Runs a Python project's QA pipeline using `uv` for dependency management, then `ruff` + `mypy` + `pytest` for static analysis + tests. Designed for projects that pin Python in `.python-version` and lock via `uv.lock`. The recipe is GENERIC: it does not assume a specific project layout beyond `pyproject.toml` + `uv.lock` in `working-directory`.
+Runs a Python project's QA pipeline using `uv` for dependency management, then `ruff` + `mypy` + `pytest` for static analysis + tests, plus optional `bandit` (security lint) and `pip-audit` (dependency vulnerability scan). Designed for projects that pin Python in `.python-version` and lock via `uv.lock`. The recipe is GENERIC: it does not assume a specific project layout beyond `pyproject.toml` + `uv.lock` in `working-directory`.
 
 Each step is gated by an entry in the CSV `commands` input, so callers can opt into any subset (e.g. skip `mypy` on a legacy codebase, or skip `coverage:upload` if the project doesn't generate coverage). Defaults run the full QA set + upload coverage as an artifact.
+
+The recipe has **19 inputs**; the table below covers the inputs most callers actually override. For the full input catalog (sync flags, cache key, timeout, etc.) see [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 3.
 
 Inputs:
 
 | Input        | Type   | Default | Notes |
 |--------------|--------|---------|-------|
 | environment-name | string | — (required) | Used as job name + optional GH Environment gate. |
-| python-versions | string | `"3.12"` | JSON list, fed into the matrix via `fromJSON()`. Use `'"3.11","3.12"'` for multi-version. |
 | working-directory | string | `.` | Where `pyproject.toml` + `uv.lock` live. |
-| commands | string | `lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload` | CSV; valid steps: `lint:ruff-format`, `lint:ruff-check`, `typecheck:mypy`, `test:pytest`, `coverage:upload`, `none` (manual-mode only). |
-| dependency-groups | string | `dev` | Passed to `uv sync --group` (space-separated). Use `dev bedrock` to also enable a `bedrock` group. |
+| runs-on | string | `ubuntu-latest` | Caller can pin to a larger runner (`ubuntu-4cpu-8gb-ephemeral`) for heavy matrix. |
+| commands | string | `lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload` | CSV; valid steps: `lint:ruff-format`, `lint:ruff-check`, `lint:bandit`, `lock:check`, `typecheck:mypy`, `test:pytest`, `coverage:upload`, `security:pip-audit`, `none` (manual-mode only). |
+| sync-mode | string | `full` | Dependency installation scope. One of: `full` (all groups; default), `runtime-only` (skip `--group` to install only the `[project]` deps), `lint-only` (install only the `lint` group; useful for fast lint loops without runtime deps). See [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 3.4 (Sprint C). |
+| dependency-groups | string | `dev` | Passed to `uv sync --group` (space-separated, only when `sync-mode=full`). Use `dev bedrock` to also enable a `bedrock` group. |
+| lock-check | bool | `false` | When `true`, verifies `uv.lock` is coherent with `pyproject.toml` before running tools. |
+| frozen | bool | `false` | When `true`, prevents `uv sync` from regenerating `uv.lock` (caller is expected to have already promoted the lockfile). |
 | ruff-targets | string | `src tests` | CSV of paths for `ruff format/check`. |
 | mypy-targets | string | `src` | CSV of paths for `mypy`. |
 | pytest-targets | string | `tests` | Path for `pytest`. |
+| pytest-args | string | `''` | Extra args appended to `pytest`. |
 | coverage-output | string | `coverage.xml` | Artifact path uploaded (when `coverage:upload` is in `commands`). |
-| setup-uv-version | string | `latest` | uv version pinned via `astral-sh/setup-uv@v6`. |
+| coverage-threshold | number | `''` | Min coverage % to gate on; CI fails below this threshold. Empty = no threshold. |
+| permissions-write | bool | `false` | When `true`, the job grants `pull-requests: write` so the sticky PR coverage comment step can post. The default `false` is strictly read-only. |
+| cache-suffix | string | `''` | Extra segment appended to the `actions/cache` key; useful when callers need to bust the cache on a parameter change. |
+| setup-uv-version | string | `latest` | uv version pinned via `astral-sh/setup-uv@v7`. |
+| timeout-minutes | number | `20` | Job-level timeout. |
+| fail-fast | bool | `false` | Set `true` on the matrix to abort on first failure. |
 
-Required secrets: none (ecosystem-style, no AWS).
+Required secrets: none (ecosystem-style, no AWS). The sticky coverage comment step requires `permissions: pull-requests: write` on the caller if `permissions-write` is not passed.
 
-Usage (typical orion-cognitive-agent layout — both `dev` and `bedrock` groups):
+Usage (typical orion-cognitive-agent layout — both `dev` and `bedrock` groups, with security scan):
 
 ```yaml
 jobs:
@@ -259,13 +348,12 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
     with:
       environment-name: ci
-      python-versions: '"3.12"'
       working-directory: '.'
       dependency-groups: 'dev bedrock'
-      commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload
+      commands: lint:ruff-format,lint:ruff-check,lint:bandit,lock:check,typecheck:mypy,test:pytest,coverage:upload,security:pip-audit
 ```
 
-Usage (multi-version matrix):
+Usage (single-version matrix, fast lint-only loop):
 
 ```yaml
 jobs:
@@ -273,8 +361,12 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
     with:
       environment-name: ci
-      python-versions: '"3.11","3.12"'
+      sync-mode: lint-only
+      commands: lint:ruff-format,lint:ruff-check
+      dependency-groups: lint
 ```
+
+For multi-version matrix (when the cross-owner GHA bug is resolved upstream), pass `python-versions: '"3.11","3.12"'`. Today the recipe hardcodes `python-version: ["3.12"]` on the matrix; see [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8.1.
 
 ### deploy
 
@@ -455,7 +547,7 @@ See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 - The catalog can be pinned by environment (`@dev` for dev callers, `@main` for prod callers) — changes are tested against dev deploys before they reach prod. The canonical consumer `orion-infrastructure` currently pins both envs to `@main` (single-tier strategy); teams that maintain a `dev` environment downstream of `main` can adopt the dual-pin strategy.
 - No SemVer in the short term. Breaking changes are communicated by PR + release notes.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
-- Current catalog version: **v4** (PR #62, #65, #67 from July 2026).
+- Current catalog: cache-key convention **v4** (PR #62) is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog and [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8 for the `python-ci.yml` recipe-specific history.
 
 ## Cache key convention
 
@@ -486,40 +578,68 @@ Full rationale, examples, extension guide, and migration notes:
 
 ```
 spark-match-01-devops/
-  .github/
-    CODEOWNERS                  Approval policy (devops + product-owners)
-    dependabot.yml              Weekly GitHub Actions bump PRs
-      workflows/
-        ci.yml                    Self-test PR wrapper
-        actionlint.yml            ecosystem
-        gitleaks.yml              ecosystem
-        yamllint.yml              ecosystem
-        terraform-fmt.yml         ecosystem
-        terraform-validate.yml    ecosystem
-        tflint.yml                ecosystem
-        checkov.yml               ecosystem
-        eslint.yml                node
-        sam-deploy.yml            deploy
-        terraform-plan.yml        deploy
-        terraform-apply.yml       deploy
-        angular-spa-deploy.yml    deploy (Angular SPA -> S3 + CloudFront)
-        codeql.yml                self (security)
-        latex-build.yml           article-side
-        latex-release.yml         article-side
-  docs/
-    VERSIONING.md               Pin-by-env rules and conventions
-  scripts/
-    README.md                   Operational scripts (configure-merge-methods, etc.)
-    *.sh / *.ps1                Idempotent, --dry-run supported; require `gh` admin auth
-  LICENSE                       Apache-2.0
-  README.md                     This file
-  .yamllint.yml                 Lint config for non-workflow YAML
-  .gitignore                    IDE / OS / Terraform artifacts
+├── .github/
+│   ├── CODEOWNERS                  Approval policy (devops + product-owners)
+│   ├── dependabot.yml              Weekly GitHub Actions bump PRs (Mon 06:00 UTC, 4 groups)
+│   └── workflows/
+│       ├── ci.yml                    this repo's own CI (actionlint + gitleaks + yamllint)
+│       ├── codeql.yml                CodeQL on Actions YAML (push + weekly)
+│       │
+│       │ ─── ecosystem: read-only, no caller secrets ───────────────────
+│       ├── actionlint.yml            syntax check on Actions workflows
+│       ├── gitleaks.yml              secret scan (needs GITLEAKS_LICENSE)
+│       ├── yamllint.yml              YAML files (uses caller's .yamllint.yml)
+│       ├── terraform-fmt.yml         `terraform fmt -check -recursive`
+│       ├── terraform-validate.yml    per-module init+validate (no backend)
+│       ├── tflint.yml                recursive tflint
+│       ├── checkov.yml               static analysis on Terraform
+│       ├── cfn-nag.yml               cfn_nag_scan on SAM templates
+│       ├── lambda-permission-source-arn.yml  SAM guard for Lambda::Permission SourceArn
+│       │
+│       │ ─── node ──────────────────────────────────────────────────────
+│       ├── eslint.yml                `npm run <lint-script>`
+│       ├── node-test.yml             `npm run <test-script>` with cache
+│       │
+│       │ ─── python ────────────────────────────────────────────────────
+│       ├── python-ci.yml             uv + ruff + mypy + pytest + bandit + pip-audit
+│       │
+│       │ ─── deploy (AWS OIDC, caller-scoped secrets) ──────────────────
+│       ├── angular-spa-deploy.yml    SPA -> S3 + CloudFront invalidation
+│       ├── sam-deploy.yml            sam build + sam deploy
+│       ├── container-deploy-ecr.yml  Dockerfile -> ECR (linux/arm64 default)
+│       ├── terraform-plan.yml        `terraform plan` per env + sticky PR comment
+│       ├── terraform-apply.yml       `terraform apply`, optional drift-only mode
+│       │
+│       │ ─── article (LaTeX, kept for 07-article's toolchain) ──────────
+│       ├── latex-build.yml           compile LaTeX -> PDF artifact
+│       └── latex-release.yml         bump patch + GitHub Release
+│
+├── docs/
+│   ├── CACHE.md                     canonical cache-key convention v4
+│   ├── PYTHON-CI.md                 spec for python-ci.yml (19 inputs + design notes)
+│   └── VERSIONING.md                pin-by-environment rules and conventions
+│
+├── scripts/                         operational scripts (4 entries; see scripts/README.md)
+│   ├── README.md                    catalog of scripts
+│   ├── check_lambda_permission_source_arn.py   ⚙️ required by lambda-permission-source-arn.yml
+│   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
+│   └── configure-repo-rulesets.sh              bootstrap ruleset (spark-match-default-branch-protection)
+│
+├── LICENSE                          Apache-2.0
+├── README.md                        this file
+├── .yamllint.yml                    lint config for non-workflow YAML (excludes *.md, .git/, etc.)
+└── .gitignore                       IDE / OS / Terraform artifacts
 ```
 
 ## Operational scripts
 
-The `scripts/` directory holds idempotent operational scripts that apply org-wide policy (for example `configure-merge-methods.sh` sets squash-only on all repos in the org). All scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides. See [`scripts/README.md`](scripts/README.md).
+The `scripts/` directory holds 4 entries: 3 idempotent bash bootstrappers and 1 stdlib-only Python guard. Scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides.
+
+- **`check_lambda_permission_source_arn.py`** is consumed at every CI run by `.github/workflows/lambda-permission-source-arn.yml` (the workflow fetches it from `raw.githubusercontent.com/spark-match/spark-match-01-devops/main/scripts/...`). It is the only script a workflow depends on; do not rename or move it without updating the URL inside the reusable.
+- **`configure-merge-methods.sh`** sets squash-only merge policy on every repo in the org (`delete_branch_on_merge=true`, `squash_merge_commit_title=PR_TITLE`, `squash_merge_commit_message=PR_BODY`).
+- **`configure-repo-rulesets.sh`** creates the `spark-match-default-branch-protection` ruleset per-repo, including `required_status_checks` and `bypass_actors: OrganizationAdmin (always)`. This is the live ruleset on every primary repo today.
+
+See [`scripts/README.md`](scripts/README.md) for the full catalog, per-script usage, and the convention for adding new entries.
 
 ## Contributing
 

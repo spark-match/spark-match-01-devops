@@ -74,7 +74,7 @@ override as needed.
 | `ruff-targets` | CSV string | no | `src tests` | Passed to `ruff format/check[/--fix]`. |
 | `mypy-targets` | CSV string | no | `src` | Passed to `mypy`. |
 | `pytest-targets` | string | no | `tests` | First positional arg of `pytest`. |
-| `setup-uv-version` | string | no | `latest` | Pinned in `astral-sh/setup-uv@v6`. |
+| `setup-uv-version` | string | no | `latest` | Pinned in `astral-sh/setup-uv@v7` (bumped from v6 in PR #85). |
 | `cache-suffix` | string | no | `""` (derived) | Cache key suffix; falls back to `environment-name`. See § 4 + `docs/VERSIONING.md`. |
 
 ### 3.3 Coverage + reporting (Sprint B)
@@ -110,7 +110,7 @@ This keeps caller-side mistakes from producing confusing later errors.
 
 ## 4. Cache key formula
 
-The recipe uses `astral-sh/setup-uv@v6`'s built-in cache, scoped by:
+The recipe uses `astral-sh/setup-uv@v7`'s built-in cache, scoped by:
 
 ```
 cache-key = setup-uv-ubuntu-latest-<cache-suffix>-<sha256(pyproject.toml + uv.lock)>
