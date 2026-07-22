@@ -1,0 +1,213 @@
+# =============================================================================
+# Reusable Workflow: migrations - Lambda invoke
+# =============================================================================
+# Atomic recipe (deploy layer). Invokes a "migrator" Lambda via OIDC and
+# fails the workflow on any non-200 status or thrown FunctionError. The
+# Lambda is expected to follow the canonical payload convention documented
+# in this file (see "Lambda contract" below).
+#
+# Why this exists: orion-backend's CD - Deploy workflow calls the
+# orion-identity-migrate-dev Lambda inline after SAM deploy (PR #120),
+# but that pattern only fires on push to main. When ops needs to apply
+# migrations out-of-band (e.g. a hotfix migration in the middle of the
+# night, or a status check before approving a prod deploy), there is no
+# first-class trigger - until now.
+#
+# USAGE (in caller repo, typically a wrapper with workflow_dispatch):
+#   jobs:
+#     migrate:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/migrations.yml@dev
+#       with:
+#         environment-name: dev
+#         function-name: orion-identity-migrate-dev
+#       secrets:
+#         AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+#
+# Lambda contract:
+#   - The recipe invokes `<function-name>` synchronously with a JSON payload.
+#     Default payload is '{}' (canonical for the current orion-backend
+#     migrator, which reads dist/migrations at runtime). Caller can override
+#     with `payload`.
+#   - On success, the Lambda's response body (string) is dumped to the step
+#     log. The recipe does NOT parse it; callers should rely on the
+#     StatusCode == 200 + FunctionError empty contract.
+#   - Any thrown error inside the Lambda populates the FunctionError field
+#     on the invoke response, which the recipe treats as a hard failure.
+#
+# Required GitHub Environment in caller repo:
+#   Create one GH Environment per value passed via environment-name
+#   (e.g. "dev", "prod"). Each environment should hold the
+#   AWS_DEPLOY_ROLE_ARN secret scoped to it. This is the approval gate.
+#
+# Required Secret in caller (per environment):
+#   AWS_DEPLOY_ROLE_ARN: OIDC role ARN with trust policy for
+#     `token.actions.githubusercontent.com` and `lambda:InvokeFunction`
+#     on the migrator Lambda(s). orion-infrastructure's
+#     `iam-sam-deploy-dev` module grants this to the same role that
+#     calls sam deploy, so callers do NOT need an extra IAM module.
+#
+# Cross-owner secret forwarding: when caller is in a different owner
+# than spark-match, the secret name MUST match `AWS_DEPLOY_ROLE_ARN` here
+# and in the caller's environments. See angular-spa-deploy.yml for the
+# same workaround.
+# =============================================================================
+
+name: migrations
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, prod, etc). Becomes the GH Environment gate, job name, and concurrency key.'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region of the migrator Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      function-name:
+        description: 'Name of the Lambda function to invoke (e.g. "orion-identity-migrate-dev").'
+        type: string
+        required: true
+      payload:
+        description: 'JSON payload to send to the Lambda. Default "{}" (canonical for the orion-backend migrator, which reads dist/migrations at runtime).'
+        type: string
+        required: false
+        default: '{}'
+      timeout-minutes:
+        description: 'Job-level timeout.'
+        type: number
+        required: false
+        default: 5
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for invoking the migrator Lambda. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub).'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Concurrency keyed by env to prevent concurrent migrations against the
+# same database (which would race for the node-pg-migrate advisory lock).
+# cancel-in-progress: false - never cancel a migration mid-flight (a
+# half-applied migration against a shared DB would leave the cluster
+# in an inconsistent state and require manual recovery).
+concurrency:
+  group: migrations-${{ inputs.environment-name }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: "migrate (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    environment: ${{ inputs.environment-name }}
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          if [ -z "${{ inputs.environment-name }}" ]; then
+            ERRORS+=("environment-name: requerido")
+          fi
+          if [ -z "${{ inputs.function-name }}" ]; then
+            ERRORS+=("function-name: requerido")
+          fi
+          # Lambda function names follow [a-zA-Z0-9-_]{1,64}.
+          if ! echo "${{ inputs.function-name }}" | grep -qE '^[A-Za-z0-9_-]{1,64}$'; then
+            ERRORS+=("function-name: formato invalido '${{ inputs.function-name }}' (esperado [A-Za-z0-9_-]{1,64})")
+          fi
+          # payload must be valid JSON (or empty, which defaults to {}).
+          if [ -n "${{ inputs.payload }}" ]; then
+            if ! echo "${{ inputs.payload }}" | jq -e . >/dev/null 2>&1; then
+              ERRORS+=("payload: '${{ inputs.payload }}' no es JSON valido")
+            fi
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Invoke migrator Lambda
+        # Synchronous invoke. --cli-binary-format raw-in-base64-out is
+        # required since AWS CLI 2.x for non-text payloads; without it,
+        # the CLI errors out with "Invalid base64" on the empty payload.
+        # The invoke response is parsed for StatusCode (200 = success) and
+        # FunctionError (empty = no thrown error). Any other outcome fails
+        # the step and dumps the response body for diagnostics.
+        run: |
+          set -euo pipefail
+          echo "===== Invoking ${{ inputs.function-name }} (env=${{ inputs.environment-name }}) ====="
+          PAYLOAD='${{ inputs.payload }}'
+          if [ -z "${PAYLOAD}" ]; then
+            PAYLOAD='{}'
+          fi
+          echo "Payload: ${PAYLOAD}"
+
+          RESULT=$(aws lambda invoke \
+            --function-name "${{ inputs.function-name }}" \
+            --region "${{ inputs.aws-region }}" \
+            --payload "${PAYLOAD}" \
+            --cli-binary-format raw-in-base64-out \
+            --output json \
+            /tmp/migrate-result.json)
+          echo "Lambda invoke result: ${RESULT}"
+
+          STATUS_CODE=$(echo "${RESULT}" | jq -r '.StatusCode // "unknown"')
+          if [ "${STATUS_CODE}" != "200" ]; then
+            echo "::error::Migrator Lambda returned StatusCode=${STATUS_CODE} (expected 200)"
+            cat /tmp/migrate-result.json
+            exit 1
+          fi
+
+          # FunctionError is populated when the handler throws
+          # (UnhandledErrors) or returns a failure response (Handled).
+          FUNCTION_ERROR=$(echo "${RESULT}" | jq -r '.FunctionError // ""')
+          if [ -n "${FUNCTION_ERROR}" ]; then
+            echo "::error::Migrator Lambda threw: ${FUNCTION_ERROR}"
+            cat /tmp/migrate-result.json
+            exit 1
+          fi
+
+          echo "===== Lambda response body ====="
+          cat /tmp/migrate-result.json
+          echo ""
+
+          # If the body parses as JSON with applied/alreadyApplied/missing
+          # keys (the orion-backend migrator's contract), print a one-line
+          # summary. Unknown body shapes are ignored silently.
+          if jq -e 'has("applied")' /tmp/migrate-result.json >/dev/null 2>&1; then
+            jq -r '"applied=\(.applied|length) alreadyApplied=\(.alreadyApplied|length) missing=\(.missing|length)"' \
+              /tmp/migrate-result.json
+          fi
+
+      - name: Migration summary
+        if: always()
+        run: |
+          {
+            echo "## Migrations - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Status | \${{ job.status }} |"
+            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
+            echo "| Function | \`${{ inputs.function-name }}\` |"
+            echo "| Payload | \`${{ inputs.payload }}\` |"
+            echo ""
+            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
