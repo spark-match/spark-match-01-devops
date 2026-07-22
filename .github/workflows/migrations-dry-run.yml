@@ -247,8 +247,22 @@ jobs:
           # via .npmrc.migrate.
         run: |
           set -euo pipefail
+          echo "===== Pre-migration DB state ====="
+          PGPASSWORD="${{ inputs.postgres-password }}" \
+            psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
+            -c "\dt" || true
           echo "===== Running 'npm run ${{ inputs.npm-script }}' ====="
-          npm run "${{ inputs.npm-script }}"
+          npm run "${{ inputs.npm-script }}" --if-present 2>&1 | tee /tmp/migrate.log
+          MIGRATE_EXIT=${PIPESTATUS[0]}
+          echo "===== npm exit code: ${MIGRATE_EXIT} ====="
+          echo "===== Post-migration DB state ====="
+          PGPASSWORD="${{ inputs.postgres-password }}" \
+            psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
+            -c "\dt" || true
+          if [ "${MIGRATE_EXIT}" != "0" ]; then
+            echo "::error::npm run exited with ${MIGRATE_EXIT}"
+            exit "${MIGRATE_EXIT}"
+          fi
 
       - name: Migration summary
         # Read the tracking table directly via psql (preinstalled on
