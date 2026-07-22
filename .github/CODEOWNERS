@@ -30,10 +30,6 @@
 # entiende el repo, asi que ambos equipos aprueban.
 /README.md                                  @spark-match/devops @spark-match/product-owners
 
-# Documentos de governance internos (bypass log, decisiones, politicas).
-# Tambien requieren aprobacion de ambos equipos.
-/governance/                                @spark-match/devops @spark-match/product-owners
-
 # =============================================================================
 # Paths tecnicos - DevOps gobierna
 # =============================================================================
