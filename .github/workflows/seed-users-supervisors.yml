@@ -1,0 +1,171 @@
+# =============================================================================
+# Reusable Workflow: seed-users-supervisors - Seed supervisor users via Lambda
+# =============================================================================
+# Atomic recipe (deploy layer). Invokes the `orion-seed-users-<env>` Lambda
+# with payload `{"group":"supervisors"}` to seed the supervisor role users
+# in `identity.users`. The Lambda contract returns
+# `{created: number, skipped: number, errors: [{email, code, message}]}`;
+# this recipe parses that shape and prints a one-line summary
+# (`created=N skipped=M errors=K`).
+#
+# See seed-users-advisors.yml header for the full design rationale
+# (self-contained vs nested reusable, environment gate, OIDC secret
+# forwarding, concurrency group). This file is structurally identical
+# to seed-users-advisors.yml; the only meaningful difference is the
+# `group` value in the Lambda payload (advisors -> supervisors) and
+# the job / step labels.
+# =============================================================================
+
+name: seed-users-supervisors
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, prod, etc).'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region of the seed-users Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      timeout-minutes:
+        description: 'Job-level timeout.'
+        type: number
+        required: false
+        default: 5
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for invoking the seed-users Lambda. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub).'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Separate concurrency group from the other seed-users recipes so
+# advisors / supervisors / agents can run in parallel without
+# racing for the same advisory lock on the DB. cancel-in-progress:
+# false - never cancel a seed mid-flight (would leave the DB in an
+# inconsistent state).
+concurrency:
+  group: seed-users-supervisors-${{ inputs.environment-name }}
+  cancel-in-progress: false
+
+jobs:
+  seed-supervisors:
+    name: "seed supervisors (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # No `environment:` here on purpose - see the file header.
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          if [ -z "${{ inputs.environment-name }}" ]; then
+            ERRORS+=("environment-name: requerido")
+          fi
+          # environment-name must be kebab-case lowercase + digits
+          # (matches orion-infrastructure's env validation).
+          if ! echo "${{ inputs.environment-name }}" | grep -qE '^[a-z0-9-]{1,32}$'; then
+            ERRORS+=("environment-name: formato invalido '${{ inputs.environment-name }}' (esperado kebab-case lowercase, 1-32 chars)")
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Invoke seed-users Lambda (group=supervisors)
+        # Synchronous invoke. Payload `{"group":"supervisors"}` tells
+        # the Lambda to seed only the supervisor role. The Lambda
+        # contract returns `{created, skipped, errors: [{email, code,
+        # message}]}`; we parse the summary on success.
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="orion-seed-users-${{ inputs.environment-name }}"
+          PAYLOAD='{"group":"supervisors"}'
+          echo "===== Invoking ${FUNCTION_NAME} (env=${{ inputs.environment-name }}, group=supervisors) ====="
+          echo "Payload: ${PAYLOAD}"
+
+          RESULT=$(aws lambda invoke \
+            --function-name "${FUNCTION_NAME}" \
+            --region "${{ inputs.aws-region }}" \
+            --payload "${PAYLOAD}" \
+            --cli-binary-format raw-in-base64-out \
+            --output json \
+            /tmp/seed-result.json)
+          echo "Lambda invoke result: ${RESULT}"
+
+          STATUS_CODE=$(echo "${RESULT}" | jq -r '.StatusCode // "unknown"')
+          if [ "${STATUS_CODE}" != "200" ]; then
+            echo "::error::Seed-users Lambda returned StatusCode=${STATUS_CODE} (expected 200)"
+            cat /tmp/seed-result.json
+            exit 1
+          fi
+
+          # FunctionError is populated when the handler throws
+          # (UnhandledErrors) or returns a failure response (Handled).
+          FUNCTION_ERROR=$(echo "${RESULT}" | jq -r '.FunctionError // ""')
+          if [ -n "${FUNCTION_ERROR}" ]; then
+            echo "::error::Seed-users Lambda threw: ${FUNCTION_ERROR}"
+            cat /tmp/seed-result.json
+            exit 1
+          fi
+
+          echo "===== Lambda response body ====="
+          cat /tmp/seed-result.json
+          echo ""
+
+          # Parse the {created, skipped, errors} contract. If any field
+          # is missing or non-numeric, fail loud. errors array entries
+          # are dumped individually so the caller can paste them into
+          # an incident ticket.
+          CREATED=$(jq -r '.created // "missing"' /tmp/seed-result.json)
+          SKIPPED=$(jq -r '.skipped // "missing"' /tmp/seed-result.json)
+          ERRORS_LEN=$(jq -r '.errors // "missing" | if type=="array" then length else "invalid" end' /tmp/seed-result.json)
+          if [ "${CREATED}" = "missing" ] || [ "${SKIPPED}" = "missing" ] || [ "${ERRORS_LEN}" = "invalid" ]; then
+            echo "::error::Lambda response does not match {created, skipped, errors} contract"
+            exit 1
+          fi
+
+          echo "created=${CREATED} skipped=${SKIPPED} errors=${ERRORS_LEN}"
+
+          # If errors is non-empty, fail the step. Each error entry
+          # is {email, code, message}; dump them for triage.
+          if [ "${ERRORS_LEN}" -gt 0 ]; then
+            echo "::error::Seed-users Lambda reported ${ERRORS_LEN} error(s):"
+            jq -c '.errors[]' /tmp/seed-result.json | while IFS= read -r line; do
+              echo "::error::  ${line}"
+            done
+            exit 1
+          fi
+
+      - name: Seed supervisors summary
+        if: always()
+        run: |
+          {
+            echo "## Seed Supervisors - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Status | \${{ job.status }} |"
+            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| Group | \`supervisors\` |"
+            echo "| Function | \`orion-seed-users-${{ inputs.environment-name }}\` |"
+            echo ""
+            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
