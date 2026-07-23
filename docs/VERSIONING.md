@@ -51,6 +51,12 @@ Estructura actual bajo `.github/workflows/`:
 +-- sam-deploy.yml               # Atomic (deploy): sam build + deploy, samconfig env, layers build
 +-- angular-spa-deploy.yml       # Atomic (deploy): Angular SPA -> S3 + CloudFront, build + sync + invalidate
 +-- container-deploy-ecr.yml     # Atomic (deploy): docker buildx + ECR push (or-cog-agent, otros proyectos container-based)
++-- migrations.yml               # Atomic (deploy): invokes orion-identity-migrate-<env> Lambda (synchronous, {applied, alreadyApplied, missing} summary parser)
++-- migrations-dry-run.yml       # Atomic (ecosystem): node-pg-migrate --dry-run contra Postgres service container
++-- aws-lambda-invoke.yml        # Atomic (deploy): generic Lambda invoke (custom summary via jq). Generic sibling of migrations.yml; no role-specific UX
++-- seed-users-advisors.yml      # Atomic (deploy): invokes orion-seed-users-<env> Lambda con payload {"group":"advisors"}, parsea {created, skipped, errors}
++-- seed-users-supervisors.yml   # Atomic (deploy): idem advisors pero con payload {"group":"supervisors"}
++-- seed-users-agents.yml        # Atomic (deploy): idem advisors pero con payload {"group":"agents"}
 +-- latex-build.yml              # Atomic (article-side): latexmk → PDF
 +-- latex-release.yml            # Atomic (article-side): release of compiled PDF
 ```
@@ -67,6 +73,48 @@ policy del modulo `iam-angular-spa-deploy-dev` en `orion-infrastructure`).
 Pattern complementario a `sam-deploy.yml`: este no usa SAM, sino
 directamente `aws s3 sync` + `aws cloudfront create-invalidation`. Adecuado
 para SPAs Angular/React/Vue estaticos sin backend serverless.
+
+### `aws-lambda-invoke.yml`
+
+Invoca una Lambda arbitraria sincronamente via OIDC y falla el workflow
+en cualquier StatusCode != 200 o FunctionError no vacio. Inputs clave:
+`environment-name` (gate + concurrency key), `function-name` (target),
+`payload` (default `{}`), `aws-region` (default `us-east-1`),
+`timeout-minutes` (default 5), `summary-jq` (opcional: expression jq
+para imprimir una linea de summary si el body parsea como JSON). Secret:
+`AWS_DEPLOY_ROLE_ARN`.
+
+Es el sibling generico de `migrations.yml`: cualquier recipe futura que
+solo necesite "invoke esta Lambda y checkear 200 + sin FunctionError"
+puede usar este sin copy-paste de los pasos de AWS config + invoke +
+validation. NO declara `environment:` en su job (resuelto en callee
+repo, no caller; PR #96 diagnostico completo). Los 3 recipes
+`seed-users-{advisors,supervisors,agents}.yml` siguen el mismo patron
+con su propio parser de summary `{created, skipped, errors}` porque la
+UX role-specific (job display name, step labels) gana con ser bespoke.
+
+### `seed-users-{advisors,supervisors,agents}.yml`
+
+Invocan la Lambda `orion-seed-users-<env>` con payload
+`{"group":"<role>"}` para sembrar los usuarios del rol correspondiente
+en `identity.users`. Cada recipe es self-contained (no hace nested
+reusable call a `aws-lambda-invoke.yml`) — la copia explicita del AWS
+config + invoke + validate se prefiere sobre la indireccion de nested
+reusables dado el tamano (~80 lineas) y el beneficio marginal de DRY.
+Lambda contract: retorna `{created, skipped, errors: [{email, code,
+message}]}`; cada recipe parsea ese shape y falla el step si
+`errors.length > 0` (dumping cada entry para triage).
+
+Los 3 recipes viven en concurrency groups separados
+(`seed-users-advisors-<env>`, etc) para que advisors/supervisors/
+agents puedan correr en paralelo sin race por el advisory lock del
+DB. `cancel-in-progress: false` — nunca cancelar un seed a mitad
+de vuelo (dejaria la DB inconsistente).
+
+Target Lambda provisionada por `orion-infrastructure/modules/seed-users`
+(role ARN + secret ARN + SSM param), deployada por `orion-backend` en
+Stage 6 del user-management plan. Caller (orion-backend) es responsable
+de declarar `environment: <env>` en workflow o preflight-job level.
 
 ### Por que no usamos subcarpetas (limitacion de GH Actions)
 
