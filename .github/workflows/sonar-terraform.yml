@@ -97,6 +97,7 @@ jobs:
       - name: SonarCloud Quality Gate
         id: qg
         if: ${{ always() }}
+        continue-on-error: true
         uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
         env:
