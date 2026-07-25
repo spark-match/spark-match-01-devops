@@ -142,6 +142,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
 
+    steps:
       - name: Validate inputs
         uses: ./.github/actions/validate-workflow-inputs
         with:

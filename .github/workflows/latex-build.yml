@@ -66,6 +66,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       artifact-name: ${{ inputs.artifact-name }}
+    steps:
       - name: Validate inputs
         uses: ./.github/actions/validate-workflow-inputs
         with:

@@ -51,6 +51,7 @@ jobs:
     name: "tflint (env=${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    steps:
       - name: Validate inputs
         uses: ./.github/actions/validate-workflow-inputs
         with:
