@@ -531,11 +531,105 @@ Key inputs:
 
 Required secrets: `AWS_APPLY_ROLE_ARN` (passed explicitly).
 
+#### `terraform-destroy.yml`
+
+Runs `terraform plan -destroy` then `terraform apply -destroy` per environment. Complementary to `terraform-apply.yml` — when you need to tear down an environment instead of build it up. Two independent gates prevent fat-finger mistakes:
+
+1. **`confirm-destroy-token` input** — the job aborts unless this input equals exactly `DESTROY-<ENV>` (case-sensitive, all caps). The caller is responsible for collecting this from a human before invoking (typically via `workflow_dispatch` with the `confirm_destroy` field). Failure logs the expected token and the length of what was received (never the value).
+2. **`gh-environment` input** — optional approval gate via GitHub Environment. Falls back to `environment`. For non-prod envs that intentionally have no reviewers, set `auto-approve: true`.
+
+The recipe also uploads the **current state as an artifact** before the apply step, so operators can recover from a bad destroy by re-applying against the backup. `dry-run: true` mode plans only without applying (preview what would be removed).
+
+Concurrency: `cancel-in-progress: false` — destroys in flight must complete or be rolled back by hand. Re-running requires the lock to release naturally.
+
+Key inputs:
+
+| Input        | Type   | Default | Notes |
+|--------------|--------|---------|-------|
+| environment | string | `''` (basename of `working-directory`) | Display + concurrency. Also forms the suffix of the required confirm token (`DESTROY-<ENV>`). |
+| working-directory | string | `.` | |
+| aws-region | string | `us-east-1` | |
+| apply-role-arn-secret | string | `AWS_APPLY_ROLE_ARN` | The role needs admin-equivalent rights; destroy recreates resources. |
+| terraform-version | string | `1.10.0` | |
+| backend-bucket / backend-key / tfvars-file / var-files / target / extra-args | string | various | Standard passthrough. |
+| confirm-destroy-token | string | **REQUIRED** | Must equal `DESTROY-<ENV>` exactly. The caller collects this from a human (typically via `workflow_dispatch`). |
+| gh-environment | string | = environment | Approval gate name. |
+| auto-approve | bool | `false` | Skip approval (only for non-prod envs with empty reviewers). |
+| dry-run | bool | `false` | Plan only — no resources are destroyed. Useful for previewing what would be removed. |
+| retention-days | number | `14` | 1-90 (GitHub Actions limits); for the plan artifact and the pre-destroy state backup. |
+| project-name | string | `''` (auto-derive from `backend-bucket`) | Used as the filter prefix for log groups (`/aws/lambda/<project>-*`, etc.), SSM parameters (`/<project>/*`), S3 buckets (`<project>-sam-artifacts-*`), and CloudFormation stacks (`<project>-*`). Auto-derived from `backend-bucket` when empty using the pattern `<project>-tfstate-<env>` (so `orion-tfstate-dev` produces `orion`). Pass explicitly only if your bucket name does not follow the convention. |
+| enable-cleanup | bool | `false` | Run the post-destroy cleanup job. Only executes if destroy was successful. |
+| cleanup-token | string | `''` | Required when `enable-cleanup=true`. Must equal `CLEANUP-<ENV>` (case-sensitive). Separate gate so cleanup cannot run accidentally on a destroy-only invocation. |
+
+Required secrets: `AWS_APPLY_ROLE_ARN` (passed explicitly).
+
+##### Post-destroy cleanup (optional job)
+
+When `enable-cleanup=true` and `cleanup-token` equals `CLEANUP-<ENV>`, the reusable runs a second job (`cleanup-residuals`) after `destroy` succeeds. It cleans the categories that Terraform + CloudFormation do not touch on their own:
+
+| Category | Pattern swept | Source of the leftover |
+|---|---|---|
+| CloudWatch log groups | `/aws/lambda/<project>-*`, `/aws/api-gateway/<project>-*`, `/aws/bedrock-agentcore/runtimes/<project>_*`, `/aws/rds/instance/<project>-*`, `/aws/vpc/<project>-*` | Auto-created by AWS services the first time they log. Not in Terraform state. |
+| SSM parameters | `/<project>/*` | Often created by smoke-test scripts or hand-written deploys outside Terraform. |
+| S3 buckets | `<project>-*-sam-artifacts`, `<project>-*-artifacts`, `<project>-*-sam-deploy` (excluding the `backend-bucket`) | Created by `sam deploy` or other tools. Not in Terraform state. |
+| CloudFormation stacks | `<project>-*` in any active state (excludes `DELETE_COMPLETE` history) | Stacks deployed via SAM or other IaC tools that the destroy recipe does not touch. |
+
+Behavior:
+
+- Only runs if `needs.destroy.result == 'success'`. A failed destroy blocks the cleanup — operators can re-run destroy first, then enable cleanup.
+- Idempotent: re-running on already-clean state is a no-op (already-deleted resources are skipped).
+- `dry-run: true` propagates: the cleanup job lists matches and writes them to the step summary without deleting.
+- CloudFormation `delete-stack` is async — the stack itself transitions to `DELETE_COMPLETE` minutes later. Re-running the workflow (with the same token) confirms.
+- The `backend-bucket` is excluded from S3 sweep by name match (it's the Terraform state bucket, owned by a different destroy step).
+- IAM users (e.g. `orion-admin`) and GitHub-side resources (Secrets, Variables, Environments) are NOT touched.
+
+Caller-side example:
+
+```yaml
+jobs:
+  destroy:
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-destroy.yml@main
+    with:
+      # ...destroy inputs as usual...
+      enable-cleanup: true
+      cleanup-token: ${{ inputs.cleanup_token }}
+      # project-name omitted — auto-derived from backend-bucket via the
+      # `<project>-tfstate-<env>` convention. Pass explicitly only if your
+      # bucket name does not match that pattern.
+```
+
+The caller's `workflow_dispatch` typically collects `cleanup_token` as a separate input (`CLEANUP-DEV` for `dev`, `CLEANUP-PROD` for `prod`), paralleling `confirm_destroy`.
+
+Workflow-level outputs added to expose cleanup state to chained jobs:
+
+- `cleanup-success` — `true` only if every cleanup category succeeded.
+- `cleanup-deleted-count` — total resources deleted across all categories.
+
+A sticky PR comment (`terraform-cleanup-residuals-failed-<env>` header) is posted when any cleanup step fails, with a pointer to the per-step logs and a note that re-running is idempotent.
+
+**Chicken-and-egg note**: if the state bucket (`backend-bucket`) is itself going to be destroyed as part of the run, you must migrate state to a local backend BEFORE invoking this recipe. The recipe does not rewrite `versions.tf` from inside the workflow (the file mutation is too fragile across callers). Pattern at the call site:
+
+```bash
+# One-off preflight (run locally or as a separate workflow step)
+cd live/dev
+cat > backend-override.hcl <<EOF
+path        = "tfstate.tfstate.local"
+lock_method = "local"
+EOF
+terraform init -migrate-state -force-copy -input=false \
+    -backend-config=backend-override.hcl
+
+# Then invoke the reusable workflow with backend-bucket = '' (empty) — the
+# reusable detects the local backend and skips the -backend-config step.
+```
+
+After destroy you can `rm backend-override.hcl tfstate.tfstate.local*` and run the normal init to re-attach S3 if you only needed a partial destroy.
+
 ### Other files in `.github/workflows/`
 
 These are not consumed by other Spark Match repos but are kept here for this repo's own CI:
 
-- `ci.yml` — Pull request-triggered lint & security pass. Calls the three pure-lint ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break. The Python, Node and deploy recipes (`python-ci`, `eslint`, `node-test`, `sam-deploy`, `container-deploy-ecr`, `terraform-plan`, `terraform-apply`) are NOT exercised here because this repo has no Node project, SAM stack, Python package or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
+- `ci.yml` — Pull request-triggered lint & security pass. Calls the three pure-lint ecosystem recipes (`actionlint`, `gitleaks`, `yamllint`) against this repository so a broken recipe is caught here before consumers break. The Python, Node and deploy recipes (`python-ci`, `eslint`, `node-test`, `sam-deploy`, `container-deploy-ecr`, `terraform-plan`, `terraform-apply`, `terraform-destroy`) are NOT exercised here because this repo has no Node project, SAM stack, Python package or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
 - `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main` / `dev`, on pull requests, and weekly.
 
 The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-article` repository's toolchain and are not part of the orion stack.
@@ -609,6 +703,12 @@ spark-match-01-devops/
 │       ├── container-deploy-ecr.yml  Dockerfile -> ECR (linux/arm64 default)
 │       ├── terraform-plan.yml        `terraform plan` per env + sticky PR comment
 │       ├── terraform-apply.yml       `terraform apply`, optional drift-only mode
+│       ├── terraform-destroy.yml     `terraform apply -destroy`, double-gated by
+│       │                             confirm-destroy-token (DESTROY-<ENV>) and
+│       │                             optional GH Environment approval. Optional
+│       │                             post-destroy cleanup job (log groups,
+│       │                             SSM params, orphan S3 buckets, active CF
+│       │                             stacks) gated by cleanup-token (CLEANUP-<ENV>)
 │       │
 │       │ ─── article (LaTeX, kept for 07-article's toolchain) ──────────
 │       ├── latex-build.yml           compile LaTeX -> PDF artifact
