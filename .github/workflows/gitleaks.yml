@@ -50,7 +50,11 @@ jobs:
     name: "gitleaks (env=${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    steps:
+      - name: Validate inputs
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {"environment-name": "${{ inputs.environment-name }}"}
       - name: Checkout caller repository (full history)
         uses: actions/checkout@v7
         with:

@@ -142,7 +142,14 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
 
-    steps:
+      - name: Validate inputs
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {"working-directory": "${{ inputs.working-directory }}","aws-region": "${{ inputs.aws-region }}","terraform-version": "${{ inputs.terraform-version }}"}
+          required: working-directory
+          patterns: |
+            {"terraform-version": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}
       - name: Resolve environment identifier (for display/artifact/concurrency)
         id: env
         # Este step corre ANTES de checkout, asi que el working-directory del
