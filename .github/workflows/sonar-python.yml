@@ -1,0 +1,168 @@
+name: SonarCloud - Python
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'SonarCloud project key'
+        type: string
+        required: true
+      project-name:
+        description: 'SonarCloud project display name'
+        type: string
+        required: true
+      organization:
+        description: 'SonarCloud organization key'
+        type: string
+        required: false
+        default: 'ahincho'
+      sources:
+        description: 'Comma-separated source paths (relative to working-directory)'
+        type: string
+        required: false
+        default: '.'
+      tests:
+        description: 'Comma-separated test paths (relative to working-directory). Empty disables test analysis.'
+        type: string
+        required: false
+        default: ''
+      working-directory:
+        description: 'Directory containing pyproject.toml and source code'
+        type: string
+        required: false
+        default: '.'
+      env:
+        description: 'Environment identifier (used in job name and logs)'
+        type: string
+        required: false
+        default: 'ci'
+      python-version:
+        description: 'Python version to install via uv'
+        type: string
+        required: false
+        default: '3.14'
+      sync-groups:
+        description: 'Space-separated dependency groups for uv sync (e.g. "dev test")'
+        type: string
+        required: false
+        default: 'dev'
+      pytest-targets:
+        description: 'Path passed to pytest'
+        type: string
+        required: false
+        default: 'tests'
+      pytest-args:
+        description: 'Extra pytest args (e.g. "--cov=src --cov-report=xml:coverage.xml")'
+        type: string
+        required: false
+        default: '--cov --cov-report=xml:coverage.xml'
+      coverage-paths:
+        description: 'Comma-separated coverage report paths for SonarCloud'
+        type: string
+        required: false
+        default: 'coverage.xml'
+      fail-on-quality-gate:
+        description: 'Fail the job if the quality gate status is ERROR'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-python-${{ inputs.env }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    name: "SonarCloud Python (${{ inputs.env }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          ERRORS=()
+          [ -z "${{ inputs.project-key }}" ] && ERRORS+=("project-key: required")
+          [ -z "${{ inputs.project-name }}" ] && ERRORS+=("project-name: required")
+          if ! [[ "${{ inputs.python-version }}" =~ ^[0-9]+\.[0-9]+ ]]; then
+            ERRORS+=("python-version: must be like '3.14', got '${{ inputs.python-version }}'")
+          fi
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do echo "::error::  - $E"; done
+            exit 1
+          fi
+          echo "Inputs validated"
+
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 'latest'
+          enable-cache: true
+          cache-dependency-glob: |
+            ${{ inputs.working-directory }}/pyproject.toml
+            ${{ inputs.working-directory }}/uv.lock
+
+      - name: Set up Python ${{ inputs.python-version }}
+        run: uv python install ${{ inputs.python-version }}
+
+      - name: Sync dependencies
+        run: |
+          set -euo pipefail
+          args=()
+          for g in ${{ inputs.sync-groups }}; do
+            args+=(--group "$g")
+          done
+          if [ "${#args[@]}" -eq 0 ]; then
+            uv sync
+          else
+            uv sync "${args[@]}"
+          fi
+
+      - name: Run tests with coverage
+        run: |
+          set -euo pipefail
+          args=("${{ inputs.pytest-targets }}")
+          if [ -n "${{ inputs.pytest-args }}" ]; then
+            extra=(${{ inputs.pytest-args }})
+            args+=("${extra[@]}")
+          fi
+          uv run pytest --tb=short "${args[@]}"
+
+      - name: SonarCloud Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        uses: sonarsource/sonarqube-scan-action@v8.2.1
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.projectName=${{ inputs.project-name }}
+            -Dsonar.organization=${{ inputs.organization }}
+            -Dsonar.sources=${{ inputs.sources }}
+            -Dsonar.tests=${{ inputs.tests }}
+            -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-paths }}
+            -Dsonar.scanner.dumpToFile=true
+
+      - name: SonarCloud Quality Gate
+        if: ${{ always() }}
+        uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          fail-on-quality-gate-error: ${{ inputs.fail-on-quality-gate }}
