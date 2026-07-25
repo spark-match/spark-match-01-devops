@@ -14,33 +14,27 @@ on:
       organization:
         description: 'SonarCloud organization key'
         type: string
-        required: false
-        default: 'ahincho'
+        required: true
       sources:
         description: 'Comma-separated source paths (relative to working-directory)'
         type: string
-        required: false
-        default: '.'
+        required: true
       exclude-patterns:
         description: 'Comma-separated glob patterns to exclude from sources'
         type: string
-        required: false
-        default: '**/.terraform/**,**/.terragrunt-cache/**,**/.git/**,**/node_modules/**'
+        required: true
       working-directory:
         description: 'Directory containing the Terraform code'
         type: string
-        required: false
-        default: '.'
+        required: true
       env:
         description: 'Environment identifier (used in job name and logs)'
         type: string
-        required: false
-        default: 'ci'
+        required: true
       fail-on-quality-gate:
         description: 'Fail the job if the quality gate status is ERROR'
         type: boolean
-        required: false
-        default: true
+        required: true
 
 permissions:
   contents: read
@@ -65,9 +59,15 @@ jobs:
           values: |
             {
               "project-key": "${{ inputs.project-key }}",
-              "project-name": "${{ inputs.project-name }}"
+              "project-name": "${{ inputs.project-name }}",
+              "organization": "${{ inputs.organization }}",
+              "sources": "${{ inputs.sources }}",
+              "exclude-patterns": "${{ inputs.exclude-patterns }}",
+              "working-directory": "${{ inputs.working-directory }}",
+              "env": "${{ inputs.env }}",
+              "fail-on-quality-gate": "${{ inputs.fail-on-quality-gate }}"
             }
-          required: project-key|project-name
+          required: project-key|project-name|organization|sources|exclude-patterns|working-directory|env|fail-on-quality-gate
 
       - name: Checkout
         uses: actions/checkout@v7.0.1

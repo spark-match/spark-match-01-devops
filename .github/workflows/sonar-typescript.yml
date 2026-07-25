@@ -14,68 +14,55 @@ on:
       organization:
         description: 'SonarCloud organization key'
         type: string
-        required: false
-        default: 'ahincho'
+        required: true
       sources:
         description: 'Comma-separated source paths (relative to working-directory)'
         type: string
-        required: false
-        default: '.'
+        required: true
       tests:
         description: 'Comma-separated test glob patterns'
         type: string
-        required: false
-        default: '**/*.test.ts,**/*.spec.ts'
+        required: true
       exclude-patterns:
         description: 'Comma-separated glob patterns to exclude from both sources and tests'
         type: string
-        required: false
-        default: '**/dist/**,**/node_modules/**,**/coverage/**,**/.aws-sam/**'
+        required: true
       working-directory:
         description: 'Directory containing package.json and source code'
         type: string
-        required: false
-        default: '.'
+        required: true
       env:
         description: 'Environment identifier (used in job name and logs)'
         type: string
-        required: false
-        default: 'ci'
+        required: true
       node-version:
         description: 'Node.js version'
         type: string
-        required: false
-        default: '24'
+        required: true
       package-manager:
         description: 'Package manager hint for setup-node built-in cache (npm, pnpm, yarn, bun)'
         type: string
-        required: false
-        default: 'npm'
+        required: true
       lockfile-name:
         description: 'Lockfile name (relative to working-directory) used as cache key'
         type: string
-        required: false
-        default: 'package-lock.json'
+        required: true
       install-command:
         description: 'Shell command to install dependencies (e.g. "npm ci", "pnpm install --frozen-lockfile")'
         type: string
-        required: false
-        default: 'npm ci'
+        required: true
       test-command:
         description: 'Shell command that runs tests and produces LCOV coverage'
         type: string
-        required: false
-        default: 'npm run test:coverage'
+        required: true
       coverage-paths:
         description: 'Comma-separated LCOV coverage report paths for SonarCloud'
         type: string
-        required: false
-        default: 'coverage/lcov.info'
+        required: true
       fail-on-quality-gate:
         description: 'Fail the job if the quality gate status is ERROR'
         type: boolean
-        required: false
-        default: true
+        required: true
 
 permissions:
   contents: read
@@ -101,12 +88,29 @@ jobs:
             {
               "project-key": "${{ inputs.project-key }}",
               "project-name": "${{ inputs.project-name }}",
-              "package-manager": "${{ inputs.package-manager }}"
+              "organization": "${{ inputs.organization }}",
+              "sources": "${{ inputs.sources }}",
+              "tests": "${{ inputs.tests }}",
+              "exclude-patterns": "${{ inputs.exclude-patterns }}",
+              "working-directory": "${{ inputs.working-directory }}",
+              "env": "${{ inputs.env }}",
+              "node-version": "${{ inputs.node-version }}",
+              "package-manager": "${{ inputs.package-manager }}",
+              "lockfile-name": "${{ inputs.lockfile-name }}",
+              "install-command": "${{ inputs.install-command }}",
+              "test-command": "${{ inputs.test-command }}",
+              "coverage-paths": "${{ inputs.coverage-paths }}",
+              "fail-on-quality-gate": "${{ inputs.fail-on-quality-gate }}"
             }
-          required: project-key|project-name
+          required: project-key|project-name|organization|sources|tests|exclude-patterns|working-directory|env|node-version|package-manager|lockfile-name|install-command|test-command|coverage-paths|fail-on-quality-gate
           enums: |
             {
               "package-manager": ["npm", "pnpm", "yarn", "bun"]
+            }
+          patterns: |
+            {
+              "node-version": "^[0-9]+(\\.[0-9]+){0,2}$",
+              "lockfile-name": "^[A-Za-z0-9._\\-]+$"
             }
 
       - name: Checkout

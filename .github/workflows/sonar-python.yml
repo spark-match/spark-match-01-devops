@@ -14,58 +14,47 @@ on:
       organization:
         description: 'SonarCloud organization key'
         type: string
-        required: false
-        default: 'ahincho'
+        required: true
       sources:
         description: 'Comma-separated source paths (relative to working-directory)'
         type: string
-        required: false
-        default: '.'
+        required: true
       tests:
         description: 'Comma-separated test paths (relative to working-directory). Empty disables test analysis.'
         type: string
-        required: false
-        default: ''
+        required: true
       working-directory:
         description: 'Directory containing pyproject.toml and source code'
         type: string
-        required: false
-        default: '.'
+        required: true
       env:
         description: 'Environment identifier (used in job name and logs)'
         type: string
-        required: false
-        default: 'ci'
+        required: true
       python-version:
         description: 'Python version to install via uv'
         type: string
-        required: false
-        default: '3.14'
+        required: true
       sync-groups:
         description: 'Space-separated dependency groups for uv sync (e.g. "dev test")'
         type: string
-        required: false
-        default: 'dev'
+        required: true
       pytest-targets:
         description: 'Path passed to pytest'
         type: string
-        required: false
-        default: 'tests'
+        required: true
       pytest-args:
         description: 'Extra pytest args (e.g. "--cov=src --cov-report=xml:coverage.xml")'
         type: string
-        required: false
-        default: '--cov --cov-report=xml:coverage.xml'
+        required: true
       coverage-paths:
         description: 'Comma-separated coverage report paths for SonarCloud'
         type: string
-        required: false
-        default: 'coverage.xml'
+        required: true
       fail-on-quality-gate:
         description: 'Fail the job if the quality gate status is ERROR'
         type: boolean
-        required: false
-        default: true
+        required: true
 
 permissions:
   contents: read
@@ -91,9 +80,19 @@ jobs:
             {
               "project-key": "${{ inputs.project-key }}",
               "project-name": "${{ inputs.project-name }}",
-              "python-version": "${{ inputs.python-version }}"
+              "organization": "${{ inputs.organization }}",
+              "sources": "${{ inputs.sources }}",
+              "tests": "${{ inputs.tests }}",
+              "working-directory": "${{ inputs.working-directory }}",
+              "env": "${{ inputs.env }}",
+              "python-version": "${{ inputs.python-version }}",
+              "sync-groups": "${{ inputs.sync-groups }}",
+              "pytest-targets": "${{ inputs.pytest-targets }}",
+              "pytest-args": "${{ inputs.pytest-args }}",
+              "coverage-paths": "${{ inputs.coverage-paths }}",
+              "fail-on-quality-gate": "${{ inputs.fail-on-quality-gate }}"
             }
-          required: project-key|project-name
+          required: project-key|project-name|organization|sources|tests|working-directory|env|python-version|sync-groups|pytest-targets|pytest-args|coverage-paths|fail-on-quality-gate
           patterns: |
             {
               "python-version": "^[0-9]+\\.[0-9]+"
