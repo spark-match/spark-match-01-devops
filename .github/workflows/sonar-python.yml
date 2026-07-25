@@ -149,7 +149,6 @@ jobs:
           projectBaseDir: ${{ inputs.working-directory }}
           args: >
             -Dsonar.projectKey=${{ inputs.project-key }}
-            -Dsonar.projectName=${{ inputs.project-name }}
             -Dsonar.organization=${{ inputs.organization }}
             -Dsonar.sources=${{ inputs.sources }}
             -Dsonar.tests=${{ inputs.tests }}
