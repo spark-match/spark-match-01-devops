@@ -129,7 +129,7 @@ jobs:
     environment: ${{ inputs.environment-name }}
     steps:
       - name: Validate inputs
-        uses: ./.github/actions/validate-workflow-inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {

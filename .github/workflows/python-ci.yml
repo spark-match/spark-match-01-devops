@@ -138,7 +138,7 @@ jobs:
 
     steps:
       - name: Validate inputs
-        uses: ./.github/actions/validate-workflow-inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {
@@ -263,7 +263,7 @@ jobs:
 
       - name: Run tests (pytest)
         if: ${{ contains(inputs.commands, 'test:pytest') }}
-        uses: ./.github/actions/run-pytest-with-args
+        uses: spark-match/spark-match-01-devops/.github/actions/run-pytest-with-args@main
         with:
           pytest-targets: ${{ inputs.pytest-targets }}
           pytest-args: ${{ inputs.pytest-args }}
