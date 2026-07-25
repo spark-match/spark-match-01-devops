@@ -165,7 +165,7 @@ jobs:
           SONAR_HOST_URL: https://sonarcloud.io
 
       - name: Enforce Quality Gate
-        if: ${{ steps.qg.outputs.quality-gate-status == 'FAILED' && inputs.fail-on-quality-gate == 'true' }}
+        if: ${{ always() && steps.qg.outputs.quality-gate-status == 'FAILED' && inputs.fail-on-quality-gate == 'true' }}
         run: |
           echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
           exit 1
