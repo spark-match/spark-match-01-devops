@@ -168,12 +168,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
 
-      - name: Debug QG output
-        if: ${{ always() }}
-        run: |
-          echo "::notice::qg output: '${{ steps.qg.outputs.quality-gate-status }}'"
-          echo "::notice::fail-on-quality-gate: '${{ inputs.fail-on-quality-gate }}'"
-
       - name: Enforce Quality Gate
         if: ${{ always() && steps.qg.outputs.quality-gate-status == 'FAILED' && inputs.fail-on-quality-gate == 'true' }}
         run: |
