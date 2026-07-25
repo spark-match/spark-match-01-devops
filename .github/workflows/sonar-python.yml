@@ -85,20 +85,19 @@ jobs:
 
     steps:
       - name: Validate inputs
-        run: |
-          set -euo pipefail
-          ERRORS=()
-          [ -z "${{ inputs.project-key }}" ] && ERRORS+=("project-key: required")
-          [ -z "${{ inputs.project-name }}" ] && ERRORS+=("project-name: required")
-          if ! [[ "${{ inputs.python-version }}" =~ ^[0-9]+\.[0-9]+ ]]; then
-            ERRORS+=("python-version: must be like '3.14', got '${{ inputs.python-version }}'")
-          fi
-          if [ ${#ERRORS[@]} -gt 0 ]; then
-            echo "::error::Input validation failed:"
-            for E in "${ERRORS[@]}"; do echo "::error::  - $E"; done
-            exit 1
-          fi
-          echo "Inputs validated"
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {
+              "project-key": "${{ inputs.project-key }}",
+              "project-name": "${{ inputs.project-name }}",
+              "python-version": "${{ inputs.python-version }}"
+            }
+          required: project-key|project-name
+          patterns: |
+            {
+              "python-version": "^[0-9]+\\.[0-9]+"
+            }
 
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -132,14 +131,11 @@ jobs:
           fi
 
       - name: Run tests with coverage
-        run: |
-          set -euo pipefail
-          args=("${{ inputs.pytest-targets }}")
-          if [ -n "${{ inputs.pytest-args }}" ]; then
-            extra=(${{ inputs.pytest-args }})
-            args+=("${extra[@]}")
-          fi
-          uv run pytest --tb=short "${args[@]}"
+        uses: ./.github/actions/run-pytest-with-args
+        with:
+          pytest-targets: ${{ inputs.pytest-targets }}
+          pytest-args: ${{ inputs.pytest-args }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: SonarCloud Scan
         env:
@@ -159,7 +155,7 @@ jobs:
 
       - name: SonarCloud Quality Gate
         if: ${{ always() }}
-        uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
+        uses: sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

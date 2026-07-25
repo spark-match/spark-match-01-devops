@@ -95,21 +95,19 @@ jobs:
 
     steps:
       - name: Validate inputs
-        run: |
-          set -euo pipefail
-          ERRORS=()
-          [ -z "${{ inputs.project-key }}" ] && ERRORS+=("project-key: required")
-          [ -z "${{ inputs.project-name }}" ] && ERRORS+=("project-name: required")
-          case "${{ inputs.package-manager }}" in
-            npm|pnpm|yarn|bun) ;;
-            *) ERRORS+=("package-manager: must be one of npm|pnpm|yarn|bun, got '${{ inputs.package-manager }}'") ;;
-          esac
-          if [ ${#ERRORS[@]} -gt 0 ]; then
-            echo "::error::Input validation failed:"
-            for E in "${ERRORS[@]}"; do echo "::error::  - $E"; done
-            exit 1
-          fi
-          echo "Inputs validated"
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {
+              "project-key": "${{ inputs.project-key }}",
+              "project-name": "${{ inputs.project-name }}",
+              "package-manager": "${{ inputs.package-manager }}"
+            }
+          required: project-key|project-name
+          enums: |
+            {
+              "package-manager": ["npm", "pnpm", "yarn", "bun"]
+            }
 
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -150,7 +148,7 @@ jobs:
 
       - name: SonarCloud Quality Gate
         if: ${{ always() }}
-        uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
+        uses: sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

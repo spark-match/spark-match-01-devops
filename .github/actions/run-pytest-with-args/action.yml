@@ -1,0 +1,34 @@
+name: Run pytest with args
+description: 'Runs `uv run pytest <targets> <args>` with safe arg splitting. Expects uv and Python to be installed (caller is responsible for setup).'
+inputs:
+  pytest-targets:
+    description: 'Path passed to pytest (e.g. "tests").'
+    type: string
+    required: false
+    default: 'tests'
+  pytest-args:
+    description: 'Extra pytest args (e.g. "--cov=src --cov-report=xml:coverage.xml").'
+    type: string
+    required: false
+    default: ''
+  working-directory:
+    description: 'Working directory for the pytest invocation.'
+    type: string
+    required: false
+    default: '.'
+  extra-flags:
+    description: 'Extra pytest CLI flags appended before targets/args (e.g. "--tb=short").'
+    type: string
+    required: false
+    default: '--tb=short'
+runs:
+  using: composite
+  steps:
+    - name: Run pytest
+      shell: bash
+      env:
+        PYTEST_TARGETS: ${{ inputs.pytest-targets }}
+        PYTEST_ARGS: ${{ inputs.pytest-args }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        EXTRA_FLAGS: ${{ inputs.extra-flags }}
+      run: ${{ github.action_path }}/run.sh

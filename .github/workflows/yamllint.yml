@@ -45,7 +45,11 @@ jobs:
     name: "yamllint (env=${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    steps:
+      - name: Validate inputs
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {"environment-name": "${{ inputs.environment-name }}"}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
