@@ -31,4 +31,4 @@ runs:
         PYTEST_ARGS: ${{ inputs.pytest-args }}
         WORKING_DIRECTORY: ${{ inputs.working-directory }}
         EXTRA_FLAGS: ${{ inputs.extra-flags }}
-      run: ${{ github.action_path }}/run.sh
+      run: bash ${{ github.action_path }}/run.sh
