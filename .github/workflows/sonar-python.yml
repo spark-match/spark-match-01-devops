@@ -154,7 +154,7 @@ jobs:
 
       - name: SonarCloud Quality Gate
         if: ${{ always() }}
-        uses: sonarqube-quality-gate-action@v1.2.0
+        uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
