@@ -1,35 +1,3 @@
-# =============================================================================
-# Reusable Workflow: Node Test - unit tests for JS/TS workspaces
-# =============================================================================
-# Atomic recipe (node layer). Runs `npm run <test-script>` in the caller's
-# repository with the requested Node version. Caches package manager
-# dependencies per the canonical cache key convention (docs/CACHE.md).
-#
-# Optimized for Angular 22 (which uses vitest via @angular/build:unit-test)
-# and conventional JS/TS unit-test runners (vitest, jest, mocha). Callers
-# control the actual test command via `test-script` and an optional
-# `pre-test-script` (useful when tests need a generation step, like
-# Angular's prebuild hook that materializes API_URL into a generated file).
-#
-# USAGE (in caller repo):
-#   jobs:
-#     test:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@main
-#       with:
-#         environment-name: ci
-#         pre-test-script: prebuild   # optional (Angular callers)
-#         test-script: test -- --watch=false
-#
-# Notes:
-#   - Defaults to npm + package-lock.json + test script 'test'. Override for
-#     pnpm/yarn/bun or for custom test scripts.
-#   - Cache key follows the canonical convention:
-#       <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
-#     See docs/CACHE.md for the full convention rationale.
-#
-# Cross-owner safe: no caller secrets forwarded.
-# =============================================================================
-
 name: Node Test
 
 on:
@@ -84,9 +52,27 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
 
     steps:
+      - name: Validate inputs
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {
+              "pkg-manager": "${{ inputs.pkg-manager }}",
+              "node-version": "${{ inputs.node-version }}",
+              "lockfile-name": "${{ inputs.lockfile-name }}",
+              "working-directory": "${{ inputs.working-directory }}"
+            }
+          enums: |
+            {
+              "pkg-manager": ["npm", "pnpm", "yarn", "bun"]
+            }
+          patterns: |
+            {
+              "node-version": "^[0-9]+(\\.[0-9]+){0,2}$",
+              "lockfile-name": "^[A-Za-z0-9._\\-]+$"
+            }
+
       - name: Resolve cache key tags
-        # Lowercase runner.os + environment-name into env vars for the
-        # canonical cache key convention. See docs/CACHE.md.
         run: |
           set -euo pipefail
           LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
@@ -100,22 +86,18 @@ jobs:
           echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
 
       - name: Checkout caller repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js ${{ inputs.node-version }}
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ inputs.node-version }}
-          # Disable setup-node's built-in package manager cache to avoid
-          # double caching with our explicit actions/cache step below.
           package-manager-cache: false
 
       - name: Cache ${{ inputs.pkg-manager }} dependencies
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.npm
-          # Canonical cache key convention (lowercase, see docs/CACHE.md):
-          #   <os>-node-<nodeVersion>-<pkgmanager>-<env>-<H>
           key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
             ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
@@ -125,15 +107,7 @@ jobs:
 
       - name: Pre-test hook
         if: inputs.pre-test-script != ''
-        # Optional script for callers that need a generation step before
-        # tests run. Example (Angular): pre-test-script=prebuild runs the
-        # scripts/pre-build-api-config.mjs hook to materialize
-        # src/environments/api-config.generated.ts before vitest spins up.
         run: npm run ${{ inputs.pre-test-script }}
 
       - name: Run unit tests
-        # Honoring caller-defined test scripts. Examples:
-        #   - "test"                   (default)
-        #   - "test -- --watch=false"  (Angular 22 + vitest)
-        #   - "test:coverage"          (jest with coverage)
         run: npm run ${{ inputs.test-script }}

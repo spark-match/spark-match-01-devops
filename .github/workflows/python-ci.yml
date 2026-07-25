@@ -1,79 +1,3 @@
-# =============================================================================
-# Reusable Workflow: Python CI (uv + ruff + mypy + pytest + bandit + pip-audit)
-# =============================================================================
-# Atomic recipe (python layer). Runs a Python project QA pipeline using
-# `uv` for dependency management + `ruff` + `mypy` + `pytest` (plus
-# `bandit` and `pip-audit` as opt-in security commands). Designed for
-# projects that mirror the orion-cognitive-agent stack (pin in
-# `.python-version`, lock file `uv.lock`, dev groups in `pyproject.toml`).
-# The recipe is GENERIC: it does not assume a specific project layout
-# beyond `pyproject.toml` + (optional) `uv.lock` in `working-directory`.
-#
-# USAGE (in caller repo):
-#   jobs:
-#     python-ci:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
-#       with:
-#         environment-name: ci
-#         working-directory: '.'
-#         commands: lint:ruff-format, lint:ruff-check, typecheck:mypy, test:pytest, coverage:upload
-#         # Optional opt-ins:
-#         # dependency-groups: dev security   # enable pip-audit / bandit
-#         # pytest-args: '-n auto -p no:cacheprovider'
-#         # coverage-threshold: '80'
-#         # permissions-write: true           # opt-in sticky PR comment
-#         # lock-check: true                  # drift detector (uv lock --check)
-#         # frozen: true                      # prod callers (uv sync --frozen)
-#         # runs-on: ubuntu-latest            # override runner (windows/macos)
-#
-# Required secrets: none (this is an ecosystem-style recipe, no AWS).
-#
-# Required GH Environment: caller may optionally create an "env" for the
-# environment gate; recommended but not enforced.
-#
-# Python version is HARDCODED at 3.12 in the matrix. Multi-version matrix
-# is removed because `strategy.matrix` with `${{ inputs.* }}` is rejected
-# by GitHub Actions when this recipe is invoked cross-owner (see
-# DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md and GHA-BUG-REPORT-DRAFT.md). To
-# support a different version, update this single value (and bump via
-# SemVer when released).
-#
-# Inputs (defaults tuned for orion-cognitive-agent; callers override):
-#   Core:
-#     environment-name    job name + env gate (e.g. "ci")
-#     working-directory   where uv operates (default "." = repo root)
-#     commands            ordered CSV of pipeline steps
-#     dependency-groups   extra `uv sync --group` groups
-#     runs-on             runner label (default "ubuntu-latest")
-#     timeout-minutes     job timeout (default 20)
-#     fail-fast           strategy.matrix.fail-fast (default false)
-#
-#   Steps:
-#     ruff-targets        CSV of paths for `ruff format/check/fix` (default "src tests")
-#     mypy-targets        CSV of paths for `mypy` (default "src")
-#     pytest-targets      path for `pytest` (default "tests")
-#     setup-uv-version    uv version for astral-sh/setup-uv (default "latest")
-#
-#   Coverage + reporting:
-#     coverage-output     artifact path uploaded (default "coverage.xml")
-#     pytest-args         free-form args appended to pytest (default empty)
-#     coverage-threshold  "80" to enforce `coverage report --fail-under=80` (default empty)
-#     permissions-write   opt-in sticky PR comment (default false)
-#
-#   Sync flags:
-#     sync-mode           dependency installation scope (default "full"):
-#                          full          = uv sync with all groups in `dependency-groups`
-#                          runtime-only  = uv sync --no-dev (skip dev/test deps)
-#                          lint-only     = uv sync --only-group lint (only linting)
-#     lock-check          run `uv lock --check` before sync (default false)
-#     frozen              pass `--frozen` to uv sync (default false)
-#
-#   Cache:
-#     cache-suffix        suffix for GH Actions cache key (default empty; falls
-#                         back to `environment-name` in the step). See
-#                         docs/VERSIONING.md §"Cache semantics".
-# =============================================================================
-
 name: Python CI
 
 on:
@@ -193,15 +117,10 @@ on:
         required: false
         default: false
 
-# Default permissions: contents read for checkout, pull-requests write for
-# the optional sticky PR comment step (it is `if`-gated by
-# `permissions-write=true`; if not enabled, the step is skipped and the
-# permission is unused).
 permissions:
   contents: read
   pull-requests: write
 
-# Concurrency keyed by caller + env to keep lint runs cancelable per branch.
 concurrency:
   group: python-ci-${{ inputs.environment-name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -212,9 +131,6 @@ jobs:
     environment: ${{ inputs.environment-name }}
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
-    # NOTE: matrix is intentionally HARDCODED to a single Python version.
-    # Per GHA bug, `strategy.matrix` cannot reference `${{ inputs.* }}` when the
-    # recipe is invoked cross-owner (see DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md).
     strategy:
       fail-fast: ${{ inputs.fail-fast }}
       matrix:
@@ -222,49 +138,41 @@ jobs:
 
     steps:
       - name: Validate inputs
-        working-directory: .
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {
+              "environment-name": "${{ inputs.environment-name }}",
+              "working-directory": "${{ inputs.working-directory }}",
+              "runs-on": "${{ inputs.runs-on }}",
+              "coverage-threshold": "${{ inputs.coverage-threshold }}",
+              "sync-mode": "${{ inputs.sync-mode }}"
+            }
+          required: environment-name|working-directory|runs-on
+          enums: |
+            {
+              "sync-mode": ["full", "runtime-only", "lint-only"]
+            }
+          patterns: |
+            {
+              "coverage-threshold": "^$|^[0-9]+(\\.[0-9]+)?$"
+            }
+
+      - name: Validate commands token
+        working-directory: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
-          ERRORS=()
-          if [ -z "${{ inputs.environment-name }}" ]; then
-            ERRORS+=("environment-name: required")
-          fi
-          if [ -z "${{ inputs.working-directory }}" ]; then
-            ERRORS+=("working-directory: required")
-          fi
-          if [ -z "${{ inputs.runs-on }}" ]; then
-            ERRORS+=("runs-on: required")
-          fi
-          if [ -n "${{ inputs.coverage-threshold }}" ]; then
-            if ! [[ "${{ inputs.coverage-threshold }}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-              ERRORS+=("coverage-threshold: must be a non-negative number (e.g. '80' or '75.5'), got '${{ inputs.coverage-threshold }}'")
-            fi
-          fi
-          # permissions-write, lock-check, frozen are typed as boolean in the
-          # workflow_call.inputs block (GHA coerces); bash sees them as
-          # the literal strings 'true' / 'false' after substitution. No
-          # explicit validation needed beyond type coercion.
-          case "${{ inputs.sync-mode }}" in
-            full|runtime-only|lint-only) ;;
-            *) ERRORS+=("sync-mode: must be one of 'full', 'runtime-only', 'lint-only', got '${{ inputs.sync-mode }}'") ;;
-          esac
           case "${{ inputs.commands }}" in
-            *none*) ;;   # explicit "none" = caller wants only the manual steps (rare)
-            *security:pip-audit*|*lint:ruff-format-fix*|*lint:ruff-check-fix*|*lock:check*|*lint:bandit*|*lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*) ;;
-            *) ERRORS+=("commands: unknown pipeline step in '${{ inputs.commands }}'. Valid steps: lint:ruff-format, lint:ruff-format-fix, lint:ruff-check, lint:ruff-check-fix, lock:check, typecheck:mypy, test:pytest, security:pip-audit, lint:bandit, coverage:upload, none.") ;;
+            *security:pip-audit*|*lint:ruff-format-fix*|*lint:ruff-check-fix*|*lock:check*|*lint:bandit*|*lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*|*none*) ;;
+            *) echo "::error::commands: unknown pipeline step in '${{ inputs.commands }}'. Valid steps: lint:ruff-format, lint:ruff-format-fix, lint:ruff-check, lint:ruff-check-fix, lock:check, typecheck:mypy, test:pytest, security:pip-audit, lint:bandit, coverage:upload, none."; exit 1 ;;
           esac
-          if [ ${#ERRORS[@]} -gt 0 ]; then
-            echo "::error::Input validation failed:"
-            for E in "${ERRORS[@]}"; do echo "::error::  - $E"; done
-            exit 1
-          fi
-          echo "All inputs validated successfully"
+          echo "Commands token validated"
 
       - name: Checkout caller repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           version: ${{ inputs.setup-uv-version }}
           enable-cache: true
@@ -283,13 +191,10 @@ jobs:
           UV_PRINT_ENV: "1"
         run: |
           set -euo pipefail
-          # Optional drift detector (input `lock-check: true`).
           if [ "${{ inputs.lock-check }}" = "true" ]; then
             echo "Running uv lock --check (input lock-check=true)"
             uv lock --check
           fi
-          # Build sync args. Sprint C adds the `sync-mode` knob that lets a
-          # caller skip dev/test groups for fast lint-only or prod-only jobs.
           sync_args=()
           case "${{ inputs.sync-mode }}" in
             full)
@@ -304,8 +209,6 @@ jobs:
               sync_args+=(--only-group lint)
               ;;
           esac
-          # Apply `--frozen` if requested. uv accepts it in any order with the
-          # group flags, so we just append.
           if [ "${{ inputs.frozen }}" = "true" ]; then
             sync_args+=("--frozen")
           fi
@@ -351,8 +254,6 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::notice::Running bandit security linter"
-          # B101 (assert_used) is too noisy for test suites. Skip it.
-          # Callers can override by passing custom bandit config in pyproject.toml.
           uv run bandit --recursive ${{ inputs.ruff-targets }} --skip B101
 
       - name: Type check (mypy)
@@ -362,19 +263,11 @@ jobs:
 
       - name: Run tests (pytest)
         if: ${{ contains(inputs.commands, 'test:pytest') }}
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          set -euo pipefail
-          args=("${{ inputs.pytest-targets }}")
-          if [ -n "${{ inputs.pytest-args }}" ]; then
-            # Split the space-separated pytest-args into positional tokens.
-            # Caller responsibility: quote individual tokens (single
-            # token like '-n=auto' is safe; multiple tokens need quoting).
-            # shellcheck disable=SC2206
-            extra=(${{ inputs.pytest-args }})
-            args+=("${extra[@]}")
-          fi
-          uv run pytest --tb=short "${args[@]}"
+        uses: ./.github/actions/run-pytest-with-args
+        with:
+          pytest-targets: ${{ inputs.pytest-targets }}
+          pytest-args: ${{ inputs.pytest-args }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: Coverage threshold
         if: ${{ always() && inputs.coverage-threshold != '' && contains(inputs.commands, 'test:pytest') }}
@@ -382,10 +275,6 @@ jobs:
         run: |
           THRESHOLD="${{ inputs.coverage-threshold }}"
           echo "Enforcing coverage threshold >= ${THRESHOLD}%"
-          # `coverage report` reads .coverage data file by default. Caller
-          # is responsible for generating .coverage (pytest-cov or
-          # coverage run) before this step. We do not auto-inject --cov
-          # because the right scope depends on the project layout.
           uv run coverage report --fail-under="${THRESHOLD}"
 
       - name: Upload coverage report
@@ -416,12 +305,6 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::notice::Running pip-audit (transitive deps, no autofix)"
-          # --skip-editable skips the project's own package(s) because
-          # pip-audit cannot resolve them on PyPI; transitive deps still
-          # get full audit coverage. Non-strict mode: exit 0 on no vulns,
-          # exit 1 on vulns found. (--strict was tested but trips on
-          # `example-fixture`-style editable distributions, so we don't
-          # use it; the default exit-1-on-vulns behavior is enough.)
           uv run pip-audit --skip-editable
 
       - name: QA summary

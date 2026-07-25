@@ -1,0 +1,33 @@
+name: Validate workflow inputs
+description: 'Validates required inputs, enum values, and regex patterns. Fails with ::error:: on violations.'
+inputs:
+  values:
+    description: 'JSON object mapping input name to its current value (e.g. {"project-key":"abc","env":"dev"}).'
+    type: string
+    required: true
+  required:
+    description: 'Pipe-separated list of required input names. Each is checked to be non-empty.'
+    type: string
+    required: false
+    default: ''
+  enums:
+    description: 'JSON object of input name to allowed-values array (e.g. {"sync-mode":["full","runtime-only"]}).'
+    type: string
+    required: false
+    default: '{}'
+  patterns:
+    description: 'JSON object of input name to regex pattern the value must match (e.g. {"python-version":"^[0-9]+\\.[0-9]+"}).'
+    type: string
+    required: false
+    default: '{}'
+runs:
+  using: composite
+  steps:
+    - name: Run validation
+      shell: bash
+      env:
+        VALUES: ${{ inputs.values }}
+        REQUIRED: ${{ inputs.required }}
+        ENUMS: ${{ inputs.enums }}
+        PATTERNS: ${{ inputs.patterns }}
+      run: ${{ github.action_path }}/validate.sh

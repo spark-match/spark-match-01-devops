@@ -129,39 +129,21 @@ jobs:
     environment: ${{ inputs.environment-name }}
     steps:
       - name: Validate inputs
-        working-directory: .
-        run: |
-          set -euo pipefail
-          ERRORS=()
-
-          if [ -z "${{ inputs.environment-name }}" ]; then
-            ERRORS+=("environment-name: required")
-          fi
-          if [ -z "${{ inputs.ecr-repository }}" ]; then
-            ERRORS+=("ecr-repository: required")
-          fi
-          if ! echo "${{ inputs.ecr-repository }}" | grep -qE '^[a-z0-9][a-z0-9_-]{0,254}$'; then
-            ERRORS+=("ecr-repository: invalid format (must match ECR repo name regex)")
-          fi
-          if [ -z "${{ inputs.dockerfile-path }}" ]; then
-            ERRORS+=("dockerfile-path: required")
-          fi
-          if [ -z "${{ inputs.context-path }}" ]; then
-            ERRORS+=("context-path: required")
-          fi
-          if [ -z "${{ inputs.platforms }}" ]; then
-            ERRORS+=("platforms: required")
-          fi
-
-          if [ ${#ERRORS[@]} -gt 0 ]; then
-            echo "::error::Input validation failed:"
-            for E in "${ERRORS[@]}"; do
-              echo "::error::  - $E"
-            done
-            echo "::error::Corrige los inputs y reintenta."
-            exit 1
-          fi
-          echo "All inputs validated successfully"
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {
+              "environment-name": "${{ inputs.environment-name }}",
+              "ecr-repository": "${{ inputs.ecr-repository }}",
+              "dockerfile-path": "${{ inputs.dockerfile-path }}",
+              "context-path": "${{ inputs.context-path }}",
+              "platforms": "${{ inputs.platforms }}"
+            }
+          required: environment-name|ecr-repository|dockerfile-path|context-path|platforms
+          patterns: |
+            {
+              "ecr-repository": "^[a-z0-9][a-z0-9_-]{0,254}$"
+            }
 
       - name: Checkout caller repository
         uses: actions/checkout@v7

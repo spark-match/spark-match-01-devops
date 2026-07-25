@@ -79,7 +79,15 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
 
-    steps:
+      - name: Validate inputs
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {"environment-name": "${{ inputs.environment-name }}","node-version": "${{ inputs.node-version }}","pkg-manager": "${{ inputs.pkg-manager }}"}
+          enums: |
+            {"pkg-manager": ["npm", "pnpm", "yarn", "bun"]}
+          patterns: |
+            {"node-version": "^[0-9]+(\.[0-9]+){0,2}$"}
       - name: Resolve cache key tags
         # Lowercase runner.os + environment-name into env vars so the
         # canonical cache key convention can be expressed in actions/cache

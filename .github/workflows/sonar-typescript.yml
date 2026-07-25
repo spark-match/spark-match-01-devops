@@ -1,0 +1,161 @@
+name: SonarCloud - TypeScript
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'SonarCloud project key'
+        type: string
+        required: true
+      project-name:
+        description: 'SonarCloud project display name'
+        type: string
+        required: true
+      organization:
+        description: 'SonarCloud organization key'
+        type: string
+        required: true
+      sources:
+        description: 'Comma-separated source paths (relative to working-directory)'
+        type: string
+        required: true
+      tests:
+        description: 'Comma-separated test glob patterns'
+        type: string
+        required: true
+      exclude-patterns:
+        description: 'Comma-separated glob patterns to exclude from both sources and tests'
+        type: string
+        required: true
+      working-directory:
+        description: 'Directory containing package.json and source code'
+        type: string
+        required: true
+      env:
+        description: 'Environment identifier (used in job name and logs)'
+        type: string
+        required: true
+      node-version:
+        description: 'Node.js version'
+        type: string
+        required: true
+      package-manager:
+        description: 'Package manager hint for setup-node built-in cache (npm, pnpm, yarn, bun)'
+        type: string
+        required: true
+      lockfile-name:
+        description: 'Lockfile name (relative to working-directory) used as cache key'
+        type: string
+        required: true
+      install-command:
+        description: 'Shell command to install dependencies (e.g. "npm ci", "pnpm install --frozen-lockfile")'
+        type: string
+        required: true
+      test-command:
+        description: 'Shell command that runs tests and produces LCOV coverage'
+        type: string
+        required: true
+      coverage-paths:
+        description: 'Comma-separated LCOV coverage report paths for SonarCloud'
+        type: string
+        required: true
+      fail-on-quality-gate:
+        description: 'Fail the job if the quality gate status is ERROR'
+        type: boolean
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-typescript-${{ inputs.env }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    name: "SonarCloud TypeScript (${{ inputs.env }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Validate inputs
+        uses: ./.github/actions/validate-workflow-inputs
+        with:
+          values: |
+            {
+              "project-key": "${{ inputs.project-key }}",
+              "project-name": "${{ inputs.project-name }}",
+              "organization": "${{ inputs.organization }}",
+              "sources": "${{ inputs.sources }}",
+              "tests": "${{ inputs.tests }}",
+              "exclude-patterns": "${{ inputs.exclude-patterns }}",
+              "working-directory": "${{ inputs.working-directory }}",
+              "env": "${{ inputs.env }}",
+              "node-version": "${{ inputs.node-version }}",
+              "package-manager": "${{ inputs.package-manager }}",
+              "lockfile-name": "${{ inputs.lockfile-name }}",
+              "install-command": "${{ inputs.install-command }}",
+              "test-command": "${{ inputs.test-command }}",
+              "coverage-paths": "${{ inputs.coverage-paths }}",
+              "fail-on-quality-gate": "${{ inputs.fail-on-quality-gate }}"
+            }
+          required: project-key|project-name|organization|sources|tests|exclude-patterns|working-directory|env|node-version|package-manager|lockfile-name|install-command|test-command|coverage-paths|fail-on-quality-gate
+          enums: |
+            {
+              "package-manager": ["npm", "pnpm", "yarn", "bun"]
+            }
+          patterns: |
+            {
+              "node-version": "^[0-9]+(\\.[0-9]+){0,2}$",
+              "lockfile-name": "^[A-Za-z0-9._\\-]+$"
+            }
+
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+          cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.lockfile-name }}
+
+      - name: Install dependencies
+        run: ${{ inputs.install-command }}
+
+      - name: Run tests with coverage
+        run: ${{ inputs.test-command }}
+
+      - name: SonarCloud Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        uses: sonarsource/sonarqube-scan-action@v8.2.1
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.projectName=${{ inputs.project-name }}
+            -Dsonar.organization=${{ inputs.organization }}
+            -Dsonar.sources=${{ inputs.sources }}
+            -Dsonar.tests=${{ inputs.tests }}
+            -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-paths }}
+            -Dsonar.exclusions=${{ inputs.exclude-patterns }}
+            -Dsonar.test.exclusions=${{ inputs.exclude-patterns }}
+            -Dsonar.scanner.dumpToFile=true
+
+      - name: SonarCloud Quality Gate
+        if: ${{ always() }}
+        uses: sonarqube-quality-gate-action@v1.2.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          fail-on-quality-gate-error: ${{ inputs.fail-on-quality-gate }}
