@@ -1,0 +1,241 @@
+# =============================================================================
+# Reusable Workflow: aws-lambda-invoke - Generic Lambda invoker
+# =============================================================================
+# Atomic recipe (deploy layer). Invokes an arbitrary Lambda synchronously
+# via OIDC and fails the workflow on any non-200 status or thrown
+# FunctionError. The Lambda is expected to return a JSON body whose shape
+# is opaque to this recipe; callers can opt-in to a generic summary line
+# via the `summary-jq` input (printed when the body parses as JSON with
+# the specified jq expression).
+#
+# Why this exists: `migrations.yml` is Lambda-invoke but with a migration-
+# specific summary parser baked in. This recipe is the generic sibling:
+# any future recipe that just needs "invoke this Lambda and check 200 +
+# no FunctionError" can use this without copy-pasting the AWS config +
+# invoke + validation steps. The 3 seed-users-{advisors,supervisors,
+# agents}.yml recipes in this repo follow the same pattern with their
+# own `{created, skipped, errors}` summary parser because the role-
+# specific UX (job display name, step labels) benefits from being
+# bespoke.
+#
+# USAGE (in caller repo, typically a wrapper with workflow_dispatch):
+#   jobs:
+#     invoke:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/aws-lambda-invoke.yml@dev
+#       with:
+#         environment-name: dev
+#         function-name: orion-some-lambda-dev
+#         payload: '{"key":"value"}'
+#       secrets:
+#         AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+#
+#   Note on environment gating: this recipe intentionally does NOT
+#   declare `environment:` on its job. Per GitHub Actions semantics,
+#   `environment:` declared in a reusable workflow job is resolved in
+#   the *callee* repo (spark-match-01-devops), not the caller. The
+#   cookbook has no `dev` env, so any env reference here would fail
+#   the lookup and yield a zero-jobs run (see PR #96 for the full
+#   diagnosis). The gate is therefore enforced by the caller, either
+#   at workflow level (preferred) or at a preflight job level. The
+#   `environment-name` input is still required for the concurrency
+#   key and as a sanity check that callers know which env they are
+#   targeting.
+#
+# Lambda contract:
+#   - The recipe invokes `<function-name>` synchronously with a JSON
+#     payload. Default payload is '{}'. Caller can override with
+#     `payload`.
+#   - On success, the Lambda's response body (string) is dumped to the
+#     step log.
+#   - Any thrown error inside the Lambda populates FunctionError on
+#     the invoke response, which the recipe treats as a hard failure.
+#
+# Required GitHub Environment in caller repo:
+#   Create one GH Environment per value passed via environment-name
+#   (e.g. "dev", "prod"). Each environment should hold the
+#   AWS_DEPLOY_ROLE_ARN secret scoped to it. The caller is responsible
+#   for declaring `environment: <name>` at workflow or preflight-job
+#   level so the gate runs in the caller's repo (where the env exists).
+#
+# Required Secret in caller (per environment):
+#   AWS_DEPLOY_ROLE_ARN: OIDC role ARN with trust policy for
+#     `token.actions.githubusercontent.com` and `lambda:InvokeFunction`
+#     on the target Lambda. Cross-owner inheritance is blocked by
+#     GitHub so the secret name MUST match `AWS_DEPLOY_ROLE_ARN` here
+#     and in the caller's environments (see angular-spa-deploy.yml
+#     for the same workaround).
+# =============================================================================
+
+name: aws-lambda-invoke
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, prod, etc). Becomes the job name, concurrency key, and sanity check.'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region of the Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      function-name:
+        description: 'Name of the Lambda function to invoke (e.g. "orion-some-lambda-dev").'
+        type: string
+        required: true
+      payload:
+        description: 'JSON payload to send to the Lambda. Default "{}".'
+        type: string
+        required: false
+        default: '{}'
+      timeout-minutes:
+        description: 'Job-level timeout.'
+        type: number
+        required: false
+        default: 5
+      summary-jq:
+        description: 'Optional jq expression evaluated against the response body to print a one-line summary (only if the body parses as JSON). Empty = no summary. Example: `"created=\(.created|length) skipped=\(.skipped|length)"`.'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for invoking the Lambda. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub).'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+# Concurrency keyed by env + function to prevent concurrent invokes
+# against the same Lambda that could race on shared state (e.g. two
+# parallel seed-users calls double-inserting the same emails).
+# cancel-in-progress: false - never cancel an invoke mid-flight (a
+# half-applied seed/import against the DB would leave the cluster in
+# an inconsistent state and require manual cleanup).
+concurrency:
+  group: lambda-invoke-${{ inputs.environment-name }}-${{ inputs.function-name }}
+  cancel-in-progress: false
+
+jobs:
+  invoke:
+    name: "invoke ${{ inputs.function-name }} (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # No `environment:` here on purpose - see the file header.
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          if [ -z "${{ inputs.environment-name }}" ]; then
+            ERRORS+=("environment-name: requerido")
+          fi
+          if [ -z "${{ inputs.function-name }}" ]; then
+            ERRORS+=("function-name: requerido")
+          fi
+          # Lambda function names follow [a-zA-Z0-9-_]{1,64}.
+          if ! echo "${{ inputs.function-name }}" | grep -qE '^[A-Za-z0-9_-]{1,64}$'; then
+            ERRORS+=("function-name: formato invalido '${{ inputs.function-name }}' (esperado [A-Za-z0-9_-]{1,64})")
+          fi
+          # payload must be valid JSON (or empty, which defaults to {}).
+          if [ -n "${{ inputs.payload }}" ]; then
+            if ! echo "${{ inputs.payload }}" | jq -e . >/dev/null 2>&1; then
+              ERRORS+=("payload: '${{ inputs.payload }}' no es JSON valido")
+            fi
+          fi
+          # summary-jq, if provided, must compile (jq -e would error on parse).
+          if [ -n "${{ inputs.summary-jq }}" ]; then
+            if ! echo '{}' | jq -e "${{ inputs.summary-jq }}" >/dev/null 2>&1; then
+              ERRORS+=("summary-jq: '${{ inputs.summary-jq }}' no es una expresion jq valida")
+            fi
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Invoke Lambda
+        # Synchronous invoke. --cli-binary-format raw-in-base64-out is
+        # required since AWS CLI 2.x for non-text payloads; without it,
+        # the CLI errors out with "Invalid base64" on the empty payload.
+        # The invoke response is parsed for StatusCode (200 = success)
+        # and FunctionError (empty = no thrown error). Any other
+        # outcome fails the step and dumps the response body for
+        # diagnostics.
+        run: |
+          set -euo pipefail
+          echo "===== Invoking ${{ inputs.function-name }} (env=${{ inputs.environment-name }}) ====="
+          PAYLOAD='${{ inputs.payload }}'
+          if [ -z "${PAYLOAD}" ]; then
+            PAYLOAD='{}'
+          fi
+          echo "Payload: ${PAYLOAD}"
+
+          RESULT=$(aws lambda invoke \
+            --function-name "${{ inputs.function-name }}" \
+            --region "${{ inputs.aws-region }}" \
+            --payload "${PAYLOAD}" \
+            --cli-binary-format raw-in-base64-out \
+            --output json \
+            /tmp/lambda-result.json)
+          echo "Lambda invoke result: ${RESULT}"
+
+          STATUS_CODE=$(echo "${RESULT}" | jq -r '.StatusCode // "unknown"')
+          if [ "${STATUS_CODE}" != "200" ]; then
+            echo "::error::Lambda returned StatusCode=${STATUS_CODE} (expected 200)"
+            cat /tmp/lambda-result.json
+            exit 1
+          fi
+
+          # FunctionError is populated when the handler throws
+          # (UnhandledErrors) or returns a failure response (Handled).
+          FUNCTION_ERROR=$(echo "${RESULT}" | jq -r '.FunctionError // ""')
+          if [ -n "${FUNCTION_ERROR}" ]; then
+            echo "::error::Lambda threw: ${FUNCTION_ERROR}"
+            cat /tmp/lambda-result.json
+            exit 1
+          fi
+
+          echo "===== Lambda response body ====="
+          cat /tmp/lambda-result.json
+          echo ""
+
+          # If the body parses as JSON, optionally print a one-line
+          # summary using the caller-provided jq expression. Unknown
+          # body shapes are ignored silently.
+          if [ -n "${{ inputs.summary-jq }}" ]; then
+            if jq -e . /tmp/lambda-result.json >/dev/null 2>&1; then
+              jq -r "${{ inputs.summary-jq }}" /tmp/lambda-result.json || true
+            fi
+          fi
+
+      - name: Invoke summary
+        if: always()
+        run: |
+          {
+            echo "## Lambda Invoke - \`${{ inputs.environment-name }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Status | \${{ job.status }} |"
+            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
+            echo "| Function | \`${{ inputs.function-name }}\` |"
+            echo "| Payload | \`${{ inputs.payload }}\` |"
+            echo ""
+            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"

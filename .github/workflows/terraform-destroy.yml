@@ -1,0 +1,828 @@
+# =============================================================================
+# Reusable Workflow: Terraform Destroy (N-environment aware)
+# =============================================================================
+# Runs `terraform plan -destroy` then `terraform apply -destroy` against a
+# caller-provided working directory. Guarded by TWO independent gates:
+#
+#   1. confirm-destroy-token: required input that MUST equal
+#      `DESTROY-<ENVIRONMENT>` (case-sensitive, all-caps expected). This is the
+#      "I really mean it" gate that survives in reusable workflows (where the
+#      caller's `workflow_dispatch` already collects the value from a human).
+#
+#   2. gh-environment: optional input that points at a GitHub Environment with
+#      required reviewers. Use this for prod. Falls back to `environment`.
+#      Use `auto-approve: true` for non-prod envs that intentionally have no
+#      reviewers on the GH Environment; the GH Environment must be configured
+#      accordingly by repo admins.
+#
+# Designed to be invoked per environment from a caller with N jobs.
+#
+# USAGE (in caller repo, single env, manual dispatch):
+#   # terraform-destroy.yml in caller:
+#   on: workflow_dispatch
+#   jobs:
+#     destroy:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-destroy.yml@main
+#       with:
+#         environment: prod
+#         working-directory: live/prod
+#         apply-role-arn-secret: AWS_APPLY_ROLE_ARN_PROD
+#         gh-environment: production
+#         confirm-destroy-token: ${{ inputs.confirm_destroy }}
+#       secrets:
+#         AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+#
+# Required GitHub Secret in caller repo: <apply-role-arn-secret>
+# Required GH Environment in caller repo: <gh-environment> (configured by admin)
+#
+# NOTE on chicken-and-egg: if your state bucket (`backend-bucket`) is itself
+# going to be destroyed as part of the run, you must migrate state to a local
+# backend BEFORE invoking this recipe. That migration is the caller's
+# responsibility (we don't rewrite `versions.tf` from here). See README.md §
+# "Migrating state to local" for the pattern.
+#
+# NOTE on `confirm-destroy-token` shape: we token-check the caller's input
+# against `DESTROY-<environment-uppercase>`. If you need a different token
+# shape (e.g. for staged teardowns), fork the recipe. The whole point of the
+# token is to fail loud and fail early when an automation pipeline forgets the
+# confirmation gate.
+# =============================================================================
+
+name: Terraform Destroy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, and concurrency group. Also forms the suffix of the required confirm token (DESTROY-<ENV>). Defaults to basename of working-directory.'
+        type: string
+        required: false
+        default: ''
+      working-directory:
+        description: 'Directory containing the Terraform configuration (relative to repo root).'
+        type: string
+        required: false
+        default: '.'
+      aws-region:
+        description: 'AWS region where the resources live.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      apply-role-arn-secret:
+        description: 'Name of the GitHub Secret containing the OIDC role ARN for the destroy operation (e.g. AWS_APPLY_ROLE_ARN_DEV). This role should have admin-equivalent rights on the target environment because destroy recreates the resources.'
+        type: string
+        required: false
+        default: 'AWS_APPLY_ROLE_ARN'
+      terraform-version:
+        description: 'Terraform version to use.'
+        type: string
+        required: false
+        default: '1.10.0'
+      backend-bucket:
+        description: 'S3 bucket name for Terraform state. Empty = caller committed a local backend already.'
+        type: string
+        required: false
+        default: ''
+      backend-key:
+        description: 'S3 key (path) for the Terraform state file.'
+        type: string
+        required: false
+        default: 'terraform.tfstate'
+      tfvars-file:
+        description: 'Optional path to a tfvars file passed as -var-file. Empty = use committed terraform.tfvars.'
+        type: string
+        required: false
+        default: ''
+      var-files:
+        description: 'Comma-separated list of additional tfvars files (additive). Empty = none.'
+        type: string
+        required: false
+        default: ''
+      target:
+        description: 'Optional Terraform target for partial destroys (e.g. "module.security" or "aws_s3_bucket.foo"). Empty = full destroy.'
+        type: string
+        required: false
+        default: ''
+      extra-args:
+        description: 'Additional raw terraform CLI flags appended to plan. Use sparingly.'
+        type: string
+        required: false
+        default: ''
+      confirm-destroy-token:
+        description: 'Required confirmation token. The job aborts unless this equals exactly `DESTROY-<ENV>` (case-sensitive). The caller MUST collect this from a human before invoking (typically via `workflow_dispatch` input).'
+        type: string
+        required: true
+      gh-environment:
+        description: 'GitHub Environment name used as approval gate. Falls back to inputs.environment. Required for prod where GH Environment has required reviewers.'
+        type: string
+        required: false
+        default: ''
+      auto-approve:
+        description: 'If true, skip the GH Environment approval gate (the GH Environment must have no required reviewers). Only use for non-prod envs. Default false.'
+        type: boolean
+        required: false
+        default: false
+      dry-run:
+        description: 'If true, plan only; do NOT apply. Useful for previewing what would be destroyed without committing. Default false.'
+        type: boolean
+        required: false
+        default: false
+      retention-days:
+        description: 'Days to keep the destroy plan artifact before deletion.'
+        type: number
+        required: false
+        default: 14
+      project-name:
+        description: 'Project name used to filter CloudWatch log groups, SSM parameters, orphan S3 buckets, and active CloudFormation stacks during the post-destroy cleanup job. Required when enable-cleanup is true.'
+        type: string
+        required: false
+        default: ''
+      enable-cleanup:
+        description: 'Run the post-destroy cleanup job (log groups, SSM parameters, orphan S3 buckets, active CloudFormation stacks). Only runs if destroy was successful. Default false.'
+        type: boolean
+        required: false
+        default: false
+      cleanup-token:
+        description: 'Confirmation token for the cleanup job. Must equal CLEANUP-<ENV> (case-sensitive). Required when enable-cleanup is true. Separate gate so cleanup cannot run accidentally on a destroy-only workflow.'
+        type: string
+        required: false
+        default: ''
+    outputs:
+      destroy-success:
+        description: 'Whether the destroy apply succeeded (true/false). False in dry-run mode.'
+        value: ${{ jobs.destroy.outputs.destroy-success }}
+      had-changes:
+        description: 'Whether the destroy plan had resource changes (true/false).'
+        value: ${{ jobs.destroy.outputs.had-changes }}
+      environment:
+        description: 'Environment identifier echoed back.'
+        value: ${{ jobs.destroy.outputs.environment }}
+      cleanup-success:
+        description: 'Whether the post-destroy cleanup job succeeded overall (true/false). True only if every cleanup category succeeded. Empty when cleanup was not requested.'
+        value: ${{ jobs.cleanup-residuals.outputs.cleanup-success }}
+      cleanup-deleted-count:
+        description: 'Total resources deleted across all cleanup categories (log groups + SSM params + S3 buckets + CF stacks). Zero when cleanup was not requested.'
+        value: ${{ jobs.cleanup-residuals.outputs.cleanup-deleted-count }}
+    secrets:
+      AWS_APPLY_ROLE_ARN:
+        description: 'OIDC role ARN for the destroy job (assumed via aws-actions/configure-aws-credentials). Caller must pass this explicitly when calling cross-owner.'
+        required: true
+
+# Concurrency group keyed by resolved environment (env || working-directory basename)
+# and the working directory. cancel-in-progress is FALSE on purpose: a destroy
+# in flight must complete (or be rolled back by hand); cancelling midway leaves
+# partial state. Operators who want to rerun must wait the lock out.
+concurrency:
+  group: ${{ inputs.environment || inputs.working-directory }}-destroy-${{ inputs.working-directory }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write          # For OIDC
+  contents: read
+
+jobs:
+  destroy:
+    name: Destroy (${{ inputs.environment || inputs.working-directory }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # GH Environment uses input fallback: gh-environment > environment.
+    # Evaluated before any step runs, can't reference step outputs.
+    environment: ${{ inputs.gh-environment || inputs.environment }}
+    outputs:
+      destroy-success: ${{ steps.apply.outputs.destroy-success }}
+      had-changes: ${{ steps.plan.outputs.had-changes }}
+      environment: ${{ steps.env.outputs.environment }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Resolve environment + verify confirm token
+        id: env
+        # Step runs BEFORE checkout, so caller's working-directory (e.g.
+        # live/dev) doesn't exist yet. Force wd=. to avoid "No such file or
+        # directory" on `cd`.
+        working-directory: .
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV="${{ inputs.environment }}"
+          else
+            ENV=$(basename "${{ inputs.working-directory }}")
+          fi
+          ENV_UPPER=$(echo "${ENV}" | tr '[:lower:]' '[:upper:]')
+          EXPECTED="DESTROY-${ENV_UPPER}"
+          ACTUAL="${{ inputs.confirm-destroy-token }}"
+          # We don't echo ACTUAL to logs (would defeat the gate if it ends
+          # up in a public job log), but we do echo its length for diagnosis
+          # the same way the apply recipe does with `apply-secret-len`.
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "::error::confirm-destroy-token mismatch"
+            echo "::error::  expected: DESTROY-${ENV_UPPER}  (for env=${ENV})"
+            echo "::error::  received token length: $(echo -n "${ACTUAL}" | wc -c)"
+            echo "::error::Aborting. Refusing to destroy without an exact confirm token."
+            exit 1
+          fi
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Confirm token: ✓ (env=${ENV}, expected ${EXPECTED})"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${ENV}\` |"
+            echo "| GH Environment (approval gate) | \`${{ inputs.gh-environment || inputs.environment }}\` |"
+            echo "| Auto-approve | \`${{ inputs.auto-approve }}\` |"
+            echo "| Dry-run | \`${{ inputs.dry-run }}\` |"
+            echo "| Target | \`${{ inputs.target }}\` |"
+            echo "| State bucket | \`${{ inputs.backend-bucket }}\` |"
+            echo "| State key | \`${{ inputs.backend-key }}\` |"
+            echo "| Working directory | \`${{ inputs.working-directory }}\` |"
+            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
+            echo "| Triggered by | @${{ github.actor }} |"
+            echo ""
+            if [ "${{ inputs.dry-run }}" = "true" ]; then
+              echo "> 🟡 **DRY RUN** — plan only, no resources will be destroyed."
+            elif [ "${{ inputs.auto-approve }}" = "true" ]; then
+              echo "> ⚠️ **AUTO-APPROVED** — no GH Environment approval required."
+            else
+              echo "> ⚠️ **DESTRUCTIVE** — this will tear down all resources in the destroy plan."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate inputs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          ERRORS=()
+
+          # working-directory: no debe ser vacio
+          if [ -z "${{ inputs.working-directory }}" ]; then
+            ERRORS+=("working-directory: requerido (default '.' si no se especifica)")
+          fi
+
+          # apply-role-arn-secret: debe corresponder a un secret del caller
+          SECRET_NAME="${{ inputs.apply-role-arn-secret }}"
+          if [ -z "$SECRET_NAME" ]; then
+            ERRORS+=("apply-role-arn-secret: requerido (ej. AWS_APPLY_ROLE_ARN_DEV)")
+          fi
+
+          # terraform-version: formato X.Y.Z
+          TF_VERSION="${{ inputs.terraform-version }}"
+          if ! echo "$TF_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            ERRORS+=("terraform-version: '${TF_VERSION}' no tiene formato X.Y.Z (ej. 1.10.0)")
+          fi
+
+          # retention-days: 1-90
+          RETENTION="${{ inputs.retention-days }}"
+          if ! echo "$RETENTION" | grep -qE '^[0-9]+$' || [ "$RETENTION" -lt 1 ] || [ "$RETENTION" -gt 90 ]; then
+            ERRORS+=("retention-days: '${RETENTION}' fuera de rango 1-90 (limites de GitHub Actions)")
+          fi
+
+          # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
+          if [ -n "${{ inputs.environment }}" ]; then
+            if ! echo "${{ inputs.environment }}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("environment: '${{ inputs.environment }}' solo letras/digitos/_/-")
+            fi
+          fi
+
+          # project-name: opcional. Si el caller lo pasa, validamos formato
+          # (alfanumerico, guion bajo, guion — se usa como prefijo de matching).
+          # Si esta vacio, lo auto-derivamos en el job cleanup-residuals desde
+          # backend-bucket con patron <project>-tfstate-<env>.
+          if [ -n "${{ inputs.project-name }}" ]; then
+            if ! echo "${{ inputs.project-name }}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("project-name: '${{ inputs.project-name }}' solo letras/digitos/_/-")
+            fi
+          fi
+          if [ "${{ inputs.enable-cleanup }}" = "true" ]; then
+            if [ -z "${{ inputs.cleanup-token }}" ]; then
+              ERRORS+=("cleanup-token: requerido cuando enable-cleanup=true (formato esperado: CLEANUP-<ENV>)")
+            fi
+          fi
+
+          # confirm-destroy-token: debe coincidir con DESTROY-<ENV> (verificado arriba)
+          # Chequeo defensivo: el step anterior ya abortaria, pero garantizamos no vacio.
+          if [ -z "${{ inputs.confirm-destroy-token }}" ]; then
+            ERRORS+=("confirm-destroy-token: requerido (formato esperado: DESTROY-<ENV>)")
+          fi
+
+          if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo "::error::Input validation failed:"
+            for E in "${ERRORS[@]}"; do
+              echo "::error::  - $E"
+            done
+            echo "::error::Corrige los inputs y reintenta."
+            exit 1
+          fi
+          echo "All inputs validated successfully"
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform ${{ inputs.terraform-version }}
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          # terraform_wrapper: false — the wrapper eats exit code 2 from
+          # -detailed-exitcode, breaking had-changes detection. Disable it
+          # so raw terraform exit codes pass through to the script.
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC, apply role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Create plugin cache directory
+        run: mkdir -p ${{ github.workspace }}/.terraform.d/plugin-cache
+
+      - name: Terraform init
+        run: |
+          INIT_ARGS="-input=false"
+          if [ -n "${{ inputs.backend-bucket }}" ]; then
+            INIT_ARGS="$INIT_ARGS \
+              -backend-config=bucket=${{ inputs.backend-bucket }} \
+              -backend-config=key=${{ inputs.backend-key }} \
+              -backend-config=region=${{ inputs.aws-region }} \
+              -backend-config=use_lockfile=true"
+          else
+            # Caller migrated state to local (or is using a local backend);
+            # -backend=false skips re-init against S3.
+            INIT_ARGS="$INIT_ARGS -backend=false"
+          fi
+          echo "Running: terraform init $INIT_ARGS"
+          # shellcheck disable=SC2086
+          terraform init $INIT_ARGS
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+      - name: Backup current state pre-destroy
+        # We always upload the current state as an artifact, regardless of
+        # whether the caller migrated to local or is still using S3. Lets
+        # operators recover from a bad destroy by re-running `terraform apply`
+        # against the backed-up state.
+        if: inputs.backend-bucket != ''
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/state-backup
+          aws s3 cp "s3://${{ inputs.backend-bucket }}/${{ inputs.backend-key }}" /tmp/state-backup/terraform.tfstate
+          ls -la /tmp/state-backup
+
+      - name: Upload state backup artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tfstate-pre-destroy-${{ steps.env.outputs.environment }}-${{ github.run_id }}
+          path: /tmp/state-backup/terraform.tfstate
+          retention-days: ${{ inputs.retention-days }}
+          if-no-files-found: ignore
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan (destroy)
+        id: plan
+        run: |
+          set +e
+          # -lock=false: do not hold the S3 native lockfile during plan so
+          # other workflows can keep reading state. The apply step does not
+          # reacquire either (we destroy everything anyway).
+          # -detailed-exitcode: exit 0 = no changes (env already empty),
+          # exit 2 = changes pending, exit 1 = error.
+          PLAN_ARGS="-input=false -no-color -lock=false -detailed-exitcode -destroy -out=tfplan-destroy"
+          if [ -n "${{ inputs.tfvars-file }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
+          fi
+          if [ -n "${{ inputs.var-files }}" ]; then
+            IFS=',' read -ra FILES <<< "${{ inputs.var-files }}"
+            for f in "${FILES[@]}"; do
+              PLAN_ARGS="$PLAN_ARGS -var-file=$f"
+            done
+          fi
+          if [ -n "${{ inputs.target }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -target=${{ inputs.target }}"
+          fi
+          if [ -n "${{ inputs.extra-args }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS ${{ inputs.extra-args }}"
+          fi
+          echo "Running: terraform plan $PLAN_ARGS"
+          # shellcheck disable=SC2086
+          terraform plan $PLAN_ARGS
+          EXIT_CODE=$?
+          set -e
+          echo "plan-exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if [ "${EXIT_CODE}" = "2" ]; then
+            echo "had-changes=true" >> "$GITHUB_OUTPUT"
+          else
+            # 0 = no changes (env is already empty — idempotent), 1 = error
+            echo "had-changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Convert plan to JSON
+        if: steps.plan.outputs.had-changes == 'true'
+        run: terraform show -json tfplan-destroy > tfplan-destroy.json
+
+      - name: Generate destroy plan summary
+        if: steps.plan.outputs.had-changes == 'true'
+        run: |
+          {
+            echo "## ⚠️ Terraform Destroy Plan"
+            echo ""
+            echo "| Resource | Action |"
+            echo "|:---|:---|"
+            jq -r '
+              .resource_changes[]
+              | "| \(.address) | \(.change.actions | tostring | gsub("[\"\\[\\]]"; "")) |"
+            ' tfplan-destroy.json || echo "_(no resource changes)_"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate no-changes summary
+        if: steps.plan.outputs.had-changes == 'false'
+        run: |
+          {
+            echo "## Terraform Destroy — no-op"
+            echo ""
+            echo "Plan returned 0 changes: the environment is already empty (or fully matches terraform's recorded state)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload destroy plan artifact
+        if: steps.plan.outputs.had-changes == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: terraform-destroy-${{ steps.env.outputs.environment }}-${{ github.run_id }}
+          path: ${{ inputs.working-directory }}/tfplan-destroy
+          retention-days: ${{ inputs.retention-days }}
+
+      - name: Terraform apply (destroy)
+        id: apply
+        if: steps.plan.outputs.had-changes == 'true' && inputs.dry-run != 'true'
+        run: |
+          set +e
+          terraform apply -input=false tfplan-destroy
+          EXIT_CODE=$?
+          set -e
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "destroy-success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "destroy-success=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply result summary
+        if: always()
+        run: |
+          {
+            echo "## Result"
+            echo ""
+            if [ "${{ inputs.dry-run }}" = "true" ]; then
+              echo "Mode: **dry-run** (plan only)"
+              if [ "${{ steps.plan.outputs.had-changes }}" = "true" ]; then
+                echo ""
+                echo "> Dry-run completed. See plan summary above for resources that WOULD be destroyed on a real run."
+              fi
+            elif [ "${{ steps.apply.outputs.destroy-success }}" = "true" ]; then
+              echo "Status: **✓ Destroy complete**"
+              echo ""
+              echo "Triggered by: @${{ github.actor }}"
+              echo "Commit: ${{ github.sha }}"
+              echo "Environment: ${{ steps.env.outputs.environment }}"
+            elif [ "${{ steps.plan.outputs.had-changes }}" = "true" ]; then
+              echo "Status: **✗ Destroy FAILED** — see logs above."
+            else
+              echo "Status: **No-op** (env was already empty)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify on destroy failure
+        if: failure() && steps.apply.outputs.destroy-success != 'true' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: terraform-destroy-failed-${{ steps.env.outputs.environment }}
+          message: |
+            ## Terraform Destroy FAILED — `${{ steps.env.outputs.environment }}`
+
+            - **Working directory:** `${{ inputs.working-directory }}`
+            - **Commit:** ${{ github.sha }}
+            - **Author:** @${{ github.actor }}
+            - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            ⚠️ The state file may have **PARTIAL changes** (some resources destroyed, others not). To recover:
+
+            1. Download the `tfstate-pre-destroy-${{ steps.env.outputs.environment }}-${{ github.run_id }}` artifact — that is the state as it was right before this run.
+            2. Compare against current state via `terraform plan` (no destroy).
+            3. Decide whether to retry the workflow (to pick up where it stopped) or to manually clean up the leftover resources and re-import what belongs into state.
+            4. If state is corrupted, restore from the pre-destroy backup and run `terraform plan` to see the drift.
+
+            This is destructive. Coordinate with your team before any manual cleanup. Do NOT re-run this destroy without reading the state diff first.
+
+  cleanup-residuals:
+    # Post-destroy cleanup. Only runs when the caller opts in via
+    # enable-cleanup=true AND the destroy job succeeded. Designed to clean up
+    # the categories that Terraform + CloudFormation do not touch: log groups
+    # auto-created by AWS services, SSM parameters created outside Terraform,
+    # orphan S3 buckets (e.g. SAM artifacts), and CloudFormation stacks still
+    # in active states.
+    #
+    # Gated by cleanup-token (must equal CLEANUP-<ENV>, case-sensitive) so it
+    # cannot run accidentally on a destroy-only invocation. Idempotent: re-run
+    # on already-clean state is a no-op.
+    name: Cleanup residuals (${{ inputs.environment || inputs.working-directory }})
+    needs: destroy
+    if: always() && inputs.enable-cleanup == 'true' && needs.destroy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.gh-environment || inputs.environment }}
+    outputs:
+      cleanup-success: ${{ steps.aggregate.outputs.cleanup-success }}
+      cleanup-deleted-count: ${{ steps.aggregate.outputs.total_deleted }}
+    steps:
+      - name: Verify cleanup token + project name
+        id: cleanup-init
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV="${{ inputs.environment }}"
+          else
+            ENV=$(basename "${{ inputs.working-directory }}")
+          fi
+          ENV_UPPER=$(echo "${ENV}" | tr '[:lower:]' '[:upper:]')
+          EXPECTED="CLEANUP-${ENV_UPPER}"
+          ACTUAL="${{ inputs.cleanup-token }}"
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "::error::cleanup-token mismatch"
+            echo "::error::  expected: CLEANUP-${ENV_UPPER}  (for env=${ENV})"
+            echo "::error::  received token length: $(printf '%s' "${ACTUAL}" | wc -c)"
+            echo "::error::Aborting. Refusing to clean up without an exact confirm token."
+            exit 1
+          fi
+          PROJECT="${{ inputs.project-name }}"
+          # Auto-derive from backend-bucket if caller did not pass project-name
+          # explicitly. Convention: backend-bucket = "<project>-tfstate-<env>".
+          # If the bucket does not match this pattern, fall through to the
+          # explicit-input branch below.
+          if [ -z "${PROJECT}" ] && [ -n "${{ inputs.backend-bucket }}" ]; then
+            BB="${{ inputs.backend-bucket }}"
+            if [[ "${BB}" =~ ^(.+)-tfstate- ]]; then
+              PROJECT="${BASH_REMATCH[1]}"
+              echo "::notice::Auto-derived project-name='${PROJECT}' from backend-bucket='${BB}' (pattern: <project>-tfstate-<env>). Override via project-name input if the convention does not match."
+            fi
+          fi
+          if [ -z "${PROJECT}" ]; then
+            echo "::error::project-name could not be determined. Either pass project-name explicitly, or use a backend-bucket matching the pattern <project>-tfstate-<env> (current backend-bucket: '${{ inputs.backend-bucket }}')."
+            exit 1
+          fi
+          {
+            echo "## Cleanup residuals"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${ENV}\` |"
+            echo "| Project name (filter prefix) | \`${PROJECT}\` |"
+            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
+            echo "| Dry-run | \`${{ inputs.dry-run }}\` |"
+            echo "| Backend bucket (excluded) | \`${{ inputs.backend-bucket }}\` |"
+            echo "| Triggered by | @${{ github.actor }} |"
+            echo ""
+            if [ "${{ inputs.dry-run }}" = "true" ]; then
+              echo "> **DRY RUN** — no resources will be deleted. Listing only."
+            else
+              echo "> **ACTIVE** — resources matching the pattern below will be deleted."
+            fi
+            echo ""
+            echo "Categories swept:"
+            echo "- CloudWatch log groups under \`/aws/lambda/${PROJECT}-\`, \`/aws/api-gateway/${PROJECT}-\`, \`/aws/bedrock-agentcore/runtimes/${PROJECT}_\`, \`/aws/rds/instance/${PROJECT}-\`, \`/aws/vpc/${PROJECT}-\`"
+            echo "- SSM parameters under \`/${PROJECT}/*\`"
+            echo "- S3 buckets matching \`${PROJECT}[-].*-(sam-artifacts|artifacts|sam-deploy)-\` (excluding the configured \`backend-bucket\`)"
+            echo "- CloudFormation stacks matching \`${PROJECT}-*\` in any active state (excludes DELETE_COMPLETE history)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure AWS credentials (OIDC, apply role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Delete CloudWatch log groups
+        id: delete-log-groups
+        env:
+          PROJECT: ${{ inputs.project-name }}
+          REGION: ${{ inputs.aws-region }}
+          DRY: ${{ inputs.dry-run }}
+        run: |
+          set -uo pipefail
+          PREFIXES=(
+            "/aws/lambda/${PROJECT}-"
+            "/aws/api-gateway/${PROJECT}-"
+            "/aws/bedrock-agentcore/runtimes/${PROJECT}_"
+            "/aws/rds/instance/${PROJECT}-"
+            "/aws/vpc/${PROJECT}-"
+          )
+          PATTERN=$(IFS='|'; echo "${PREFIXES[*]}")
+          MATCHES=$(aws logs describe-log-groups \
+            --region "${REGION}" \
+            --query "logGroups[].logGroupName" \
+            --output text 2>/dev/null | tr '\t' '\n' | grep -E "${PATTERN}" || true)
+          COUNT=$(printf '%s' "${MATCHES}" | grep -c . || true)
+          COUNT=${COUNT:-0}
+          echo "Found ${COUNT} log groups matching pattern"
+          DELETED=0
+          if [ "${DRY}" != "true" ] && [ -n "${MATCHES}" ]; then
+            while IFS= read -r lg; do
+              [ -z "${lg}" ] && continue
+              if aws logs delete-log-group --region "${REGION}" --log-group-name "${lg}" 2>/dev/null; then
+                DELETED=$((DELETED + 1))
+              else
+                echo "::warning::failed to delete log group ${lg}"
+              fi
+            done <<< "${MATCHES}"
+          fi
+          echo "deleted_log_groups=${DELETED}" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "### CloudWatch log groups: ${COUNT} matched, ${DELETED} deleted"
+            if [ -n "${MATCHES}" ]; then
+              echo '```'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete SSM parameters
+        id: delete-ssm-params
+        env:
+          PROJECT: ${{ inputs.project-name }}
+          REGION: ${{ inputs.aws-region }}
+          DRY: ${{ inputs.dry-run }}
+        run: |
+          set -uo pipefail
+          MATCHES=$(aws ssm describe-parameters \
+            --region "${REGION}" \
+            --query "Parameters[?starts_with(Name, '/${PROJECT}/')].Name" \
+            --output text 2>/dev/null | tr '\t' '\n' || true)
+          COUNT=$(printf '%s' "${MATCHES}" | grep -c . || true)
+          COUNT=${COUNT:-0}
+          echo "Found ${COUNT} SSM parameters under /${PROJECT}/"
+          DELETED=0
+          if [ "${DRY}" != "true" ] && [ -n "${MATCHES}" ]; then
+            while IFS= read -r p; do
+              [ -z "${p}" ] && continue
+              if aws ssm delete-parameter --region "${REGION}" --name "${p}" 2>/dev/null; then
+                DELETED=$((DELETED + 1))
+              else
+                echo "::warning::failed to delete SSM param ${p}"
+              fi
+            done <<< "${MATCHES}"
+          fi
+          echo "deleted_ssm_params=${DELETED}" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "### SSM parameters: ${COUNT} matched, ${DELETED} deleted"
+            if [ -n "${MATCHES}" ]; then
+              echo '```'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete orphan S3 buckets (SAM artifacts)
+        id: delete-s3-buckets
+        env:
+          PROJECT: ${{ inputs.project-name }}
+          REGION: ${{ inputs.aws-region }}
+          DRY: ${{ inputs.dry-run }}
+          BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+        run: |
+          set -uo pipefail
+          # Match <project>-sam-artifacts-<env>, <project>-*-artifacts, etc.
+          # Then explicitly exclude the backend bucket if it matches the pattern.
+          MATCHES=$(aws s3api list-buckets \
+            --query "Buckets[].Name" \
+            --output text 2>/dev/null | tr '\t' '\n' | \
+            grep -E "^${PROJECT}[-].*(sam-artifacts|artifacts|sam-deploy)-" || true)
+          if [ -n "${BACKEND_BUCKET}" ] && [ -n "${MATCHES}" ]; then
+            MATCHES=$(printf '%s\n' "${MATCHES}" | grep -v "^${BACKEND_BUCKET}$" || true)
+          fi
+          COUNT=$(printf '%s' "${MATCHES}" | grep -c . || true)
+          COUNT=${COUNT:-0}
+          echo "Found ${COUNT} orphan S3 buckets matching pattern (excluding backend-bucket=${BACKEND_BUCKET})"
+          DELETED=0
+          if [ "${DRY}" != "true" ] && [ -n "${MATCHES}" ]; then
+            while IFS= read -r b; do
+              [ -z "${b}" ] && continue
+              echo "Emptying bucket ${b} (delete all versions + delete markers)..."
+              while true; do
+                RESP=$(aws s3api list-object-versions --bucket "${b}" --max-items 1000 --output json 2>/dev/null || echo '{"Versions":[],"DeleteMarkers":[]}')
+                OBJECTS=$(echo "${RESP}" | jq -c '[(.Versions // [])[], (.DeleteMarkers // [])[]] | map({Key, VersionId})')
+                N=$(echo "${OBJECTS}" | jq 'length // 0')
+                [ "${N}" = "0" ] && break
+                PAYLOAD=$(echo "${OBJECTS}" | jq -c '{Objects: ., Quiet: true}')
+                echo "${PAYLOAD}" > /tmp/delete-objects.json
+                if ! aws s3api delete-objects --bucket "${b}" --delete "file:///tmp/delete-objects.json" 2>/dev/null; then
+                  echo "::warning::delete-objects failed for ${b} — skipping bucket"
+                  break
+                fi
+              done
+              if aws s3api delete-bucket --bucket "${b}" --region "${REGION}" 2>/dev/null; then
+                DELETED=$((DELETED + 1))
+                echo "deleted bucket ${b}"
+              else
+                echo "::warning::delete-bucket failed for ${b}"
+              fi
+            done <<< "${MATCHES}"
+          fi
+          echo "deleted_s3_buckets=${DELETED}" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "### S3 buckets: ${COUNT} matched, ${DELETED} deleted"
+            if [ -n "${MATCHES}" ]; then
+              echo '```'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete CloudFormation stacks in active state
+        id: delete-cf-stacks
+        env:
+          PROJECT: ${{ inputs.project-name }}
+          REGION: ${{ inputs.aws-region }}
+          DRY: ${{ inputs.dry-run }}
+        run: |
+          set -uo pipefail
+          # Active states per AWS docs. Excludes DELETE_COMPLETE (history).
+          ACTIVE='CREATE_COMPLETE|UPDATE_COMPLETE|CREATE_FAILED|UPDATE_FAILED|UPDATE_ROLLBACK_COMPLETE|UPDATE_ROLLBACK_FAILED|CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|UPDATE_ROLLBACK_IN_PROGRESS|ROLLBACK_COMPLETE|ROLLBACK_FAILED|ROLLBACK_IN_PROGRESS|REVIEW_IN_PROGRESS|IMPORT_IN_PROGRESS|IMPORT_COMPLETE|IMPORT_ROLLBACK_IN_PROGRESS|IMPORT_ROLLBACK_FAILED|IMPORT_ROLLBACK_COMPLETE'
+          MATCHES=$(aws cloudformation list-stacks \
+            --region "${REGION}" \
+            --query "StackSummaries[?starts_with(StackName, '${PROJECT}-')].[StackName,StackStatus]" \
+            --output text 2>/dev/null | tr '\t' '|' | grep -E "\|(${ACTIVE})$" || true)
+          COUNT=$(printf '%s' "${MATCHES}" | grep -c . || true)
+          COUNT=${COUNT:-0}
+          echo "Found ${COUNT} CloudFormation stacks in active state"
+          DELETED=0
+          if [ "${DRY}" != "true" ] && [ -n "${MATCHES}" ]; then
+            while IFS= read -r line; do
+              [ -z "${line}" ] && continue
+              stack_name="${line%|*}"
+              stack_status="${line#*|}"
+              echo "Deleting CF stack ${stack_name} (status=${stack_status})..."
+              if aws cloudformation delete-stack --stack-name "${stack_name}" --region "${REGION}" 2>/dev/null; then
+                DELETED=$((DELETED + 1))
+              else
+                echo "::warning::delete-stack failed for ${stack_name}"
+              fi
+            done <<< "${MATCHES}"
+          fi
+          echo "deleted_cf_stacks=${DELETED}" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "### CloudFormation stacks: ${COUNT} matched, ${DELETED} delete-issued (async — full DELETE_COMPLETE happens minutes later)"
+            if [ -n "${MATCHES}" ]; then
+              echo '```'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Aggregate results
+        id: aggregate
+        if: always()
+        run: |
+          LG="${{ steps.delete-log-groups.outputs.deleted_log_groups }}"
+          SSM="${{ steps.delete-ssm-params.outputs.deleted_ssm_params }}"
+          S3="${{ steps.delete-s3-buckets.outputs.deleted_s3_buckets }}"
+          CF="${{ steps.delete-cf-stacks.outputs.deleted_cf_stacks }}"
+          LG=${LG:-0}; SSM=${SSM:-0}; S3=${S3:-0}; CF=${CF:-0}
+          TOTAL=$((LG + SSM + S3 + CF))
+          echo "total_deleted=${TOTAL}" >> "$GITHUB_OUTPUT"
+          SUCCESS="true"
+          [ "${{ steps.delete-log-groups.conclusion }}" != "success" ] && SUCCESS="false"
+          [ "${{ steps.delete-ssm-params.conclusion }}" != "success" ] && SUCCESS="false"
+          [ "${{ steps.delete-s3-buckets.conclusion }}" != "success" ] && SUCCESS="false"
+          [ "${{ steps.delete-cf-stacks.conclusion }}" != "success" ] && SUCCESS="false"
+          echo "cleanup-success=${SUCCESS}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify on cleanup failure
+        # Sticky comment on PR with cleanup details if any step failed. Same
+        # pattern as the destroy failure comment, but header differs so the
+        # two can coexist if both fire.
+        if: failure() && steps.aggregate.outputs.cleanup-success != 'true'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: terraform-cleanup-residuals-failed-${{ inputs.environment || inputs.working-directory }}
+          message: |
+            ## Cleanup residuals FAILED — `${{ inputs.environment || inputs.working-directory }}`
+
+            - **Project name:** `${{ inputs.project-name }}`
+            - **Commit:** ${{ github.sha }}
+            - **Author:** @${{ github.actor }}
+            - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Some categories failed to delete. Inspect each step's output above:
+            - `Delete CloudWatch log groups`
+            - `Delete SSM parameters`
+            - `Delete orphan S3 buckets (SAM artifacts)`
+            - `Delete CloudFormation stacks in active state`
+
+            Re-running this workflow (with the same `CLEANUP-<ENV>` token) is idempotent — already-deleted resources are simply skipped, and any remaining ones are retried.
