@@ -55,6 +55,10 @@ on:
         description: 'Fail the job if the quality gate status is ERROR'
         type: boolean
         required: true
+    secrets:
+      SONAR_TOKEN:
+        description: 'SonarCloud authentication token. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        required: true
 
 permissions:
   contents: read
