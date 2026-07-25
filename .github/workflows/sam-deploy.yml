@@ -139,6 +139,7 @@ jobs:
     # GH Environment gate. Caller MUST create an environment with this name
     # in their repo settings and add AWS_DEPLOY_ROLE_ARN to it.
     environment: ${{ inputs.environment-name }}
+    steps:
       - name: Validate inputs
         uses: ./.github/actions/validate-workflow-inputs
         with:
