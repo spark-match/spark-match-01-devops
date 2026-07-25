@@ -644,7 +644,7 @@ jobs:
             echo "### CloudWatch log groups: ${COUNT} matched, ${DELETED} deleted"
             if [ -n "${MATCHES}" ]; then
               echo '```'
-              echo "${MATCHES}" | sed 's/^/  - /'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -681,7 +681,7 @@ jobs:
             echo "### SSM parameters: ${COUNT} matched, ${DELETED} deleted"
             if [ -n "${MATCHES}" ]; then
               echo '```'
-              echo "${MATCHES}" | sed 's/^/  - /'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -738,7 +738,7 @@ jobs:
             echo "### S3 buckets: ${COUNT} matched, ${DELETED} deleted"
             if [ -n "${MATCHES}" ]; then
               echo '```'
-              echo "${MATCHES}" | sed 's/^/  - /'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -780,7 +780,7 @@ jobs:
             echo "### CloudFormation stacks: ${COUNT} matched, ${DELETED} delete-issued (async — full DELETE_COMPLETE happens minutes later)"
             if [ -n "${MATCHES}" ]; then
               echo '```'
-              echo "${MATCHES}" | sed 's/^/  - /'
+              echo "${MATCHES}" | awk '{print "  - " $0}'
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
