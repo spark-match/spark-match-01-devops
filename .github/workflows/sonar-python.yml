@@ -52,8 +52,8 @@ on:
         type: string
         required: true
       fail-on-quality-gate:
-        description: 'Fail the job if the quality gate status is ERROR'
-        type: boolean
+        description: 'Fail the job if the quality gate status is ERROR ("true" or "false")'
+        type: string
         required: true
     secrets:
       SONAR_TOKEN:
@@ -156,11 +156,16 @@ jobs:
             -Dsonar.scanner.dumpToFile=true
 
       - name: SonarCloud Quality Gate
+        id: qg
         if: ${{ always() }}
         uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-        with:
-          fail-on-quality-gate-error: ${{ inputs.fail-on-quality-gate }}
+
+      - name: Enforce Quality Gate
+        if: ${{ steps.qg.outputs.quality-gate-status == 'FAILED' && inputs.fail-on-quality-gate == 'true' }}
+        run: |
+          echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
+          exit 1
