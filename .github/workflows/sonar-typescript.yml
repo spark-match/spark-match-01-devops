@@ -20,7 +20,11 @@ on:
         type: string
         required: true
       tests:
-        description: 'Comma-separated test glob patterns'
+        description: 'Comma-separated test directory paths (relative to working-directory)'
+        type: string
+        required: true
+      test-inclusions:
+        description: 'Glob pattern to identify test files within the test directories'
         type: string
         required: true
       exclude-patterns:
@@ -95,6 +99,7 @@ jobs:
               "organization": "${{ inputs.organization }}",
               "sources": "${{ inputs.sources }}",
               "tests": "${{ inputs.tests }}",
+              "test-inclusions": "${{ inputs.test-inclusions }}",
               "exclude-patterns": "${{ inputs.exclude-patterns }}",
               "working-directory": "${{ inputs.working-directory }}",
               "env": "${{ inputs.env }}",
@@ -106,7 +111,7 @@ jobs:
               "coverage-paths": "${{ inputs.coverage-paths }}",
               "fail-on-quality-gate": "${{ inputs.fail-on-quality-gate }}"
             }
-          required: project-key|project-name|organization|sources|tests|exclude-patterns|working-directory|env|node-version|package-manager|lockfile-name|install-command|test-command|coverage-paths|fail-on-quality-gate
+          required: project-key|project-name|organization|sources|tests|test-inclusions|exclude-patterns|working-directory|env|node-version|package-manager|lockfile-name|install-command|test-command|coverage-paths|fail-on-quality-gate
           enums: |
             {
               "package-manager": ["npm", "pnpm", "yarn", "bun"]
@@ -148,6 +153,7 @@ jobs:
             -Dsonar.organization=${{ inputs.organization }}
             -Dsonar.sources=${{ inputs.sources }}
             -Dsonar.tests=${{ inputs.tests }}
+            -Dsonar.test.inclusions=${{ inputs.test-inclusions }}
             -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-paths }}
             -Dsonar.exclusions=${{ inputs.exclude-patterns }}
             -Dsonar.test.exclusions=${{ inputs.exclude-patterns }}
