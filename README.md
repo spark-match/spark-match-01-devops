@@ -767,3 +767,5 @@ When bumping external tool versions:
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE).
+
+<!-- canary: ruleset pilot validation 2026-07-26 -->

@@ -60,3 +60,5 @@ jobs:
 
       - name: Run actionlint
         run: ${{ steps.get_actionlint.outputs.executable }} -color
+
+# canary: ruleset pilot validation 2026-07-26
