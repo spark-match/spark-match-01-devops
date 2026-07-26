@@ -1,0 +1,26 @@
+# shellcheck configuration for spark-match-01-devops scripts.
+# Docs: https://github.com/koalaman/shellcheck/blob/master/README.md
+
+# Shell dialect: bash with strict mode. Scripts use `#!/usr/bin/env bash`
+# and `set -euo pipefail`.
+shell=bash
+
+# Severity: error/warning/info/style. CI gates on 'error' and 'warning'.
+severity=warning
+
+# Allow sourced files to not have a shebang (helper scripts may be sourced
+# without an explicit shebang).
+# (none for now; revisit as we add helper libs)
+
+# Disable individual checks globally (only if we accept the cost):
+#   SC2086: double-quote variables (handled case-by-case with intentional
+#           word-splitting for arrays).
+#   SC2155: declare and assign separately (we prefer one-liners for short
+#           flag-only declarations).
+
+# External sources: shellcheck follows sources. We add an opt-out to keep
+# checks focused on the scripts we own, not vendored code.
+external-sources=false
+
+# Enable output format for machine consumption in CI.
+# Default is `checkstyle` which GitHub Actions parses natively.

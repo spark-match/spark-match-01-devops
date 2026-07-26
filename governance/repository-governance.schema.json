@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spark-match.org/schemas/repository-governance/v2.json",
+  "title": "Spark Match Repository Governance Manifest (v2)",
+  "description": "Declarative source of truth for repository ruleset shape across the spark-match org. Consumed by scripts/configure-repo-rulesets.sh. Schema is ADDITIVE: new optional fields are allowed in minor versions; renaming or removing existing fields requires a major version bump.",
+  "type": "object",
+  "required": ["version", "schema", "defaults", "repositories"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Manifest schema version. Must be 2 for this schema.",
+      "type": "integer",
+      "const": 2
+    },
+    "schema": {
+      "description": "Schema identifier. Must match this schema's id suffix.",
+      "type": "string",
+      "const": "spark-match.repository-governance/v2"
+    },
+    "_note": {
+      "description": "Free-form field documenting decisions or workarounds. Not used by the reconciler; informational only.",
+      "type": "string"
+    },
+    "defaults": {
+      "description": "Defaults applied to every repo unless overridden. Reconciler must NOT remove existing rules from live state that match defaults, only add missing ones.",
+      "type": "object",
+      "required": [
+        "approvals",
+        "requireCodeOwnerReview",
+        "allowedMergeMethods",
+        "adminBypassMode",
+        "blockDeletion",
+        "blockForcePush",
+        "requireLinearHistory",
+        "rulesetName",
+        "rulesetTarget",
+        "rulesetEnforcement"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "approvals": {
+          "description": "Number of approving reviews required.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "dismissStaleReviews": {"type": "boolean"},
+        "requireConversationResolution": {"type": "boolean"},
+        "requireLastPushApproval": {"type": "boolean"},
+        "requireCodeOwnerReview": {"type": "boolean"},
+        "allowedMergeMethods": {
+          "description": "Merge methods allowed. Always include 'squash'.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["squash", "merge", "rebase"]
+          },
+          "contains": {"const": "squash"}
+        },
+        "adminBypassMode": {
+          "description": "How organization admins bypass rules. 'pull_request' allows admin to bypass within PR context; 'always' allows direct push.",
+          "type": "string",
+          "enum": ["pull_request", "always"]
+        },
+        "blockDeletion": {"type": "boolean"},
+        "blockForcePush": {"type": "boolean"},
+        "requireLinearHistory": {"type": "boolean"},
+        "rulesetName": {"type": "string", "minLength": 1},
+        "rulesetTarget": {
+          "type": "string",
+          "enum": ["branch", "tag", "push"]
+        },
+        "rulesetEnforcement": {
+          "type": "string",
+          "enum": ["active", "disabled", "evaluate"]
+        }
+      }
+    },
+    "repositories": {
+      "description": "Per-repository overrides. Keys are the repo names within the org.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/repository"
+      }
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "required": ["refs", "reviewerTeam", "filePatterns"],
+      "additionalProperties": true,
+      "properties": {
+        "refs": {
+          "description": "Git ref patterns protected by this repo's ruleset.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^~DEFAULT_BRANCH$|^refs/heads/.+|^refs/tags/.+"
+          }
+        },
+        "reviewerTeam": {
+          "description": "GitHub team slug that owns this repo. Resolved via GET /orgs/{org}/teams/{slug}.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "filePatterns": {
+          "description": "File patterns the reviewer team is required for. ['**'] means all files.",
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "statusChecks": {
+          "description": "Required status check contexts (job names). Empty array means no required checks.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "extraRefs": {
+          "description": "Optional additional refs to include beyond refs. Deprecated; use refs directly.",
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -71,3 +71,11 @@ jobs:
     uses: ./.github/workflows/yamllint.yml
     with:
       environment-name: ci
+
+  quality:
+    name: quality
+    uses: ./.github/workflows/quality.yml
+    with:
+      environment-name: ci
+      shellcheck-severity: warning
+      schema-strict: false
