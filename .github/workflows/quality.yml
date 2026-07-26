@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Validate inputs
-        uses: spark-match/spark-match-01-devocs/.github/actions/validate-workflow-inputs@main
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}", "shellcheck-severity": "${{ inputs.shellcheck-severity }}"}
@@ -70,7 +70,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@2.0.1
+        uses: ludeeus/action-shellcheck@2.0.0
         with:
           additional_files: "scripts .github/actions"
           severity: ${{ inputs.shellcheck-severity }}
