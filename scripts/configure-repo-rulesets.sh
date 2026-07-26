@@ -72,7 +72,6 @@ while [[ $# -gt 0 ]]; do
     --backup-dir)   BACKUP_DIR="$2"; shift 2 ;;
     # shellcheck disable=SC2034  # STRICT reserved for future --strict mode (TODO)
     --strict)       STRICT=true; shift ;;
-    --strict)       STRICT=true; shift ;;
     --prune-unexpected) PRUNE_UNEXPECTED=true; shift ;;
     --org)          ORG="$2"; shift 2 ;;
     --json)         JSON_OUTPUT=true; shift ;;
