@@ -148,6 +148,22 @@ jobs:
           restore-keys: |
             sonar-tools-v8.2.1-${{ runner.os }}
 
+      - name: Pre-flight: verify SonarCloud reachable
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          set -euo pipefail
+          response=$(curl -sS -o /dev/null -w '%{http_code}' \
+            --max-time 10 \
+            -H 'Authorization: Bearer ${SONAR_TOKEN}' \
+            '${SONAR_HOST_URL}/api/authentication/validate')
+          if [ "$response" != '200' ]; then
+            echo "::error::SonarCloud API returned HTTP ${response}. Skipping scan to save CI time. Check https://status.sonarcloud.io for outages."
+            exit 1
+          fi
+          echo 'SonarCloud API reachable (HTTP 200)'
+
       - name: SonarCloud Scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
