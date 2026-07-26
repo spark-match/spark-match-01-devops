@@ -1,11 +1,10 @@
 # CODEOWNERS - Spark Match DevOps (01)
 #
-# Politica de aprobacion (configurada en branch protection):
+# Politica de aprobacion (configurada via ruleset):
 #   - dev:  required_approving_review_count: 1
-#            require_code_owner_reviews: true
+#            require_code_owner_review: true
 #   - main: required_approving_review_count: 1
-#            require_code_owner_reviews: true
-#            require_last_push_approval: true
+#            require_code_owner_review: true
 #
 # CODE OWNERS del repo:
 #   @spark-match/devops        Miembros: dbarretol, ahincho
@@ -33,7 +32,7 @@
 # =============================================================================
 # Paths tecnicos - DevOps gobierna
 # =============================================================================
-# CI/CD reusables, templates, CODEOWNERS, branch protection.
+# CI/CD reusables, templates, CODEOWNERS, ruleset.
 /.github/                                    @spark-match/devops
 
 # Scripts auxiliares (configure-merge-methods.sh, futuros).
