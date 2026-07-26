@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "packages": {
+    ".": {
+      "package-name": "spark-match-01-devops",
+      "changelog-path": "CHANGELOG.md",
+      "changelog-sections": [
+        { "type": "feat",     "section": "Added" },
+        { "type": "feature",  "section": "Added" },
+        { "type": "fix",      "section": "Fixed" },
+        { "type": "perf",     "section": "Changed" },
+        { "type": "revert",   "section": "Removed" },
+        { "type": "docs",     "section": "Documentation", "hidden": true },
+        { "type": "chore",    "section": "Maintenance",   "hidden": true },
+        { "type": "style",    "section": "Style",         "hidden": true },
+        { "type": "refactor", "section": "Refactoring",   "hidden": true },
+        { "type": "test",     "section": "Tests",         "hidden": true },
+        { "type": "build",    "section": "Build System",  "hidden": true },
+        { "type": "ci",       "section": "Continuous Integration", "hidden": true }
+      ],
+      "initial-version": "0.1.0",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false,
+      "include-component-in-tag": false,
+      "tag-separator": "",
+      "pull-request-header": "chore(release): publish ${version}",
+      "pull-request-footer": "Cut by [release-please](https://github.com/googleapis/release-please). Merge this PR to cut a release. Catalog consumers pin `@main` per [docs/VERSIONING.md](docs/VERSIONING.md); the git tag is informational for archival.",
+      "draft-pull-request": true
+    }
+  }
+}
