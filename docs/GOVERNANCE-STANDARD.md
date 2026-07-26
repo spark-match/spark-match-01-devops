@@ -1,0 +1,242 @@
+# Governance Standard — Spark Match Organization
+
+> **Scope:** this document defines the governance standard for the nine repositories under the `spark-match` GitHub organization. Consumer repositories under the personal `ahincho/` namespace are out of scope and follow their own local conventions.
+>
+> **Status:** this is the canonical reference. The declarative source of truth is `governance/repository-governance.json`; this document is the narrative companion that explains the rationale and how to apply it.
+
+## 1. Resumen ejecutivo
+
+Every `spark-match/*` repository must enforce the same baseline governance: a single ruleset named `spark-match-default-branch-protection` that protects the default branch (and `dev` where applicable), blocks force-pushes and branch deletions, requires pull-request approval from a designated technical team via `CODEOWNERS`, allows only squash merges, and limits admin bypass to the pull-request context. **Current global compliance: 39%** (snapshot 2026-07-26; see § 8).
+
+## 2. Ruleset canónico
+
+Every `spark-match/*` repository has exactly one ruleset named `spark-match-default-branch-protection`. Its shape is:
+
+| Field | Value | Why |
+|---|---|---|
+| `target` | `branch` | Branch-level protection |
+| `enforcement` | `active` | Rules apply, not advisory |
+| `bypass_actors[0].bypass_mode` | `pull_request` | Admin bypass only inside a PR; direct pushes are blocked |
+| `conditions.ref_name.include` | `["~DEFAULT_BRANCH"]` + `"refs/heads/dev"` if used | Only protects branches that actually carry code |
+| `rules[].pull_request.required_approving_review_count` | `1` | One approval is enough |
+| `rules[].pull_request.require_code_owner_review` | `true` | CODEOWNERS-based review (see § 3) |
+| `rules[].pull_request.allowed_merge_methods` | `["squash"]` | Squash only; merge commits prohibited |
+| `rules[].pull_request.dismiss_stale_reviews_on_push` | `true` | Stale reviews dismissed when new commits land |
+| `rules[].pull_request.required_review_thread_resolution` | `true` | Unresolved threads block merge |
+| `rules[].non_fast_forward` | present | Force-push blocked |
+| `rules[].required_linear_history` | present | No merge commits reaching main |
+| `rules[].deletion` | present | Branch deletion blocked at the API level |
+| `rules[].required_status_checks` | per-repo | Status checks preserved from existing setup; not expanded by this standard |
+
+The full desired state for the three pilot repositories is encoded in `governance/repository-governance.json` (schema `spark-match.repository-governance/v2`).
+
+## 3. CODEOWNERS canónico
+
+The canonical pattern is **explicit paths, no catch-all**. Every path that should require review must be listed on its own line. The motivation is twofold:
+
+- **Predictability**: a new file added to the repo does not silently inherit a reviewer; the CODEOWNERS file must be updated, which forces a conscious decision.
+- **Reduced accumulation**: GitHub accumulates owners from every matching pattern. With `* @team-a` plus `/README.md @team-b`, every file in the repo has at least `team-a`, which makes it harder to reason about who owns what.
+
+### Header template
+
+```
+# CODEOWNERS - Spark Match <N>-<slug>
+#
+# Politica de aprobacion (configurada via ruleset):
+#   - dev:  required_approving_review_count: 1
+#            require_code_owner_review: true
+#   - main: required_approving_review_count: 1
+#            require_code_owner_review: true
+#
+# CODE OWNERS del repo:
+#   @spark-match/<tech-team>     Miembros: <list>
+#   @spark-match/product-owners  Miembros: <list>  (solo para paths de governance)
+#
+# Convencion:
+#   - Cada path del repo esta listado explicitamente.
+#   - Si se crea un path nuevo, agregar una linea aqui antes de mergearlo.
+#
+# Nota: el autor del PR no puede aprobar su propio PR, ni siquiera siendo
+# CODE OWNER (regla de GitHub). Un PR abierto por <user> necesita la
+# aprobacion de cualquier otro miembro del team.
+```
+
+### Path patterns
+
+Critical paths (governance, README, LICENSE) are always listed and double-owned by `@spark-match/product-owners`:
+
+```
+/README.md                                  @spark-match/<tech-team> @spark-match/product-owners
+/CONTRIBUTING.md                            @spark-match/<tech-team> @spark-match/product-owners
+/LICENSE                                    @spark-match/<tech-team> @spark-match/product-owners
+```
+
+All other paths are owned only by the technical team of the repo:
+
+```
+/.github/                                    @spark-match/<tech-team>
+/scripts/                                    @spark-match/<tech-team>
+```
+
+If the repo has no `/scripts/`, omit that line. The point is: every directory and file that exists must appear in the file.
+
+### Migration from catch-all pattern
+
+Repositories currently using `* @team` plus `/decisions/`, `/onboarding/`, etc. must be migrated to explicit paths. The migration is mechanical:
+
+1. Run `--check --repos <repo>` to confirm current state.
+2. List every top-level directory and file: `git ls-files | awk -F/ '{print $1}' | sort -u`.
+3. Replace the `*` line with one explicit line per path, using the same team.
+4. Open a PR; require approval from another team member (self-approval is impossible).
+5. Re-run `--check` to confirm no drift introduced by the change.
+
+## 4. Asignacion de equipos por repo
+
+| Repositorio | Tech team obligatorio | Miembros auditados | Notas |
+|---|---|---|---|
+| `spark-match/.github` | `@spark-match/devops` | dbarretol, ahincho | Repo organizacional |
+| `spark-match-00-knowledge-base` | `@spark-match/tech-leads` | ahincho, dbarretol | Documentacion |
+| `spark-match-01-devops` | `@spark-match/devops` | dbarretol, ahincho | Catalogo DevOps (este repo) |
+| `spark-match-02-infrastructure` | `@spark-match/devops` | dbarretol, ahincho | Terraform |
+| `spark-match-03-backend` | `@spark-match/backend-devs` | ahincho, BriyitHT | API backend |
+| `spark-match-04-frontend` | `@spark-match/frontend-devs` | ahincho, BriyitHT | Frontend |
+| `spark-match-05-data-pipeline` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Data |
+| `spark-match-06-model-training` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | ML |
+| `spark-match-07-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | LaTeX |
+| `spark-match-08-deep-agent` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Agents |
+
+Every team has at least two members, which guarantees the author of any PR has a potential reviewer who is not themselves.
+
+## 5. Onboarding de un repo nuevo
+
+1. **Crear el repo** con visibilidad interna y `main` como rama por defecto.
+2. **Escribir `CODEOWNERS`** siguiendo el template de § 3. Cada path del repo debe aparecer.
+3. **Agregar el repo al manifest**: editar `governance/repository-governance.json` y agregar una entrada con `refs`, `reviewerTeam`, `filePatterns`, `statusChecks`.
+4. **Dry-run**:
+   ```bash
+   ./scripts/configure-repo-rulesets.sh --dry-run --apply --repos <new-repo>
+   ```
+   Confirma que el payload es valido contra el schema y contra la API.
+5. **Apply**:
+   ```bash
+   ./scripts/configure-repo-rulesets.sh --apply --repos <new-repo>
+   ```
+   El script crea el ruleset (POST) o lo actualiza (PUT) y guarda backup en `backups/rulesets/<timestamp>/`.
+6. **Smoke test**: abrir un PR no-op que toque un path de raiz y un path bajo subdirectorio. Confirmar que CODEOWNERS solicita el review del team correcto.
+
+## 6. Como migrar un repo legacy al estandar
+
+1. **Auditar el estado actual**:
+   ```bash
+   ./scripts/configure-repo-rulesets.sh --check --repos <repo>
+   ```
+   Esto reporta drift en 4 dimensiones: bypass_mode, merge methods, deletion rule, codeowner_review. Ademas, manualmente auditar el CODEOWNERS para verificar que usa el patron explicito.
+2. **Backup manual** del ruleset actual (defensa en profundidad):
+   ```bash
+   gh api repos/spark-match/<repo>/rulesets > backups/<repo>-pre-standards.json
+   ```
+3. **Apply**:
+   ```bash
+   ./scripts/configure-repo-rulesets.sh --apply --repos <repo>
+   ```
+   El reconciler hace backup automatico + PUT. Si el payload es rechazado por la API, el reconciler reporta `failed` y el ruleset queda sin cambios.
+4. **Canary PR**: abrir un PR trivial (comentario trailing) que toque root + subdir. Confirmar `reviewDecision: REVIEW_REQUIRED` y que el team correcto es solicitado.
+5. **Cerrar el canary** (era no-op). El equipo debe haber visto la notificacion automaticamente.
+6. **CODEOWNERS**: si el repo usaba catch-all, abrir un PR adicional que migre al patron explicito (§ 3).
+7. **Final check**:
+   ```bash
+   ./scripts/configure-repo-rulesets.sh --check --repos <repo>
+   ```
+   El unico drift aceptable debe ser `required_reviewers` (vease § 9).
+
+## 7. Compliance checklist
+
+Para declarar un repo `spark-match/*` compliant, debe satisfacer **todos** los criterios:
+
+- [ ] **Ruleset `bypass_mode == "pull_request"`** (no `always`).
+- [ ] **Ruleset `allowed_merge_methods == ["squash"]`** (no incluye `merge`).
+- [ ] **Ruleset incluye regla `deletion`** (block branch deletion).
+- [ ] **Ruleset `require_code_owner_review == true`**.
+- [ ] **CODEOWNERS sigue patron explicito** (sin catch-all `*`).
+- [ ] **Header de CODEOWNERS menciona "ruleset"** (no "branch protection").
+
+Comandos de auditoria:
+
+```bash
+# Compliance ruleset (5 criterios):
+./scripts/configure-repo-rulesets.sh --check --repos <repo>
+
+# Compliance CODEOWNERS (1 criterio):
+grep -E '^\s*\*\s+@' .github/CODEOWNERS    # debe devolver 0 lineas
+
+# Compliance header:
+grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
+```
+
+## 8. Status actual (snapshot 2026-07-26)
+
+| Repositorio | bypass | squash | deletion | codeowner | CODEOWNERS explicito | Header | Compliance |
+|---|---|---|---|---|---|---|---|
+| `spark-match-01-devops` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-02-infrastructure` | ok | ok | ok | ok | ok | ok | 6/6 |
+| `spark-match-07-article` | ok | ok | ok | ok | drift | drift | 4/6 |
+| `spark-match-00-knowledge-base` | drift | drift | drift | ok | drift | drift | 1/6 |
+| `spark-match-03-backend` | drift | drift | drift | ok | drift | drift | 1/6 |
+| `spark-match-04-frontend` | drift | drift | drift | ok | drift (roto, ver abajo) | drift | 1/6 |
+| `spark-match-05-data-pipeline` | drift | drift | drift | ok | drift | drift | 1/6 |
+| `spark-match-06-model-training` | drift | drift | drift | ok | drift | drift | 1/6 |
+| `spark-match-08-deep-agent` | drift | drift | drift | ok | drift | drift | 1/6 |
+
+**Compliance global: 22/54 = 39%.**
+
+### Casos especiales
+
+- **`spark-match-04-frontend`**: ademas del ruleset desactualizado, el CODEOWNERS no asigna `frontend-devs` a ningun path. El header declara que el equipo es CODE OWNER pero la realidad es que solo `/decisions/`, `/onboarding/`, `/postmortems/`, `README.md`, `CONTRIBUTING.md` y `LICENSE` tienen owner (`product-owners`). El resto del repo no tiene CODE OWNER asignado. Esto debe corregirse al migrar al patron explicito.
+- **`spark-match-07-article`**: ruleset compliant, pero CODEOWNERS usa catch-all. Migrar al patron explicito para alcanzar 6/6.
+
+## 9. Desviaciones conocidas
+
+### `required_reviewers` (ruleset API) no disponible
+
+El ruleset de GitHub acepta un campo `required_reviewers` para forzar reviews por team/individual via API (en lugar de via CODEOWNERS). Sin embargo, este campo **no esta disponible en el plan Free de la organizacion**: la API rechaza payloads con valores no vacios con HTTP 422. Por lo tanto, la funcionalidad equivalente se logra via `require_code_owner_review: true` + CODEOWNERS.
+
+Esto esta documentado en `_note` del manifest (`governance/repository-governance.json`) y en el commit de pilot. La unica manera de usar `required_reviewers` es upgrading a GitHub Team o Enterprise; mientras tanto, CODEOWNERS es la fuente de verdad.
+
+### Drift permanente esperado
+
+El reconciler reporta `drift` permanente en `required_reviewers` para todos los repos, porque el estado deseado (team configurado) no se puede aplicar via API. Esto **no es accionable** mientras el plan siga siendo Free; tratarlo como drift es ruido.
+
+## 10. Tools
+
+### Reconciler
+
+```bash
+./scripts/configure-repo-rulesets.sh \
+  --check                            # drift detection, exit 1 si hay drift
+  --apply                            # PUT/POST + backup
+  --dry-run                          # sin escrituras
+  --repos r1,r2                      # scope
+  --manifest governance/repository-governance.json
+  --backup-dir <path>                # default: backups/rulesets/<ts>/
+  --strict                           # warn en status checks no observados
+  --prune-unexpected                 # opt-in DELETE para rulesets foraneos
+  --org spark-match                  # override org
+  --json                             # machine-readable output
+```
+
+### Auditoria rapida
+
+```bash
+# Estado de los 9 repos en una linea:
+for r in spark-match-{00-knowledge-base,01-devops,02-infrastructure,03-backend,04-frontend,05-data-pipeline,06-model-training,07-article,08-deep-agent}; do
+  ./scripts/configure-repo-rulesets.sh --check --repos $r
+done
+```
+
+## 11. Referencias
+
+- **Manifest**: `governance/repository-governance.json` (schema v2).
+- **Reconciler**: `scripts/configure-repo-rulesets.sh`.
+- **Plan completo**: `DEVOPS-UPGRADE.md` (workspace doc, fuera del repo).
+- **PRs de Phase 4**: #109 (manifest + reconciler), #111 (fix Checkov), #112 (Windows compat), #113 (CODEOWNERS default).
+- **Pilot**: ruleset 18893014 sobre `spark-match-01-devops`, canary PR #110.
