@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 # =============================================================================
 # configure-repo-rulesets.sh - Reconciliador declarativo de rulesets para
 #                              la organizacion spark-match via GitHub REST API.

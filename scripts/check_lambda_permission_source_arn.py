@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 """
 Verify every AWS::Lambda::Permission in SAM templates has either SourceArn
 or SourceAccount set.

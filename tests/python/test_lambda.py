@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 """Tests for scripts/check_lambda_permission_source_arn.py.
 
 The script is stdlib-only Python; tests run with pytest.
