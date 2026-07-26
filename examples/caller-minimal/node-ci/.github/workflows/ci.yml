@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+#
+# Minimal caller for the Node pipeline: eslint -> test -> build,
+# with gitleaks running in parallel.
+#
+# Each job calls a reusable from the catalog at @main. See
+# examples/caller-minimal/node-ci/README.md for the full guide.
+
+name: CI - Node
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Secret scan runs in parallel with the rest of the pipeline.
+  gitleaks:
+    name: gitleaks (env=ci)
+    uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@main
+    with:
+      environment-name: ci
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # Lint -> test -> build DAG.
+  eslint:
+    name: eslint (env=ci)
+    uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@main
+    with:
+      environment-name: ci
+      node-version: '24'
+      eslint-version: '10'
+      # lint-script defaults to "lint"
+
+  node-test:
+    name: node-test (env=ci)
+    needs: [eslint]
+    uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@main
+    with:
+      environment-name: ci
+      node-version: '24'
+      # test-script defaults to "test"
+      # pre-test-script optional (Angular: 'prebuild')
+
+  node-build:
+    name: node-build (env=ci)
+    needs: [node-test]
+    uses: spark-match/spark-match-01-devops/.github/workflows/node-build.yml@main
+    with:
+      environment-name: ci
+      node-version: '24'
+      # build-script defaults to "build"
+      # pre-build-script optional

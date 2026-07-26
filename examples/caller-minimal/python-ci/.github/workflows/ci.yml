@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+#
+# Minimal caller for spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+#
+# What this does:
+#   - Runs the full python-ci QA pipeline on every push to main and every PR.
+#   - Uses ALL defaults; see docs/PYTHON-CI.md for the full input catalog.
+#
+# What you must change:
+#   - working-directory: if pyproject.toml + uv.lock are not at the repo root
+#   - dependency-groups: list the groups your pyproject.toml defines (e.g.
+#     "dev bedrock" if you have a [bedrock] dependency group)
+#   - commands: drop steps you don't want (bandit, pip-audit, etc.)
+#   - pytest-targets: change if your tests live under a non-default path
+#
+# See examples/caller-minimal/python-ci/README.md for the full guide.
+
+name: CI - Python
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel in-progress runs for the same PR/branch. Safe for the python-ci
+# recipe (idempotent; the runner picks up the new push and starts over).
+concurrency:
+  group: python-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-ci:
+    name: python-ci (env=${{ inputs.environment-name || 'ci' }})
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+    with:
+      environment-name: ci
+      # Defaults (see docs/PYTHON-CI.md):
+      #   working-directory: .
+      #   commands: lint:ruff-format,lint:ruff-check,typecheck:mypy,
+      #              test:pytest,coverage:upload
+      #   sync-mode: full
+      #   dependency-groups: dev
+      #   ruff-targets: src tests
+      #   mypy-targets: src
+      #   pytest-targets: tests
+      #   coverage-threshold: (empty)
+      #   setup-uv-version: latest
+      #   timeout-minutes: 20
+      #   fail-fast: false
