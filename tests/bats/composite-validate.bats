@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 # bats tests for .github/actions/validate-workflow-inputs/validate.sh
 #
 # The script validates three kinds of constraints:

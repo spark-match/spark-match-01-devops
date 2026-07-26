@@ -121,7 +121,7 @@ spark-match-01-devops/
 │
 ├── .shellcheckrc                    shell=bash, severity=warning
 ├── .yamllint.yml                    lint config for non-workflow YAML
-├── LICENSE                          Apache-2.0 (migration to GPL-3.0 tracked in PR #8)
+├── LICENSE                          GPL-3.0-or-later
 └── README.md                        this file
 ```
 
@@ -1063,4 +1063,6 @@ For composite actions:
 
 ## License
 
-Apache-2.0 today. The team has approved a migration to **GPL-3.0** (copyleft) tracked in [PR #8](https://github.com/spark-match/spark-match-01-devops/pulls). Once that lands, every source file will gain an SPDX header and `LICENSE` will be replaced with the GPL-3.0 text. Until then, the Apache-2.0 [`LICENSE`](LICENSE) governs.
+GNU General Public License v3.0 or later ([`LICENSE`](LICENSE)). All source files carry SPDX-License-Identifier headers (`GPL-3.0-or-later`). Copyleft: derivative works must also be GPL-3.0+ when distributed.
+
+Prior to 2026-07-26 this repo was Apache-2.0. The change was driven by the catalog's role as infrastructure that other `spark-match/*` repos consume: copyleft ensures the recipes stay free and that improvements flow back to the community. See [CHANGELOG.md](CHANGELOG.md) for the migration entry.
