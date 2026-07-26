@@ -15,6 +15,10 @@ rules:
   # Allow longer lines (workflow files often have long input names + URLs)
   line-length:
     max: 160
+    # Issue templates have long placeholder text + URL-rich markdown.
+    # Other rules (indentation, truthy, etc.) still apply.
+    ignore: |
+      .github/ISSUE_TEMPLATE/
 
   # Allow multiple documents in one file (--- separators)
   document-start: disable

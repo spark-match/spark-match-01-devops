@@ -1,0 +1,87 @@
+name: Feature request
+description: Suggest a new reusable workflow, composite action, script, or improvement to an existing one.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for new recipes or substantive improvements to existing ones. Small typos / wording fixes go in `docs:` PRs directly, no issue needed.
+
+  - type: input
+    id: name
+    attributes:
+      label: Proposed name
+      description: Workflow / action / script name (kebab-case).
+      placeholder: e.g. `python-ci-cache-prime` or `validate-workflow-inputs/pattern-only`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Layer
+      description: Where does this new recipe live?
+      options:
+        - Composite action (`.github/actions/<name>/`)
+        - Ecosystem workflow
+        - Node workflow
+        - Python workflow
+        - Deploy workflow (Angular SPA / SAM / ECR / Terraform)
+        - Operational script
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What gap does this fill? Who hits the gap today and how do they work around it?
+      placeholder: |
+        Today, every caller that needs to lint a Dockerfile has to write their own GitHub Actions step because no recipe in the catalog does it. We have 4 callers now copying the same step, with drift.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Inputs, behavior, exit codes, secrets. Reference an upstream tool / spec.
+      placeholder: |
+        New `containerfile-lint.yml` recipe with:
+        - Input `working-directory` (default `.`)
+        - Input `containerfile-path` (default `Dockerfile`)
+        - Pinned to `hadolint/hadolint@v2.x` (latest at the time)
+        - Hard-fail mode (`severity: error`)
+
+        Behavior mirrors `yamllint.yml`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Why this and not those?
+    validations:
+      required: false
+
+  - type: textarea
+    id: consumers
+    attributes:
+      label: Consumer repos that will benefit
+      description: Which `spark-match/*` repos will adopt this? Helps estimate blast radius.
+      placeholder: |
+        - spark-match-02-infrastructure (Terraform modules with Dockerfiles)
+        - spark-match-08-deep-agent (Python service with Dockerfile)
+    validations:
+      required: false
+
+  - type: textarea
+    id: migration
+    attributes:
+      label: Migration plan
+      description: How do existing callers switch? One-shot PRs per caller, or staggered?
+    validations:
+      required: false

@@ -1,0 +1,100 @@
+name: Bug report
+description: A reusable workflow, composite action, script, or governance check is broken or behaving wrong.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when a recipe in the catalog is broken or behaves differently from what the docs say. For security issues, **do not file a public issue** — see [`SECURITY.md`](https://github.com/spark-match/spark-match-01-devops/blob/main/SECURITY.md).
+
+  - type: input
+    id: recipe
+    attributes:
+      label: Affected recipe or script
+      description: Workflow / composite action / script file path.
+      placeholder: e.g. `.github/workflows/python-ci.yml` or `scripts/configure-repo-rulesets.sh`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How broken is it? Be honest; this drives triage priority.
+      options:
+        - Blocker — CI fails for every caller
+        - Major — broken for a specific caller or input shape
+        - Minor — wrong but workable; cosmetic or documentation drift
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Be specific. Paste the actual error message or unexpected output.
+      placeholder: |
+        ```
+        ERROR: something went wrong at line 42 of foo.sh
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did the docs / your understanding say should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps to reproduce. Include the exact `uses:` line if you are a caller.
+      placeholder: |
+        1. Caller workflow:
+           ```yaml
+           uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+           with:
+             environment-name: dev
+           ```
+        2. Caller repo (or local checkout of the devops repo).
+        3. Trigger: `git push` or `workflow_dispatch`.
+        4. Observed: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: Environment
+      description: Paste the output of these commands.
+      placeholder: |
+        ```
+        $ gh --version
+        $ bats --version   # if applicable
+        $ python --version # if applicable
+        $ jq --version
+        ```
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the failing step log, GitHub Actions run URL, or a `gh api ... | jq .` snippet.
+    validations:
+      required: false
+
+  - type: input
+    id: caller
+    attributes:
+      label: Caller repo (if applicable)
+      description: Which consumer repo hit the issue? Helps correlate with CODEOWNERS and downstream tests.
+      placeholder: e.g. spark-match-03-backend
+    validations:
+      required: false
