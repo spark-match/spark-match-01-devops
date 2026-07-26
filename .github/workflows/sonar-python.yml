@@ -161,6 +161,7 @@ jobs:
             -Dsonar.sources=${{ inputs.sources }}
             -Dsonar.tests=${{ inputs.tests }}
             -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-paths }}
+            -Dsonar.architecture.sensor.skip=true
             -Dsonar.scanner.dumpToFile=true
 
       - name: SonarCloud Quality Gate

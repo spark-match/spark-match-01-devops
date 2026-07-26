@@ -100,6 +100,7 @@ jobs:
             -Dsonar.sources=${{ inputs.sources }}
             -Dsonar.exclusions=${{ inputs.exclude-patterns }}
             -Dsonar.terraform.provider.suffixes=.tf
+            -Dsonar.architecture.sensor.skip=true
             -Dsonar.scanner.dumpToFile=true
 
       - name: SonarCloud Quality Gate

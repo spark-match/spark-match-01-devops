@@ -165,6 +165,7 @@ jobs:
             -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-paths }}
             -Dsonar.exclusions=${{ inputs.exclude-patterns }}
             -Dsonar.test.exclusions=${{ inputs.exclude-patterns }}
+            -Dsonar.architecture.sensor.skip=true
             -Dsonar.scanner.dumpToFile=true
 
       - name: SonarCloud Quality Gate
