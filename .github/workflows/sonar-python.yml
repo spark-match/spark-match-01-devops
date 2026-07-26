@@ -161,12 +161,18 @@ jobs:
         continue-on-error: true
         uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
+        with:
+          pollingTimeoutSec: 300
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
 
       - name: Enforce Quality Gate
-        if: ${{ always() && steps.qg.outputs.quality-gate-status == 'FAILED' && inputs.fail-on-quality-gate == 'true' }}
+        if: ${{ always() && (steps.qg.outputs.quality-gate-status == 'FAILED' || (steps.qg.outcome == 'failure' && steps.qg.outputs.quality-gate-status == '')) && inputs.fail-on-quality-gate == 'true' }}
         run: |
-          echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
+          if [ -z "${{ steps.qg.outputs.quality-gate-status }}" ]; then
+            echo "::error::SonarCloud Quality Gate polling timed out (>300s). SonarCloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
+          else
+            echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
+          fi
           exit 1
