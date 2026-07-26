@@ -67,11 +67,6 @@ jobs:
     outputs:
       artifact-name: ${{ inputs.artifact-name }}
     steps:
-      - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
-        with:
-          values: |
-            {"environment-name": "${{ inputs.environment-name }}"}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 

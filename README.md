@@ -43,7 +43,7 @@ Usage:
 ```yaml
 jobs:
   actionlint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/actionlint.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/actionlint.yml@main
     with:
       environment-name: ci
 ```
@@ -63,7 +63,7 @@ Usage:
 ```yaml
 jobs:
   gitleaks:
-    uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@main
     with:
       environment-name: ci
 ```
@@ -95,7 +95,7 @@ Usage:
 ```yaml
 jobs:
   yamllint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@main
     with:
       environment-name: ci
 ```
@@ -117,7 +117,7 @@ Usage:
 ```yaml
 jobs:
   terraform-fmt:
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@main
     with:
       environment-name: dev
       terraform-version: 1.15.7
@@ -140,7 +140,7 @@ Usage:
 ```yaml
 jobs:
   terraform-validate:
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@main
     with:
       environment-name: dev
       terraform-version: 1.15.7
@@ -168,7 +168,7 @@ Usage:
 ```yaml
 jobs:
   tflint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@main
     with:
       environment-name: dev
 ```
@@ -195,7 +195,7 @@ Usage:
 ```yaml
 jobs:
   checkov:
-    uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@main
     with:
       environment-name: dev
 ```
@@ -219,7 +219,7 @@ Usage:
 ```yaml
 jobs:
   cfn-nag:
-    uses: spark-match/spark-match-01-devops/.github/workflows/cfn-nag.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/cfn-nag.yml@main
     with:
       environment-name: dev
 ```
@@ -243,7 +243,7 @@ Usage:
 ```yaml
 jobs:
   lambda-permission-source-arn:
-    uses: spark-match/spark-match-01-devops/.github/workflows/lambda-permission-source-arn.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/lambda-permission-source-arn.yml@main
     with:
       environment-name: dev
 ```
@@ -269,7 +269,7 @@ Usage:
 ```yaml
 jobs:
   eslint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@main
     with:
       environment-name: ci
       eslint-version: 10
@@ -297,7 +297,7 @@ Usage:
 ```yaml
 jobs:
   node-test:
-    uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@main
     with:
       environment-name: ci
       test-script: test
@@ -345,7 +345,7 @@ Usage (typical orion-cognitive-agent layout — both `dev` and `bedrock` groups,
 ```yaml
 jobs:
   python-ci:
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
       working-directory: '.'
@@ -358,7 +358,7 @@ Usage (single-version matrix, fast lint-only loop):
 ```yaml
 jobs:
   python-ci:
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
       sync-mode: lint-only
@@ -438,7 +438,7 @@ Usage:
 ```yaml
 jobs:
   deploy-dev:
-    uses: spark-match/spark-match-01-devops/.github/workflows/sam-deploy.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/sam-deploy.yml@main
     with:
       environment-name: dev
       aws-region: us-east-1
@@ -482,7 +482,7 @@ Usage (typical orion-cognitive-agent):
 ```yaml
 jobs:
   deploy-dev:
-    uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@main
     with:
       environment-name: dev
       ecr-repository: orion-agent-core-dev
@@ -638,7 +638,7 @@ The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-a
 
 See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 
-- The catalog can be pinned by environment (`@dev` for dev callers, `@main` for prod callers) — changes are tested against dev deploys before they reach prod. The canonical consumer `orion-infrastructure` currently pins both envs to `@main` (single-tier strategy); teams that maintain a `dev` environment downstream of `main` can adopt the dual-pin strategy.
+- All callers pin `@main` regardless of target environment; the dev/prod distinction lives in the caller's `environment-name` input (GH Environment gate) and per-environment deploy role ARN secret. See `docs/VERSIONING.md` § "Modelo" for the full rationale.
 - No SemVer in the short term. Breaking changes are communicated by PR + release notes.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
 - Current catalog: cache-key convention **v4** (PR #62) is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog and [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8 for the `python-ci.yml` recipe-specific history.

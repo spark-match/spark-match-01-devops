@@ -21,7 +21,7 @@
 # USAGE (in caller repo, typically a wrapper with workflow_dispatch):
 #   jobs:
 #     invoke:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/aws-lambda-invoke.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/aws-lambda-invoke.yml@main
 #       with:
 #         environment-name: dev
 #         function-name: orion-some-lambda-dev
