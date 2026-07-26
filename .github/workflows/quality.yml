@@ -97,6 +97,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install pytest
+        run: pip install --quiet pytest==9.1.1
+
       - name: Install check-jsonschema
         run: pip install --quiet check-jsonschema==0.30.0
 
@@ -178,6 +181,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Install pytest
+        run: pip install --quiet pytest==9.1.1
 
       - name: Discover pytest files
         id: discover
