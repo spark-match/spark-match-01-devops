@@ -1,227 +1,411 @@
 #!/usr/bin/env bash
 # =============================================================================
-# configure-repo-rulesets.sh - Aplica un ruleset completo a todos los repos
-#                              de la org spark-match via GitHub CLI.
+# configure-repo-rulesets.sh - Reconciliador declarativo de rulesets para
+#                              la organizacion spark-match via GitHub REST API.
 # =============================================================================
 # Por que este script existe:
 #   - GitHub Free no soporta ORG-level rulesets (requiere GitHub Team).
 #   - Repo-level rulesets SI funcionan en Free.
-#   - Este script automatiza crear 1 ruleset completo por repo.
+#   - La version anterior era un bootstrap destructivo: solo POST, sin PUT,
+#     sin backup, sin deteccion de drift, sin `--check`.
+#   - Esta version es un reconciliador idempotente: lee un manifiesto
+#     declarativo, resuelve team slugs via API, y reconcilia el estado real
+#     contra el estado deseado.
 #
 # Que cubre el ruleset (v2 - cubre TODO lo de branch protection):
-#   - pull_request rule: 1 aprobacion, code owner review, dismiss stale,
-#                        conversation resolution, allowed merge methods
-#   - required_status_checks (opcional via --status-checks)
+#   - pull_request rule: 1 aprobacion, code owner review OFF (reemplazado por
+#                        required_reviewers), dismiss stale, conversation
+#                        resolution, required_reviewers (team), allowed
+#                        merge methods = [squash].
+#   - required_status_checks (per-repo via manifest)
 #   - non_fast_forward (block force push)
 #   - required_linear_history
+#   - deletion (block branch deletion via API rule)
 #
 # Que cubre TODO lo de branch protection clasica. Esto significa que podes
-# tener UNA sola fuente de verdad (el ruleset) y borrar branch protection.
-# Si tienes ambas, la mas restrictiva gana (no rompe nada).
+# tener UNA sola fuente de verdad (governance/repository-governance.json) y
+# borrar branch protection. Si tienes ambas, la mas restrictiva gana.
 #
 # Uso:
-#   ./configure-repo-rulesets.sh --dry-run
-#   ./configure-repo-rulesets.sh --repos spark-match-02-infrastructure
-#   ./configure-repo-rulesets.sh --repos r1,r2 --status-checks "Plan (dev) / Plan (dev)"
-#   ./configure-repo-rulesets.sh
-#   ./configure-repo-rulesets.sh --delete-existing   # recrear desde cero
+#   ./configure-repo-rulesets.sh --check --repos spark-match-01-devops
+#   ./configure-repo-rulesets.sh --dry-run --apply --repos spark-match-01-devops
+#   ./configure-repo-rulesets.sh --apply --repos spark-match-01-devops
+#   ./configure-repo-rulesets.sh --apply --repos r1,r2 --strict
+#   ./configure-repo-rulesets.sh --apply                            # todos los del manifest
 #
-# Para borrar branch protection DESPUES de aplicar este script:
-#   gh api -X DELETE repos/OWNER/REPO/branches/BRANCH/protection
+# Salidas por repositorio: in-sync, would-create, would-update, created,
+#                          updated, failed, unexpected.
+# Exit codes:
+#   0  = todos in-sync (--check) o todos reconciliados (--apply)
+#   1  = drift detectado (--check) o al menos un fallo (--apply)
+#   2  = error de prerequisitos / manifest invalido
 # =============================================================================
 
 set -euo pipefail
 
+# --- Constantes --------------------------------------------------------------
 ORG="${ORG:-spark-match}"
+MANIFEST_DEFAULT="governance/repository-governance.json"
+MANIFEST=""
+MODE=""                       # check | apply (uno de los dos obligatorio)
 DRY_RUN=false
 REPOS_FILTER=""
-DELETE_EXISTING=false
-STATUS_CHECKS=""
-APPROVALS="1"
-ENFORCE_ADMINS_DEFAULT="false"
+BACKUP_DIR=""
+STRICT=false
+PRUNE_UNEXPECTED=false
+JSON_OUTPUT=false
 
-# --- Parsing de args ---
+# --- Parsing de args ---------------------------------------------------------
+usage() {
+  sed -n '2,80p' "$0" | sed -E 's/^# ?//'
+  exit "${1:-0}"
+}
+
 while [[ $# -gt 0 ]]; do
-  case $1 in
-    --dry-run)
-      DRY_RUN=true
-      shift
-      ;;
-    --repos)
-      REPOS_FILTER="$2"
-      shift 2
-      ;;
-    --status-checks)
-      STATUS_CHECKS="$2"
-      shift 2
-      ;;
-    --approvals)
-      APPROVALS="$2"
-      shift 2
-      ;;
-    --delete-existing)
-      DELETE_EXISTING=true
-      shift
-      ;;
-    --org)
-      ORG="$2"
-      shift 2
-      ;;
-    -h|--help)
-      sed -n '2,55p' "$0" | sed -E 's/^# ?//'
-      exit 0
-      ;;
-    *)
-      echo "[ERROR] Argumento desconocido: $1" >&2
-      exit 1
-      ;;
+  case "$1" in
+    --check)        MODE="check"; shift ;;
+    --apply)        MODE="apply"; shift ;;
+    --dry-run)      DRY_RUN=true; shift ;;
+    --repos)        REPOS_FILTER="$2"; shift 2 ;;
+    --manifest)     MANIFEST="$2"; shift 2 ;;
+    --backup-dir)   BACKUP_DIR="$2"; shift 2 ;;
+    --strict)       STRICT=true; shift ;;
+    --prune-unexpected) PRUNE_UNEXPECTED=true; shift ;;
+    --org)          ORG="$2"; shift 2 ;;
+    --json)         JSON_OUTPUT=true; shift ;;
+    -h|--help)      usage 0 ;;
+    *)              echo "[ERROR] Argumento desconocido: $1" >&2; usage 2 ;;
   esac
 done
 
-# --- Validacion: gh CLI autenticado ---
+# --- Validacion de prerrequisitos --------------------------------------------
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "[ERROR] Comando requerido no encontrado: $1" >&2
+    exit 2
+  fi
+}
+
+require_cmd gh
+require_cmd jq
+
 if ! gh auth status >/dev/null 2>&1; then
   echo "[ERROR] gh CLI no autenticado. Ejecuta: gh auth login" >&2
-  exit 1
+  exit 2
 fi
 
-# --- Obtener lista de repos ---
-if [[ -n "$REPOS_FILTER" ]]; then
-  REPOS=$(echo "$REPOS_FILTER" | tr ',' ' ')
-  echo "[INFO] Aplicando solo a: $REPOS"
-else
-  REPOS=$(gh repo list "$ORG" --limit 100 --json name --jq '.[].name')
-  REPO_COUNT=$(echo "$REPOS" | wc -l | tr -d ' ')
-  echo "[INFO] $REPO_COUNT repos encontrados en org=$ORG"
+if [[ -z "$MODE" ]]; then
+  echo "[ERROR] Debe especificar --check o --apply." >&2
+  usage 2
 fi
 
-if [[ -n "$STATUS_CHECKS" ]]; then
-  echo "[INFO] Status checks requeridos: $STATUS_CHECKS"
+MANIFEST="${MANIFEST:-$MANIFEST_DEFAULT}"
+if [[ ! -f "$MANIFEST" ]]; then
+  echo "[ERROR] Manifiesto no encontrado: $MANIFEST" >&2
+  exit 2
 fi
-echo "[INFO] Approvals requeridos: $APPROVALS"
-echo ""
 
-# --- Funcion: emitir el JSON del ruleset por stdin ---
-# Ref: https://docs.github.com/en/rest/repos/rules (REST API endpoints for rules)
-# Reglas usadas (todas oficiales, no deprecated):
-#   - pull_request: PR approvals, code owner review, etc.
-#   - non_fast_forward: block force pushes
-#   - required_linear_history
-#   - required_status_checks (opcional)
-#
-# bypass_actors: permite a OrganizationAdmin bypasear el ruleset cuando
-# es necesario (workflow de merge admin, requiere documentacion externa).
-emit_ruleset() {
-  cat <<EOF
-{
-  "name": "spark-match-default-branch-protection",
-  "target": "branch",
-  "enforcement": "active",
-  "bypass_actors": [
-    {
-      "actor_id": null,
-      "actor_type": "OrganizationAdmin",
-      "bypass_mode": "always"
-    }
-  ],
-  "conditions": {
-    "ref_name": {
-      "include": ["~DEFAULT_BRANCH", "refs/heads/dev"],
-      "exclude": []
-    }
-  },
-  "rules": [
-    {
-      "type": "pull_request",
-      "parameters": {
-        "required_approving_review_count": ${APPROVALS},
-        "require_code_owner_review": true,
-        "dismiss_stale_reviews_on_push": true,
-        "require_last_push_approval": false,
-        "required_review_thread_resolution": true,
-        "allowed_merge_methods": ["squash", "merge"]
-      }
-    },
-    { "type": "non_fast_forward" },
-    { "type": "required_linear_history" }
-EOF
+# --- Validacion de esquema del manifiesto ------------------------------------
+validate_manifest() {
+  local mf="$1"
+  jq -e '
+    .version == 2 and
+    (.defaults | type == "object") and
+    (.repositories | type == "object") and
+    (.defaults.allowedMergeMethods | type == "array") and
+    (.defaults.approvals | type == "number")
+  ' "$mf" >/dev/null || {
+    echo "[ERROR] Manifiesto invalido o version no soportada: $mf" >&2
+    exit 2
+  }
+}
 
-  if [[ -n "$STATUS_CHECKS" ]]; then
-    CHECKS_JSON=""
-    IFS=',' read -ra CHECKS_ARR <<< "$STATUS_CHECKS"
-    for check in "${CHECKS_ARR[@]}"; do
-      if [[ -n "$CHECKS_JSON" ]]; then
-        CHECKS_JSON+=","
-      fi
-      CHECKS_JSON+="{\"context\": \"$check\"}"
-    done
+validate_manifest "$MANIFEST"
 
-    cat <<EOF
-,
-    {
-      "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": true,
-        "required_status_checks": [
-          $CHECKS_JSON
-        ]
-      }
-    }
-EOF
+# --- Helpers ----------------------------------------------------------------
+log_info() { echo "[INFO] $*" >&2; }
+log_warn() { echo "[WARN] $*" >&2; }
+log_err()  { echo "[ERR ] $*" >&2; }
+
+# Cache de team slug -> id dentro del proceso
+declare -A TEAM_ID_CACHE
+
+resolve_team_id() {
+  local slug="$1"
+  if [[ -n "${TEAM_ID_CACHE[$slug]:-}" ]]; then
+    echo "${TEAM_ID_CACHE[$slug]}"
+    return 0
+  fi
+  local id
+  id=$(gh api "orgs/$ORG/teams/$slug" --jq '.id' 2>/dev/null || echo "")
+  if [[ -z "$id" || "$id" == "null" ]]; then
+    return 1
+  fi
+  TEAM_ID_CACHE[$slug]="$id"
+  echo "$id"
+}
+
+# Devuelve lista de repos a procesar (de la opcion --repos o del manifest)
+resolve_repos() {
+  if [[ -n "$REPOS_FILTER" ]]; then
+    echo "$REPOS_FILTER" | tr ',' '\n'
+  else
+    jq -r '.repositories | keys[]' "$MANIFEST"
+  fi
+}
+
+# Estado actual del ruleset administrado de un repo.
+# Imprime JSON al stdout con forma: { exists, id, payload }
+# payload es el GET /rulesets/{id} completo, o null si no existe.
+fetch_current_ruleset() {
+  local repo="$1"
+  local full="$ORG/$repo"
+  local list_json id
+
+  list_json=$(gh api "repos/$full/rulesets" 2>/dev/null || echo "[]")
+  id=$(echo "$list_json" | jq -r --arg name "$(jq -r '.defaults.rulesetName' "$MANIFEST")" \
+        '.[] | select(.name == $name) | .id' 2>/dev/null | head -n1)
+
+  if [[ -z "$id" || "$id" == "null" ]]; then
+    # Verificar si hay un ruleset inesperado con OTRO nombre (target=branch)
+    local unexpected
+    unexpected=$(echo "$list_json" | jq -r '[.[] | select(.target == "branch" and .name != "$(jq -r '.defaults.rulesetName' "$MANIFEST")")] | length' 2>/dev/null)
+    echo "{\"exists\":false,\"id\":null,\"payload\":null,\"unexpected_count\":${unexpected:-0}}"
+    return 0
   fi
 
-  cat <<'EOF'
-  ]
+  local detail
+  detail=$(gh api "repos/$full/rulesets/$id" 2>/dev/null || echo "{}")
+  echo "{\"exists\":true,\"id\":${id},\"payload\":${detail},\"unexpected_count\":0}"
 }
-EOF
+
+# Construye el payload deseado a partir del manifiesto + team_id resuelto.
+build_desired_payload() {
+  local repo="$1"
+  local team_id="$2"
+  jq --arg team_id "$team_id" --arg repo "$repo" '
+    . as $root |
+    .repositories[$repo] as $r |
+    $root.defaults as $d |
+    {
+      name: $d.rulesetName,
+      target: $d.rulesetTarget,
+      enforcement: $d.rulesetEnforcement,
+      conditions: {
+        ref_name: {
+          include: ($r.refs),
+          exclude: []
+        }
+      },
+      bypass_actors: [
+        {
+          actor_type: "OrganizationAdmin",
+          actor_id: null,
+          bypass_mode: $d.adminBypassMode
+        }
+      ],
+      rules: (
+        [
+          {
+            type: "pull_request",
+            parameters: {
+              required_approving_review_count: $d.approvals,
+              require_code_owner_review: $d.requireCodeOwnerReview,
+              dismiss_stale_reviews_on_push: $d.dismissStaleReviews,
+              require_last_push_approval: $d.requireLastPushApproval,
+              required_review_thread_resolution: $d.requireConversationResolution,
+              required_reviewers: [
+                {
+                  reviewer_id: ($team_id | tonumber),
+                  reviewer_type: "Team",
+                  file_patterns: $r.filePatterns,
+                  minimum_approvals: $d.approvals
+                }
+              ],
+              allowed_merge_methods: $d.allowedMergeMethods
+            }
+          }
+        ]
+        + (
+          if ($r.statusChecks | length) > 0 then
+            [{
+              type: "required_status_checks",
+              parameters: {
+                strict_required_status_checks_policy: true,
+                required_status_checks: ($r.statusChecks | map({context: .}))
+              }
+            }]
+          else [] end
+        )
+        + (if $d.blockForcePush then [{type: "non_fast_forward"}] else [] end)
+        + (if $d.requireLinearHistory then [{type: "required_linear_history"}] else [] end)
+        + (if $d.blockDeletion then [{type: "deletion"}] else [] end)
+      )
+    }
+  ' "$MANIFEST"
 }
 
-# --- Loop principal ---
-SUCCESS=0
-FAILED=0
-SKIPPED=0
+# Compara dos payloads (current vs desired) canonizados.
+# Imprime "in-sync" si coinciden o el diff resumido.
+canonical_diff() {
+  local current="$1"
+  local desired="$2"
 
-for repo in $REPOS; do
-  full_name="$ORG/$repo"
+  # Canonicalizacion: orden estable, ignorar campos meta.
+  local cur_norm des_norm
+  cur_norm=$(echo "$current" | jq -S '
+    del(.id, .node_id, .created_at, .updated_at, ._links, .source, .source_type, .url) |
+    .bypass_actors |= map(del(.actor_id)) |
+    .conditions.ref_name.include |= sort |
+    .conditions.ref_name.exclude |= sort |
+    .rules |= sort_by(.type) |
+    .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
+  ')
+  des_norm=$(echo "$desired" | jq -S '
+    .bypass_actors |= map(del(.actor_id)) |
+    .conditions.ref_name.include |= sort |
+    .conditions.ref_name.exclude |= sort |
+    .rules |= sort_by(.type) |
+    .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
+  ')
 
-  # Detectar si ya existe un ruleset con el mismo nombre
-  EXISTING_ID=$(gh api "repos/$full_name/rulesets" --jq '.[] | select(.name == "spark-match-default-branch-protection") | .id' 2>/dev/null || echo "")
+  if [[ "$cur_norm" == "$des_norm" ]]; then
+    echo "in-sync"
+  else
+    echo "drift"
+  fi
+}
 
-  if [[ -n "$EXISTING_ID" ]]; then
-    if [[ "$DELETE_EXISTING" == true ]]; then
-      echo "[$full_name] Borrando ruleset existente (ID=$EXISTING_ID)..."
-      if [[ "$DRY_RUN" == false ]]; then
-        gh api -X DELETE "repos/$full_name/rulesets/$EXISTING_ID" --silent > /dev/null 2>&1 || true
-      fi
+# Backup del ruleset actual (full GET) a BACKUP_DIR/<repo>-<id>-<ts>.json
+backup_ruleset() {
+  local repo="$1"
+  local rs_id="$2"
+  local full="$ORG/$repo"
+  local dir="${BACKUP_DIR:-backups/rulesets/$(date +%Y%m%d-%H%M%S)}"
+  mkdir -p "$dir"
+  gh api "repos/$full/rulesets/$rs_id" > "$dir/${repo}-${rs_id}.json" 2>/dev/null || true
+  echo "$dir"
+}
+
+# --- Loop principal ----------------------------------------------------------
+declare -a RESULTS=()
+ANY_DRIFT=false
+ANY_FAIL=false
+
+log_info "ORG=$ORG MANIFEST=$MANIFEST MODE=$MODE DRY_RUN=$DRY_RUN"
+
+while IFS= read -r repo; do
+  [[ -z "$repo" ]] && continue
+
+  if ! jq -e --arg r "$repo" '.repositories | has($r)' "$MANIFEST" >/dev/null; then
+    log_err "$repo no esta declarado en el manifiesto"
+    RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"not-in-manifest\"}")
+    ANY_FAIL=true
+    continue
+  fi
+
+  team_slug=$(jq -r --arg r "$repo" '.repositories[$r].reviewerTeam // empty' "$MANIFEST")
+  if [[ -z "$team_slug" ]]; then
+    log_err "$repo: falta reviewerTeam"
+    RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"missing-reviewerTeam\"}")
+    ANY_FAIL=true
+    continue
+  fi
+
+  if ! team_id=$(resolve_team_id "$team_slug"); then
+    log_err "$repo: team '$team_slug' no resuelto"
+    RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"team-not-found\"}")
+    ANY_FAIL=true
+    continue
+  fi
+  log_info "$repo: team '$team_slug' -> id $team_id"
+
+  current_json=$(fetch_current_ruleset "$repo")
+  exists=$(echo "$current_json" | jq -r '.exists')
+  rs_id=$(echo "$current_json" | jq -r '.id // empty')
+  unexpected=$(echo "$current_json" | jq -r '.unexpected_count')
+  current_payload=$(echo "$current_json" | jq -c '.payload // {}')
+
+  desired_payload=$(build_desired_payload "$repo" "$team_id")
+
+  if [[ "$unexpected" -gt 0 ]]; then
+    if [[ "$PRUNE_UNEXPECTED" == true ]]; then
+      log_warn "$repo: existen $unexpected ruleset(s) inesperado(s); --prune-unexpected no implementado aun"
     else
-      echo "[$full_name] SKIP - ruleset ya existe (ID=$EXISTING_ID). Usar --delete-existing para recrear."
-      SKIPPED=$((SKIPPED + 1))
+      log_err "$repo: existen $unexpected ruleset(s) inesperado(s); abort para no pisarlos (usa --prune-unexpected)"
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"unexpected\",\"unexpected_count\":$unexpected}")
+      ANY_FAIL=true
       continue
     fi
   fi
 
-  echo "[$full_name] Creando ruleset..."
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "  (dry-run: no se aplica)"
-    SUCCESS=$((SUCCESS + 1))
+  if [[ "$exists" == "true" ]]; then
+    diff=$(canonical_diff "$current_payload" "$desired_payload")
+    if [[ "$diff" == "in-sync" ]]; then
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"in-sync\",\"ruleset_id\":$rs_id}")
+    elif [[ "$MODE" == "check" ]]; then
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"drift\",\"ruleset_id\":$rs_id}")
+      ANY_DRIFT=true
+    elif [[ "$MODE" == "apply" ]]; then
+      if [[ "$DRY_RUN" == true ]]; then
+        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"would-update\",\"ruleset_id\":$rs_id}")
+      else
+        backup_dir=$(backup_ruleset "$repo" "$rs_id")
+        log_info "$repo: backup en $backup_dir"
+        if echo "$desired_payload" | gh api -X PUT "repos/$ORG/$repo/rulesets/$rs_id" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            --input - >/dev/null 2>&1; then
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"updated\",\"ruleset_id\":$rs_id}")
+        else
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"PUT-rejected\",\"ruleset_id\":$rs_id}")
+          ANY_FAIL=true
+        fi
+      fi
+    fi
   else
-    if emit_ruleset | gh api -X POST "repos/$full_name/rulesets" \
-        -H "Accept: application/vnd.github+json" \
-        -H "X-GitHub-Api-Version: 2022-11-28" \
-        --input - \
-        --silent > /dev/null 2>&1; then
-      NEW_ID=$(gh api "repos/$full_name/rulesets" --jq '.[] | select(.name == "spark-match-default-branch-protection") | .id' 2>/dev/null)
-      echo "  OK (ID=$NEW_ID)"
-      SUCCESS=$((SUCCESS + 1))
-    else
-      echo "  FAIL"
-      FAILED=$((FAILED + 1))
+    if [[ "$MODE" == "check" ]]; then
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"drift\",\"reason\":\"missing\"}")
+      ANY_DRIFT=true
+    elif [[ "$MODE" == "apply" ]]; then
+      if [[ "$DRY_RUN" == true ]]; then
+        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"would-create\"}")
+      else
+        if echo "$desired_payload" | gh api -X POST "repos/$ORG/$repo/rulesets" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            --input - >/dev/null 2>&1; then
+          new_id=$(gh api "repos/$ORG/$repo/rulesets" --jq \
+            --arg n "$(jq -r '.defaults.rulesetName' "$MANIFEST")" \
+            '.[] | select(.name == $n) | .id' | head -n1)
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"created\",\"ruleset_id\":${new_id:-null}}")
+        else
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"POST-rejected\"}")
+          ANY_FAIL=true
+        fi
+      fi
     fi
   fi
-done
+done < <(resolve_repos)
 
+# --- Resumen ----------------------------------------------------------------
 echo ""
-echo "[DONE] created=$SUCCESS skipped=$SKIPPED failed=$FAILED"
+if [[ "$JSON_OUTPUT" == true ]]; then
+  printf '%s\n' "${RESULTS[@]}" | jq -s '.'
+else
+  echo "Repo                       State             RulesetId"
+  echo "-------------------------- ----------------- ----------"
+  printf '%s\n' "${RESULTS[@]}" | jq -r '"\(.repo // "-")\t\(.state)\t\(.ruleset_id // "-")"' \
+    | awk -F'\t' '{ printf "%-26s %-17s %s\n", $1, $2, $3 }'
+fi
 
-if [[ $FAILED -gt 0 ]]; then
+# Exit code
+if [[ "$ANY_FAIL" == true ]]; then
   exit 1
 fi
+if [[ "$MODE" == "check" && "$ANY_DRIFT" == true ]]; then
+  exit 1
+fi
+exit 0

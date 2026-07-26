@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "schema": "spark-match.repository-governance/v2",
+  "defaults": {
+    "approvals": 1,
+    "dismissStaleReviews": true,
+    "requireConversationResolution": true,
+    "requireLastPushApproval": false,
+    "requireCodeOwnerReview": false,
+    "allowedMergeMethods": ["squash"],
+    "adminBypassMode": "pull_request",
+    "blockDeletion": true,
+    "blockForcePush": true,
+    "requireLinearHistory": true,
+    "rulesetName": "spark-match-default-branch-protection",
+    "rulesetTarget": "branch",
+    "rulesetEnforcement": "active"
+  },
+  "repositories": {
+    "spark-match-01-devops": {
+      "refs": ["~DEFAULT_BRANCH"],
+      "reviewerTeam": "devops",
+      "filePatterns": ["**"],
+      "statusChecks": [
+        "actionlint / actionlint (env=ci)",
+        "gitleaks / gitleaks (env=ci)",
+        "yamllint / yamllint (env=ci)"
+      ]
+    },
+    "spark-match-07-article": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "article-authors",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
+    "spark-match-02-infrastructure": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "devops",
+      "filePatterns": ["**"],
+      "statusChecks": [
+        "Plan (dev) / Plan (dev)",
+        "Checkov / checkov (env=ci)"
+      ]
+    }
+  }
+}
