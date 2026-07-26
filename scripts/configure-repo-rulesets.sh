@@ -70,6 +70,8 @@ while [[ $# -gt 0 ]]; do
     --repos)        REPOS_FILTER="$2"; shift 2 ;;
     --manifest)     MANIFEST="$2"; shift 2 ;;
     --backup-dir)   BACKUP_DIR="$2"; shift 2 ;;
+    # shellcheck disable=SC2034  # STRICT reserved for future --strict mode (TODO)
+    --strict)       STRICT=true; shift ;;
     --strict)       STRICT=true; shift ;;
     --prune-unexpected) PRUNE_UNEXPECTED=true; shift ;;
     --org)          ORG="$2"; shift 2 ;;
