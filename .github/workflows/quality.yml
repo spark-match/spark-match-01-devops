@@ -74,7 +74,7 @@ jobs:
         with:
           additional_files: "scripts .github/actions"
           severity: ${{ inputs.shellcheck-severity }}
-          ignore_paths: 'tests/'
+          ignore_paths: 'tests'
 
   manifest-schema:
     name: "manifest schema (env=${{ inputs.environment-name }})"
