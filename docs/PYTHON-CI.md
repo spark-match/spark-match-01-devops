@@ -206,10 +206,10 @@ name: Python CI
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main]
     types: [opened, synchronize, reopened]
   push:
-    branches: [main, dev]
+    branches: [main]
 
 permissions:
   contents: read
@@ -233,7 +233,7 @@ jobs:
 ```yaml
 jobs:
   qa:
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@dev
+    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
     with:
       environment-name: ci
       # python-versions: '"3.11","3.12","3.13"'  # uncomment post GHA-bug-fix
@@ -328,14 +328,17 @@ These are tracked in `PENDIENTES-CI-CD.md`.
 
 ## 9. Versioning + promotion model
 
-This recipe follows the **pin-by-environment** model described in
+This recipe follows the **single-main-branch** model described in
 `docs/VERSIONING.md`:
 
-- Dev / staging callers pin `@dev`.
-- Prod callers pin `@main`.
-- Changes land via PR against `dev`, are smoke-tested by a canonical
-  caller (`orion-cognitive-agent@dev`), then promoted to `main` via a
-  chore PR.
+- All callers pin `@main` regardless of target environment.
+- The dev/prod distinction is carried by the caller's `environment-name`
+  input (GH Environment gate) and the per-environment deploy role ARN
+  secret, not by which branch is referenced.
+- Changes land via a single PR against `main`. The PR must include
+  smoke-test evidence from the canonical caller
+  (`orion-cognitive-agent`) before merge; the ruleset enforces CODEOWNERS
+  review + status checks (see `DEVOPS-UPGRADE.md` § "Modelo de aprobación").
 
 Self-test enhancement (this Sprint D) is exactly what makes the
 "smoke-tested by orion-cognitive-agent" gate redundant for purely

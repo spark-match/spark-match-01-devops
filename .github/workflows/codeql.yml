@@ -2,8 +2,8 @@
 # CodeQL - Static analysis for security vulnerabilities
 # =============================================================================
 # Trigger:
-#   - push to main/dev           (defense in depth on every merge)
-#   - pull_request to main/dev   (gate before merge)
+#   - push to main               (defense in depth on every merge)
+#   - pull_request to main       (gate before merge)
 #   - weekly schedule            (Monday 06:17 UTC, low contention slot)
 #
 # Languages: 'actions' (GitHub Actions YAML workflows).
@@ -19,9 +19,9 @@ name: CodeQL
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
   schedule:
     - cron: '17 6 * * 1'
 
