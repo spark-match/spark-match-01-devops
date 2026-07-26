@@ -160,23 +160,27 @@ resolve_repos() {
 fetch_current_ruleset() {
   local repo="$1"
   local full="$ORG/$repo"
-  local list_json id
+  local list_json id ruleset_name unexpected_count detail
 
+  ruleset_name=$(jq -r '.defaults.rulesetName' "$MANIFEST")
   list_json=$(gh api "repos/$full/rulesets" 2>/dev/null || echo "[]")
-  id=$(echo "$list_json" | jq -r --arg name "$(jq -r '.defaults.rulesetName' "$MANIFEST")" \
+  id=$(echo "$list_json" | jq -r --arg name "$ruleset_name" \
         '.[] | select(.name == $name) | .id' 2>/dev/null | head -n1)
 
   if [[ -z "$id" || "$id" == "null" ]]; then
     # Verificar si hay un ruleset inesperado con OTRO nombre (target=branch)
-    local unexpected
-    unexpected=$(echo "$list_json" | jq -r '[.[] | select(.target == "branch" and .name != "$(jq -r '.defaults.rulesetName' "$MANIFEST")")] | length' 2>/dev/null)
-    echo "{\"exists\":false,\"id\":null,\"payload\":null,\"unexpected_count\":${unexpected:-0}}"
+    unexpected_count=$(echo "$list_json" | jq --arg name "$ruleset_name" \
+      '[.[] | select(.target == "branch" and .name != $name)] | length' 2>/dev/null || echo 0)
+    jq -n --argjson exists false --argjson id null --argjson payload null \
+      --argjson unexpected "${unexpected_count:-0}" \
+      '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected}'
     return 0
   fi
 
-  local detail
   detail=$(gh api "repos/$full/rulesets/$id" 2>/dev/null || echo "{}")
-  echo "{\"exists\":true,\"id\":${id},\"payload\":${detail},\"unexpected_count\":0}"
+  jq -n --argjson exists true --argjson id "$id" --argjson payload "$detail" \
+    --argjson unexpected 0 \
+    '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected}'
 }
 
 # Construye el payload deseado a partir del manifiesto + team_id resuelto.
@@ -296,7 +300,8 @@ ANY_FAIL=false
 
 log_info "ORG=$ORG MANIFEST=$MANIFEST MODE=$MODE DRY_RUN=$DRY_RUN"
 
-while IFS= read -r repo; do
+while IFS=$'\n\r' read -r repo; do
+  repo="${repo%$'\r'}"
   [[ -z "$repo" ]] && continue
 
   if ! jq -e --arg r "$repo" '.repositories | has($r)' "$MANIFEST" >/dev/null; then
