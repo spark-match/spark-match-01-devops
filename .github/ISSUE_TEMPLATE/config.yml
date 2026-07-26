@@ -1,0 +1,65 @@
+# Issue chooser for spark-match-01-devops
+# Shows links above the template list when a user opens a new issue.
+
+name: Spark Match DevOps issue
+description: Pick the right template below. For sensitive reports (security, CoC violations), use the private channels linked here.
+title: "[Type]: "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for opening an issue on the Spark Match DevOps catalog.
+
+        **Before you file**, please check:
+        - Search [existing issues](https://github.com/spark-match/spark-match-01-devops/issues?q=is%3Aissue) for duplicates.
+        - Read [`CONTRIBUTING.md`](https://github.com/spark-match/spark-match-01-devops/blob/main/CONTRIBUTING.md) for workflow conventions.
+
+        **Sensitive reports** — do NOT use this form:
+        - Security vulnerabilities → see [`SECURITY.md`](https://github.com/spark-match/spark-match-01-devops/blob/main/SECURITY.md) (private channel).
+        - Code of Conduct violations → see [`CODE_OF_CONDUCT.md`](https://github.com/spark-match/spark-match-01-devops/blob/main/CODE_OF_CONDUCT.md) (private channel).
+
+        Pick a template below for everything else.
+  - type: input
+    id: summary
+    attributes:
+      label: One-line summary
+      description: What is this issue about, in 5-10 words?
+      placeholder: e.g. "node-build.yml fails on Angular prebuild hook"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area affected
+      description: Which part of the catalog does this issue relate to?
+      options:
+        - Composite action
+        - Ecosystem workflow (actionlint, gitleaks, yamllint, etc.)
+        - Node workflow (eslint, node-test, node-build, etc.)
+        - Python workflow (python-ci)
+        - Deploy workflow (Angular SPA, SAM, ECR, Terraform)
+        - Operational script (configure-repo-rulesets.sh, etc.)
+        - Governance artifact (manifest, schema, CODEOWNERS)
+        - Documentation (README, docs/, CONTRIBUTING, etc.)
+        - Tests (bats / pytest infra)
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What did you observe, what did you expect, and how can a maintainer reproduce it?
+      placeholder: |
+        **What happened**:
+        ...
+        **Expected behavior**:
+        ...
+        **Steps to reproduce**:
+        1. ...
+        2. ...
+        **Versions** (paste output of `gh --version`, `bats --version`, `python --version`, etc.):
+        ...
+    validations:
+      required: true

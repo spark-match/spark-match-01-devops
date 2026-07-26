@@ -1,0 +1,63 @@
+name: Documentation issue
+description: Report an error, unclear section, or missing topic in the docs.
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for the docs themselves (`README.md`, `docs/`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, recipe header comments). Typos in code or workflow filenames go in regular PRs.
+
+  - type: dropdown
+    id: doc
+    attributes:
+      label: Document
+      description: Which doc is affected?
+      options:
+        - README.md
+        - docs/CACHE.md
+        - docs/GOVERNANCE-STANDARD.md
+        - docs/PYTHON-CI.md
+        - docs/VERSIONING.md
+        - CONTRIBUTING.md
+        - SECURITY.md
+        - CODE_OF_CONDUCT.md
+        - A specific workflow header (state which)
+        - A specific composite action (state which)
+        - A specific script header (state which)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Issue type
+      description: Categorize so triage can route correctly.
+      options:
+        - Error — factually wrong or misleading
+        - Unclear — hard to follow, needs rewrite
+        - Missing — topic exists in code but is undocumented
+        - Outdated — refers to old version or removed feature
+        - Broken link / formatting
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: Detail
+      description: Quote the offending passage if relevant, and explain what should change.
+      placeholder: |
+        In `docs/VERSIONING.md` § "Modelo", the section claims the catalog uses SemVer 2.0.0. The README contradicts this with "No SemVer in the short term". One of them is wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested fix (optional)
+      description: If you have a draft replacement, paste it here.
+    validations:
+      required: false
