@@ -1,12 +1,13 @@
 {
   "version": 2,
   "schema": "spark-match.repository-governance/v2",
+  "_note": "requireCodeOwnerReview=true: team reviewer requests are enforced via CODEOWNERS + this flag. The ruleset field required_reviewers is not available on the current GitHub plan.",
   "defaults": {
     "approvals": 1,
     "dismissStaleReviews": true,
     "requireConversationResolution": true,
     "requireLastPushApproval": false,
-    "requireCodeOwnerReview": false,
+    "requireCodeOwnerReview": true,
     "allowedMergeMethods": ["squash"],
     "adminBypassMode": "pull_request",
     "blockDeletion": true,
