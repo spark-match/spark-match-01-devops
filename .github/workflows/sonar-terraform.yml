@@ -79,6 +79,14 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: Cache Sonar tools (scanner, GPG keys, embedded runtime)
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar
+          key: sonar-tools-v8.2.1-${{ runner.os }}
+          restore-keys: |
+            sonar-tools-v8.2.1-${{ runner.os }}
+
       - name: SonarCloud Scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
