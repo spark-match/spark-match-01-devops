@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 # bats tests for .github/actions/run-pytest-with-args/run.sh
 #
 # The script assembles a pytest command line from env vars and runs

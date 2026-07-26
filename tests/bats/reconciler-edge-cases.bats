@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 # =============================================================================
 # reconciler-edge-cases.bats - Misc robustness tests
 # =============================================================================
