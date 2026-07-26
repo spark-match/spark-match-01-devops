@@ -304,6 +304,61 @@ jobs:
       pre-test-script: prebuild
 ```
 
+#### `node-typecheck.yml`
+
+Runs `npm run <typecheck-script>` for Node projects (Angular, Vite, Next.js, plain TS). Uses the canonical cache key v4 (`<os>-node<nodeVersion>-<pkgmanager>-<env>-<H>` per [`docs/CACHE.md`](docs/CACHE.md)). Intended for projects that want strict type checking in CI but don't bundle the typecheck inside another job (Angular: `tsc --noEmit -p tsconfig.app.json`).
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | `dev` | Informational only. |
+| `node-version` | string | `24` | Passed to `actions/setup-node@v7`. |
+| `pkg-manager` | string | `npm` | `npm` \| `pnpm` \| `yarn` \| `bun`. |
+| `lockfile-name` | string | `package-lock.json` | Becomes the cache key's `<H>` segment. |
+| `typecheck-script` | string | `typecheck` | The npm script name in `package.json`. |
+| `working-directory` | string | `.` | Where `npm ci` runs (where `package.json` lives). |
+
+Usage:
+
+```yaml
+jobs:
+  typecheck:
+    uses: spark-match/spark-match-01-devops/.github/workflows/node-typecheck.yml@main
+    with:
+      environment-name: ci
+      # typecheck-script defaults to "typecheck"
+```
+
+#### `node-build.yml`
+
+Runs `npm run <build-script>` for Node projects (Angular: `ng build`; Vite/React: `vite build`; Next.js: `next build`). Uses the canonical cache key v4. Supports an optional `pre-build-script` for monorepos or frameworks that need a precompile step (Angular prebuild hook, backend shared workspace, etc.).
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | `dev` | Informational only. |
+| `node-version` | string | `24` | Passed to `actions/setup-node@v7`. |
+| `pkg-manager` | string | `npm` | `npm` \| `pnpm` \| `yarn` \| `bun`. |
+| `lockfile-name` | string | `package-lock.json` | Becomes the cache key's `<H>` segment. |
+| `build-script` | string | `build` | The npm script name in `package.json`. For Angular production builds, callers typically pass `'build --configuration=production'` (npm forwards args after `--`). |
+| `pre-build-script` | string | `''` | Optional npm script to run before the build (Angular prebuild hook, etc.). Empty = skip. |
+| `working-directory` | string | `.` | Where `npm ci` runs (where `package.json` lives). |
+
+Usage:
+
+```yaml
+jobs:
+  build:
+    needs: [eslint, typecheck, test]
+    uses: spark-match/spark-match-01-devops/.github/workflows/node-build.yml@main
+    with:
+      environment-name: ci
+      # build-script defaults to "build"
+      # pre-build-script optional (Angular: 'prebuild')
+```
+
 ### python
 
 #### `python-ci.yml`
@@ -693,6 +748,8 @@ spark-match-01-devops/
 │       │ ─── node ──────────────────────────────────────────────────────
 │       ├── eslint.yml                `npm run <lint-script>`
 │       ├── node-test.yml             `npm run <test-script>` with cache
+│       ├── node-typecheck.yml        `npm run <typecheck-script>` with cache
+│       ├── node-build.yml            `npm run <build-script>` with cache
 │       │
 │       │ ─── python ────────────────────────────────────────────────────
 │       ├── python-ci.yml             uv + ruff + mypy + pytest + bandit + pip-audit
