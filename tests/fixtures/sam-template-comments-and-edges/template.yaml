@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  # A commented-out SourceArn must NOT count as a fix.
+  AuthorizerFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AuthorizerFunction
+      Principal: apigateway.amazonaws.com
+      # SourceArn: arn:aws:execute-api:...
+
+  HealthCheckPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref HealthCheckFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: arn:aws:execute-api:us-east-1:123456789012:abc/*
+
+  EventSourcePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SomeFunction
+      Principal: events.amazonaws.com
+      # blank line above with only whitespace below:
+      SourceAccount: "123456789012"
+
+  NoTypePermission:
+    # Wrong Type value — must not match the regex.
+    Type: AWS::Lambda::Alias
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SomeFunction
+      Principal: apigateway.amazonaws.com
+
+  NestedPropertyPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref NestedFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*"
