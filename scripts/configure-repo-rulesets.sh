@@ -61,6 +61,7 @@ usage() {
   exit "${1:-0}"
 }
 
+# shellcheck disable=SC2034  # STRICT and PRUNE_UNEXPECTED reserved for future use (TODO: implement)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)        MODE="check"; shift ;;
