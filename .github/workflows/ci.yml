@@ -2,12 +2,12 @@
 # CI - Lint & Security for spark-match-01-devops
 # =============================================================================
 # Trigger:
-#   - pull_request: opened, synchronized or reopened targeting 'main' or 'dev',
+#   - pull_request: opened, synchronized or reopened targeting 'main',
 #                   gated by the path filter (lint only what changed).
-#   - push: any direct push to 'main' or 'dev' (including admin-bypass force
+#   - push: any direct push to 'main' (including admin-bypass force
 #           pushes), no path filter. Guarantees the ruleset's
 #           strict_required_status_checks_policy is satisfied at every commit
-#           on the protected branches. Runs in parallel with any active PR run;
+#           on the protected branch. Runs in parallel with any active PR run;
 #           concurrency: cancel-in-progress: true keeps the active one.
 #
 # Action: Run the atomic ecosystem recipes (actionlint, gitleaks, yamllint)
@@ -20,7 +20,7 @@
 # Each job calls the corresponding reusable workflow via a local path
 # (`./.github/workflows/<name>.yml`). When merged, the same recipes become
 # available to external repos via
-#   spark-match/spark-match-01-devops/.github/workflows/<name>.yml@dev
+#   spark-match/spark-match-01-devops/.github/workflows/<name>.yml@main
 #
 # Other layers (node/eslint, deploy/sam-deploy, deploy/terraform-*,
 # python/python-ci, etc.) are NOT exercised here since the devops repo
@@ -32,7 +32,7 @@ name: CI - Lint & Security
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main]
     types: [opened, synchronize, reopened]
     paths:
       - '.github/**'
@@ -40,7 +40,7 @@ on:
       - '**.yaml'
       - '**.md'
   push:
-    branches: [main, dev]       # no paths filter — strict mode requires checks on every commit
+    branches: [main]            # no paths filter — strict mode requires checks on every commit
 
 permissions:
   contents: read
