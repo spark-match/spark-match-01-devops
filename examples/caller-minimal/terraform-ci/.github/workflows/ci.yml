@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+#
+# Minimal caller for the Terraform pipeline: fmt -> validate -> tflint -> plan.
+# Add checkov (SCA) and apply/destroy as separate workflows per your release model.
+
+name: CI - Terraform
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read   # terraform-plan.yml posts a sticky PR comment
+  id-token: write       # OIDC for AWS plan role
+
+concurrency:
+  group: terraform-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform-fmt:
+    name: terraform-fmt (env=ci)
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@main
+    with:
+      environment-name: ci
+      terraform-version: '1.10.0'
+      # working-directory defaults to '.'
+
+  terraform-validate:
+    name: terraform-validate (env=ci)
+    needs: [terraform-fmt]
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@main
+    with:
+      environment-name: ci
+      terraform-version: '1.10.0'
+      # working-directory defaults to '.'
+
+  tflint:
+    name: tflint (env=ci)
+    needs: [terraform-validate]
+    uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@main
+    with:
+      environment-name: ci
+      terraform-version: '1.10.0'
+      # tflint_version defaults to 'latest'
+
+  terraform-plan:
+    name: terraform-plan (env=ci)
+    needs: [tflint]
+    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-plan.yml@main
+    with:
+      environment-name: ci
+      terraform-version: '1.10.0'
+      aws-region: us-east-1
+      plan-role-arn-secret: AWS_PLAN_ROLE_ARN
+      # working-directory, backend-bucket, backend-key, tfvars-file
+      # are caller-specific. Set them per your Terraform layout.
+    secrets:
+      AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
