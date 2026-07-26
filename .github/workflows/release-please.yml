@@ -1,0 +1,79 @@
+# =============================================================================
+# release-please.yml - cut a release PR on every push to main
+# =============================================================================
+# Triggers: every push to main.
+# Behavior:
+#   - release-please-action reads the manifest at
+#     .release-please-manifest.json (current version) and the config at
+#     .github/release-please-config.json.
+#   - It computes the next version from the Conventional Commits since the
+#     last release tag and opens (or updates) a "release PR" targeting
+#     `main`. The release PR body lists the commits it would include.
+#   - Merging the release PR creates the git tag + GitHub Release. The
+#     release PR is opened in DRAFT mode by default; promote to ready
+#     before merge if you want review.
+#
+# Why this exists:
+#   - Single-branch, main-only repo; no SemVer tags today.
+#   - We want a chronological changelog and tag history for archival even
+#     though consumers pin @main. Tags cost nothing and make the catalog
+#     browsable by version.
+#
+# Permissions:
+#   - contents: write      push the release branch + tag
+#   - pull-requests: write create/update the release PR
+#
+# Authentication:
+#   - Uses the default GITHUB_TOKEN. release-please runs on the same repo
+#     so cross-repo credentials are not needed.
+#
+# First run note:
+#   - On the FIRST push after this workflow is merged, release-please
+#     sees commits since v0.1.0 (which is the manifest value but no tag
+#     exists yet). It MAY open a release PR proposing 0.1.0 (no-op) or
+#     proposing 0.2.0 if any new feat/fix commits landed. Inspect the PR
+#     and close it if redundant; future pushes work normally.
+# =============================================================================
+
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Cancel in-progress runs for the same push. Safe for release-please
+# (each run is idempotent on the manifest + config).
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Pinned to a major tag so Dependabot bumps it; the SHA of the
+          # current release is recorded in the lockfile via renovate or
+          # dependabot updates.
+          # To pin to a SHA, replace with googleapis/release-please-action@
+          # <sha> and update quarterly.
+
+      - name: Log result
+        if: always()
+        run: |
+          echo "release-please result:"
+          echo "  releases_created=${{ steps.release.outputs.releases_created || '0' }}"
+          echo "  pull_request_url=${{ steps.release.outputs.pull_request_url || '(none)' }}"
+          echo "  upload_url=${{ steps.release.outputs.upload_url || '(none)' }}"
