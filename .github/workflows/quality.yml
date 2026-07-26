@@ -1,0 +1,208 @@
+# =============================================================================
+# Reusable Workflow: Quality - shellcheck, manifest schema, bats, pytest
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs the static and dynamic quality gates
+# for this catalog repo:
+#
+#   1. shellcheck on every shell script under scripts/ and .github/actions/
+#   2. JSON Schema validation of governance/repository-governance.json against
+#      governance/repository-governance.schema.json (via check-jsonschema)
+#   3. bats-core on tests/bats/*.bats (lands in PR #3, PR #4)
+#   4. pytest on tests/python/*.py (lands in PR #2)
+#
+# Steps 3 and 4 are no-ops until the corresponding tests exist; the runner
+# gracefully skips empty directories.
+#
+# USAGE (in caller repo):
+#   jobs:
+#     quality:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/quality.yml@main
+#       with:
+#         environment-name: dev
+#
+# Inputs:
+#   environment-name: informational only (job name + logs)
+#   shellcheck-severity: minimum severity to gate (warning|error|info|style).
+#                        Default: warning.
+#   schema-strict: if true, schema validation fails on additionalProperties.
+#                  Default: false (allow unknown keys for forward-compat).
+# =============================================================================
+
+name: Quality
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target environment name (informational).'
+        type: string
+        required: false
+        default: 'dev'
+      shellcheck-severity:
+        description: 'Minimum shellcheck severity to gate on (warning|error|info|style).'
+        type: string
+        required: false
+        default: 'warning'
+      schema-strict:
+        description: 'If true, schema validation fails on additionalProperties.'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: "shellcheck (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate inputs
+        uses: spark-match/spark-match-01-devocs/.github/actions/validate-workflow-inputs@main
+        with:
+          values: |
+            {"environment-name": "${{ inputs.environment-name }}", "shellcheck-severity": "${{ inputs.shellcheck-severity }}"}
+          enums: |
+            {"shellcheck-severity": ["warning", "error", "info", "style"]}
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@2.0.1
+        with:
+          additional_files: "scripts .github/actions"
+          severity: ${{ inputs.shellcheck-severity }}
+          ignore_paths: 'tests/'
+
+  manifest-schema:
+    name: "manifest schema (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        with:
+          values: |
+            {"environment-name": "${{ inputs.environment-name }}", "schema-strict": "${{ inputs.schema-strict }}"}
+          enums: |
+            {}
+
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install check-jsonschema
+        run: pip install --quiet check-jsonschema==0.30.0
+
+      - name: Validate manifest against schema
+        run: |
+          check-jsonschema \
+            --schemafile governance/repository-governance.schema.json \
+            governance/repository-governance.json
+
+  bats:
+    name: "bats (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # This job starts empty (PR #1 infra) and gains .bats files in PR #3
+    # (composite actions) and PR #4 (reconciler). Skipped when tests/bats
+    # contains no .bats files (this branch).
+    continue-on-error: false
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (needed by bats installer in some envs)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install bats-core
+        run: |
+          set -euo pipefail
+          BATS_VERSION="1.11.1"
+          TMP_DIR="$(mktemp -d)"
+          curl -fsSL "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" \
+            -o "${TMP_DIR}/bats.tar.gz"
+          tar -xzf "${TMP_DIR}/bats.tar.gz" -C "${TMP_DIR}"
+          sudo "${TMP_DIR}/bats-core-${BATS_VERSION}/install.sh" /usr/local
+          bats --version
+
+      - name: Discover bats files
+        id: discover
+        run: |
+          set -euo pipefail
+          mapfile -t BATS_FILES < <(find tests/bats -maxdepth 1 -type f -name '*.bats' | sort)
+          echo "bats_count=${#BATS_FILES[@]}"
+          if [ "${#BATS_FILES[@]}" -gt 0 ]; then
+            echo "files<<EOF"
+            printf '%s\n' "${BATS_FILES[@]}"
+            echo "EOF"
+          else
+            echo "files=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run bats tests
+        if: steps.discover.outputs.bats_count > 0
+        run: |
+          set -euo pipefail
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            echo "::group::$f"
+            bats "$f"
+            echo "::endgroup::"
+          done <<< "${{ steps.discover.outputs.files }}"
+
+      - name: Skip notice
+        if: steps.discover.outputs.bats_count == 0
+        run: |
+          echo "::notice::No .bats files in tests/bats/. Job lands in PR #3 (composite actions) and PR #4 (reconciler)."
+
+  pytest:
+    name: "pytest (env=${{ inputs.environment-name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # This job starts empty (PR #1 infra) and gains test_*.py files in PR #2.
+    continue-on-error: false
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Discover pytest files
+        id: discover
+        run: |
+          set -euo pipefail
+          mapfile -t PYTEST_FILES < <(find tests/python -maxdepth 1 -type f -name 'test_*.py' | sort)
+          echo "pytest_count=${#PYTEST_FILES[@]}"
+          if [ "${#PYTEST_FILES[@]}" -gt 0 ]; then
+            echo "files<<EOF"
+            printf '%s\n' "${PYTEST_FILES[@]}"
+            echo "EOF"
+          fi
+
+      - name: Run pytest
+        if: steps.discover.outputs.pytest_count > 0
+        run: |
+          set -euo pipefail
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            echo "::group::$f"
+            python -m pytest "$f" -v
+            echo "::endgroup::"
+          done <<< "${{ steps.discover.outputs.files }}"
+
+      - name: Skip notice
+        if: steps.discover.outputs.pytest_count == 0
+        run: |
+          echo "::notice::No test_*.py files in tests/python/. Job lands in PR #2."
