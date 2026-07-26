@@ -29,6 +29,10 @@
 # entiende el repo, asi que ambos equipos aprueban.
 /README.md                                  @spark-match/devops @spark-match/product-owners
 
+# LICENSE es governance doc: cualquier cambio requiere aprobacion explicita
+# de product-owners ademas de devops.
+/LICENSE                                   @spark-match/devops @spark-match/product-owners
+
 # =============================================================================
 # Paths tecnicos - DevOps gobierna
 # =============================================================================
@@ -37,6 +41,14 @@
 
 # Scripts auxiliares (configure-merge-methods.sh, futuros).
 /scripts/                                    @spark-match/devops
+
+# Docs (GOVERNANCE-STANDARD.md, VERSIONING.md, PYTHON-CI.md, CACHE.md).
+# Mixto: contenido tecnico + governance. Doble ownership intencional.
+/docs/                                      @spark-match/devops @spark-match/product-owners
+
+# Governance manifest (repository-governance.json). Cambios aqui afectan
+# el estado desired de TODOS los repos del org, requiere devops.
+/governance/                                @spark-match/devops
 
 # Configuracion tecnica de lint y git ignores.
 /.yamllint.yml                               @spark-match/devops
