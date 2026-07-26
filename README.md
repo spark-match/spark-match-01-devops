@@ -1,18 +1,197 @@
-# Spark Match DevOps — Reusable Workflows
+# Spark Match DevOps
 
-Central repository of CI/CD pipelines for all Spark Match projects. This repo hosts the **GitHub Actions reusable workflows** that consumer projects call. The pattern is one source of truth for shared automation and many thin callers that just dispatch to it, which keeps pipelines identical across projects and concentrates maintenance in a single place.
+Central repository for CI/CD pipelines, GitHub governance, and quality tooling for the `spark-match` organization. This repo is the **single source of truth** for shared automation that consumer repositories call via reusable workflows and composite actions.
 
-The catalog has three layers, defined by what they inspect or mutate:
+## Quick start
 
-- **ecosystem** — checks that read code only (no caller secrets required)
-- **node** — checks for Node workspaces (no caller secrets required)
-- **deploy** — deployers that take an OIDC role via caller-scoped secrets
+Pick the path that matches what you need:
 
-Every recipe accepts an `environment-name` input. It is informational in ecosystem and node recipes (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the role secret there).
+| You want to… | Do this |
+|---|---|
+| **Lint your SAM templates for missing `Lambda::Permission.SourceArn`** | Call `lambda-permission-source-arn.yml` from your caller workflow (see [Catalog](#catalog)) |
+| **Run your Python project's QA pipeline** | Call `python-ci.yml` ([Catalog → python](#python)) |
+| **Deploy a SPA / SAM stack / ECR image / Terraform** | Call one of the [deploy recipes](#deploy) with OIDC + a GitHub Environment |
+| **Apply the org ruleset to a new repo** | Add an entry to `governance/repository-governance.json`, then `./scripts/configure-repo-rulesets.sh --apply --repos <name>` ([Governance](#governance)) |
+| **Add a new reusable workflow** | See [Contributing → adding a recipe](#adding-a-reusable-workflow-or-composite-action) |
+| **Run the 43 tests locally before pushing** | See [Testing](#testing) |
+
+## Architecture
+
+The catalog has **six layers**, each defined by what it inspects or mutates:
+
+| Layer | Path | Caller secrets | Purpose |
+|---|---|---|---|
+| **composite actions** | `.github/actions/<name>/action.yml` | varies | Atomic, single-purpose primitives reusable across many recipes (input validators, runners) |
+| **ecosystem workflows** | `.github/workflows/<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, cfn-nag, etc.) |
+| **node workflows** | `.github/workflows/<node>.yml` | none | npm-based quality gates (eslint, typecheck, test, build) |
+| **python workflows** | `.github/workflows/<python>.yml` | none | uv + ruff + mypy + pytest + bandit + pip-audit |
+| **deploy workflows** | `.github/workflows/<deploy>.yml` | OIDC role per GH Environment | Production deploys (Angular SPA, SAM, ECR, Terraform) |
+| **governance** | `governance/` + `scripts/configure-repo-rulesets.sh` | `gh` admin scope | Declarative state for the org ruleset + idempotent reconciler |
+
+Every recipe (workflow and composite action) accepts an `environment-name` input. It is informational in ecosystem, node, python, and composite layers (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the OIDC role secret there).
+
+### Quality and governance as code
+
+This repo also ships:
+
+- **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
+- **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
+- **`tests/`** — 28 bats tests + 15 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
+
+See [Governance](#governance) for the full picture and [Testing](#testing) for how to run the suite locally.
+
+## Repository layout
+
+```
+spark-match-01-devops/
+├── .github/
+│   ├── CODEOWNERS                  Approval policy (devops + product-owners)
+│   ├── dependabot.yml              Weekly GitHub Actions bump PRs (Mon 06:00 UTC, 4 groups)
+│   │
+│   ├── actions/                    ─── composite actions (atomic primitives) ────
+│   │   ├── validate-workflow-inputs/   JSON-schema-driven input validation
+│   │   └── run-pytest-with-args/       uv + pytest runner with arg assembly
+│   │
+│   └── workflows/
+│       ├── ci.yml                    this repo's own CI (actionlint + gitleaks + yamllint + quality)
+│       ├── codeql.yml                CodeQL on Actions YAML (push + weekly)
+│       ├── quality.yml               reusable: shellcheck + manifest schema + bats + pytest
+│       │
+│       │ ─── ecosystem: read-only, no caller secrets ───────────────────
+│       ├── actionlint.yml            syntax check on Actions workflows
+│       ├── gitleaks.yml              secret scan (needs GITLEAKS_LICENSE)
+│       ├── yamllint.yml              YAML files (uses caller's .yamllint.yml)
+│       ├── terraform-fmt.yml         `terraform fmt -check -recursive`
+│       ├── terraform-validate.yml    per-module init+validate (no backend)
+│       ├── tflint.yml                recursive tflint
+│       ├── checkov.yml               static analysis on Terraform
+│       ├── cfn-nag.yml               cfn_nag_scan on SAM templates
+│       ├── lambda-permission-source-arn.yml  SAM guard for Lambda::Permission SourceArn
+│       │
+│       │ ─── node ──────────────────────────────────────────────────────
+│       ├── eslint.yml                `npm run <lint-script>`
+│       ├── node-test.yml             `npm run <test-script>` with cache
+│       ├── node-typecheck.yml        `npm run <typecheck-script>` with cache
+│       ├── node-build.yml            `npm run <build-script>` with cache
+│       │
+│       │ ─── python ────────────────────────────────────────────────────
+│       ├── python-ci.yml             uv + ruff + mypy + pytest + bandit + pip-audit
+│       │
+│       │ ─── deploy (AWS OIDC, caller-scoped secrets) ──────────────────
+│       ├── angular-spa-deploy.yml    SPA -> S3 + CloudFront invalidation
+│       ├── sam-deploy.yml            sam build + sam deploy
+│       ├── container-deploy-ecr.yml  Dockerfile -> ECR (linux/arm64 default)
+│       ├── terraform-plan.yml        `terraform plan` per env + sticky PR comment
+│       ├── terraform-apply.yml       `terraform apply`, optional drift-only mode
+│       ├── terraform-destroy.yml     `terraform apply -destroy`, double-gated by
+│       │                             confirm-destroy-token (DESTROY-<ENV>) and
+│       │                             optional GH Environment approval. Optional
+│       │                             post-destroy cleanup job (log groups,
+│       │                             SSM params, orphan S3 buckets, active CF
+│       │                             stacks) gated by cleanup-token (CLEANUP-<ENV>)
+│       │
+│       │ ─── article (LaTeX, kept for 07-article's toolchain) ──────────
+│       ├── latex-build.yml           compile LaTeX -> PDF artifact
+│       └── latex-release.yml         bump patch + GitHub Release
+│
+├── docs/
+│   ├── CACHE.md                     canonical cache-key convention v4 + rate-limit guidance
+│   ├── GOVERNANCE-STANDARD.md       org-wide ruleset + CODEOWNERS standard
+│   ├── PYTHON-CI.md                 spec for python-ci.yml (19 inputs + design notes)
+│   └── VERSIONING.md                pin-by-environment rules and conventions
+│
+├── governance/
+│   ├── repository-governance.json       desired state of org ruleset (schema v2)
+│   └── repository-governance.schema.json Draft 2020-12 schema; validated by quality.yml
+│
+├── scripts/                         operational scripts (see scripts/README.md)
+│   ├── README.md                    catalog of scripts
+│   ├── check_lambda_permission_source_arn.py   ⚙️ required by lambda-permission-source-arn.yml
+│   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
+│   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
+│
+├── tests/
+│   ├── bats/
+│   │   ├── helpers/common.bash          shared bats helpers (stubs for uv/pytest)
+│   │   ├── composite-validate.bats      19 tests for validate-workflow-inputs
+│   │   └── composite-run-pytest.bats    9 tests for run-pytest-with-args
+│   ├── python/
+│   │   └── test_lambda.py               15 tests for check_lambda_permission_source_arn.py
+│   └── fixtures/                        SAM template fixtures for pytest
+│
+├── .shellcheckrc                    shell=bash, severity=warning
+├── .yamllint.yml                    lint config for non-workflow YAML
+├── LICENSE                          Apache-2.0 (migration to GPL-3.0 tracked in PR #8)
+└── README.md                        this file
+```
+
+## Composite actions
+
+Composite actions live under `.github/actions/<name>/`. Each one is an **atomic, single-purpose primitive** that reusable workflows compose. Composite actions are the inner layer; workflows are the public surface that consumer repos call.
+
+### `validate-workflow-inputs`
+
+JSON-Schema-driven validator that gates a workflow step on the validity of its inputs. Fails fast with `::error::` annotations so the workflow exits at the first invalid input rather than producing confusing downstream errors. Used by `quality.yml` to gate every `shellcheck-severity`, `schema-strict`, and similar enum input.
+
+Inputs:
+
+| Input | Type | Required | Notes |
+|---|---|---|---|
+| `values` | string | yes | JSON object `{ "<input-name>": "<value>" }` of the values to validate. |
+| `required` | string | no | JSON array of input names that must be non-empty. Empty array = skip REQUIRED checks. |
+| `enums` | string | no | JSON object `{ "<input-name>": ["allowed1", "allowed2"] }`. Empty object = skip ENUM checks. |
+| `patterns` | string | no | JSON object `{ "<input-name>": "regex" }`. Uses `grep -E`. Empty object = skip PATTERN checks. |
+
+Errors are collected (not first-fail), then surfaced as a single `::error::` block listing every problem. Exit code contract: `0` on success, `1` on validation failure.
+
+Usage:
+
+```yaml
+steps:
+  - name: Validate inputs
+    uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+    with:
+      values: |
+        {"environment-name": "${{ inputs.environment-name }}", "shellcheck-severity": "${{ inputs.shellcheck-severity }}"}
+      enums: |
+        {"shellcheck-severity": ["warning", "error", "info", "style"]}
+```
+
+### `run-pytest-with-args`
+
+Thin wrapper around `uv run pytest` that assembles the CLI from caller-provided env vars. Used by every recipe that runs pytest (currently `quality.yml`'s pytest job, future contributors that need test execution).
+
+Inputs (all environment variables, because composite actions run in the caller's shell):
+
+| Env var | Required | Notes |
+|---|---|---|
+| `PYTEST_TARGETS` | yes | Space-separated path(s) passed as positional args. |
+| `EXTRA_FLAGS` | no | Prepended after `pytest`, before targets (e.g. `--tb=short -v`). |
+| `PYTEST_ARGS` | no | Appended after targets (e.g. `--cov=src --cov-report=xml:coverage.xml`). |
+| `WORKING_DIRECTORY` | yes | Where `cd` runs before invoking `uv`. |
+
+Behavior: `set -u`, `set -e`, `set -o pipefail`. Missing `PYTEST_TARGETS` or `WORKING_DIRECTORY` aborts with a non-zero exit. The final command shape is:
+
+```
+uv pytest ${EXTRA_FLAGS} ${PYTEST_TARGETS} ${PYTEST_ARGS}
+```
+
+Usage:
+
+```yaml
+steps:
+  - name: Run tests
+    uses: spark-match/spark-match-01-devops/.github/actions/run-pytest-with-args@main
+    env:
+      PYTEST_TARGETS: tests
+      EXTRA_FLAGS: --tb=short -v
+      PYTEST_ARGS: --cov=src
+      WORKING_DIRECTORY: ${{ inputs.working-directory }}
+```
 
 ## Catalog
 
-The recipes live at the top level of `.github/workflows/`. GitHub Actions requires reusable workflows at the top level, so the three layers above are encoded by naming and ordering rather than by subdirectory.
+The recipes live at the top level of `.github/workflows/`. GitHub Actions requires reusable workflows at the top level, so the four workflow layers (ecosystem, node, python, deploy) are encoded by naming and ordering rather than by subdirectory. Composite actions (see above) live under `.github/actions/` instead.
 
 ### ecosystem
 
@@ -694,8 +873,9 @@ The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) belong to the `07-a
 See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 
 - All callers pin `@main` regardless of target environment; the dev/prod distinction lives in the caller's `environment-name` input (GH Environment gate) and per-environment deploy role ARN secret. See `docs/VERSIONING.md` § "Modelo" for the full rationale.
-- No SemVer in the short term. Breaking changes are communicated by PR + release notes.
+- No SemVer in the short term. Breaking changes are communicated by PR + release notes; consumer repos update their pin as part of their normal cadence.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
+- The org uses a **single-branch model** (`main`-only) since 2026-Q3. There is no `dev` branch and no promotion step. See [Contributing → Workflow](#workflow) for the PR-driven flow.
 - Current catalog: cache-key convention **v4** (PR #62) is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog and [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8 for the `python-ci.yml` recipe-specific history.
 
 ## Cache key convention
@@ -720,102 +900,162 @@ Compared to v3, this:
 - includes `pkgmanager` so npm and pnpm consumers don't share keys.
 - includes `env` so dev and prod are isolated per GH Environment.
 
+### Rate limits and capacity
+
+GitHub Actions cache has two limits to design around:
+
+| Limit | Value | Source |
+|---|---|---|
+| **Per-repo cache size cap** | 10 GB (default; org can raise via plan-specific settings) | [GitHub Docs: Caching dependencies to speed workflows → Limitations](https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-workflows#limitations) |
+| **Cache restore time** | Soft target: < 30 s for a healthy blob; > 60 s = cache miss suspected | Observed on consumer runners |
+| **Cache eviction** | LRU after the cap is hit; recent keys survive, old keys silently dropped | GitHub Docs |
+| **Best-practice cap on key cardinality** | Keep the key space below a few hundred unique entries per repo. Each unique `(<os>, <nodeVersion>, <pkgmanager>, <env>, <H>)` tuple is a separate blob. | Org experience; LRU eviction is silent |
+
+Practical guidance for this catalog:
+
+- **Per-recipe keys, not per-workflow**. Each recipe that caches should have its own `cache-suffix` segment (today only `eslint.yml` uses `recipeTag`; consider adding it to other recipes when rolling a major tool version).
+- **Bump cache on tool upgrade, not on lockfile hash alone**. A `node-version` or `eslint-version` bump should produce a new key, not silently re-use the old blob with stale binaries.
+- **Watch the `<H>` segment**. `sha256(package-lock.json)` means any change to `package-lock.json` (even unrelated deps) invalidates the cache. That's intentional — we want the cache to mirror the exact deps in use — but be aware that a routine `npm i` that touches the lockfile invalidates everything.
+- **If a repo is approaching the 10 GB cap**, the most likely culprit is per-branch or per-PR cache keys leaking. The v4 convention deliberately keeps the key space small (no per-PR segment) to avoid this.
+
 Full rationale, examples, extension guide, and migration notes:
 [`docs/CACHE.md`](docs/CACHE.md).
 
-## Repository layout
-
-```
-spark-match-01-devops/
-├── .github/
-│   ├── CODEOWNERS                  Approval policy (devops + product-owners)
-│   ├── dependabot.yml              Weekly GitHub Actions bump PRs (Mon 06:00 UTC, 4 groups)
-│   └── workflows/
-│       ├── ci.yml                    this repo's own CI (actionlint + gitleaks + yamllint)
-│       ├── codeql.yml                CodeQL on Actions YAML (push + weekly)
-│       │
-│       │ ─── ecosystem: read-only, no caller secrets ───────────────────
-│       ├── actionlint.yml            syntax check on Actions workflows
-│       ├── gitleaks.yml              secret scan (needs GITLEAKS_LICENSE)
-│       ├── yamllint.yml              YAML files (uses caller's .yamllint.yml)
-│       ├── terraform-fmt.yml         `terraform fmt -check -recursive`
-│       ├── terraform-validate.yml    per-module init+validate (no backend)
-│       ├── tflint.yml                recursive tflint
-│       ├── checkov.yml               static analysis on Terraform
-│       ├── cfn-nag.yml               cfn_nag_scan on SAM templates
-│       ├── lambda-permission-source-arn.yml  SAM guard for Lambda::Permission SourceArn
-│       │
-│       │ ─── node ──────────────────────────────────────────────────────
-│       ├── eslint.yml                `npm run <lint-script>`
-│       ├── node-test.yml             `npm run <test-script>` with cache
-│       ├── node-typecheck.yml        `npm run <typecheck-script>` with cache
-│       ├── node-build.yml            `npm run <build-script>` with cache
-│       │
-│       │ ─── python ────────────────────────────────────────────────────
-│       ├── python-ci.yml             uv + ruff + mypy + pytest + bandit + pip-audit
-│       │
-│       │ ─── deploy (AWS OIDC, caller-scoped secrets) ──────────────────
-│       ├── angular-spa-deploy.yml    SPA -> S3 + CloudFront invalidation
-│       ├── sam-deploy.yml            sam build + sam deploy
-│       ├── container-deploy-ecr.yml  Dockerfile -> ECR (linux/arm64 default)
-│       ├── terraform-plan.yml        `terraform plan` per env + sticky PR comment
-│       ├── terraform-apply.yml       `terraform apply`, optional drift-only mode
-│       ├── terraform-destroy.yml     `terraform apply -destroy`, double-gated by
-│       │                             confirm-destroy-token (DESTROY-<ENV>) and
-│       │                             optional GH Environment approval. Optional
-│       │                             post-destroy cleanup job (log groups,
-│       │                             SSM params, orphan S3 buckets, active CF
-│       │                             stacks) gated by cleanup-token (CLEANUP-<ENV>)
-│       │
-│       │ ─── article (LaTeX, kept for 07-article's toolchain) ──────────
-│       ├── latex-build.yml           compile LaTeX -> PDF artifact
-│       └── latex-release.yml         bump patch + GitHub Release
-│
-├── docs/
-│   ├── CACHE.md                     canonical cache-key convention v4
-│   ├── PYTHON-CI.md                 spec for python-ci.yml (19 inputs + design notes)
-│   └── VERSIONING.md                pin-by-environment rules and conventions
-│
-├── scripts/                         operational scripts (4 entries; see scripts/README.md)
-│   ├── README.md                    catalog of scripts
-│   ├── check_lambda_permission_source_arn.py   ⚙️ required by lambda-permission-source-arn.yml
-│   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
-│   └── configure-repo-rulesets.sh              bootstrap ruleset (spark-match-default-branch-protection)
-│
-├── LICENSE                          Apache-2.0
-├── README.md                        this file
-├── .yamllint.yml                    lint config for non-workflow YAML (excludes *.md, .git/, etc.)
-└── .gitignore                       IDE / OS / Terraform artifacts
-```
-
 ## Operational scripts
 
-The `scripts/` directory holds 4 entries: 3 idempotent bash bootstrappers and 1 stdlib-only Python guard. Scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides.
+The `scripts/` directory holds 3 entries: 2 idempotent bash bootstrappers and 1 stdlib-only Python guard. Scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides.
 
-- **`check_lambda_permission_source_arn.py`** is consumed at every CI run by `.github/workflows/lambda-permission-source-arn.yml` (the workflow fetches it from `raw.githubusercontent.com/spark-match/spark-match-01-devops/main/scripts/...`). It is the only script a workflow depends on; do not rename or move it without updating the URL inside the reusable.
-- **`configure-merge-methods.sh`** sets squash-only merge policy on every repo in the org (`delete_branch_on_merge=true`, `squash_merge_commit_title=PR_TITLE`, `squash_merge_commit_message=PR_BODY`).
-- **`configure-repo-rulesets.sh`** creates the `spark-match-default-branch-protection` ruleset per-repo, including `required_status_checks` and `bypass_actors: OrganizationAdmin (always)`. This is the live ruleset on every primary repo today.
+| Script | Type | Purpose | Required by a workflow? |
+|---|---|---|---|
+| [`check_lambda_permission_source_arn.py`](scripts/check_lambda_permission_source_arn.py) | Python | SAM guard: every `AWS::Lambda::Permission` resource in scanned paths must declare `SourceArn:` or `SourceAccount:`. Stdlib-only; regex-based; comment-aware. | **Yes** — consumed by `.github/workflows/lambda-permission-source-arn.yml` (curl from raw @main) |
+| [`configure-merge-methods.sh`](scripts/configure-merge-methods.sh) | Bash | Applies squash-only merge policy across every repo in the org (`delete_branch_on_merge=true`, `squash_merge_commit_title=PR_TITLE`, `squash_merge_commit_message=PR_BODY`). | No |
+| [`configure-repo-rulesets.sh`](scripts/configure-repo-rulesets.sh) | Bash | Declarative reconciler. Reads `governance/repository-governance.json` and reconciles each repo's ruleset to the desired state. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`. Backs up the current ruleset before any `PUT` and never uses `DELETE` unless `--prune-unexpected` is passed. | No |
 
-See [`scripts/README.md`](scripts/README.md) for the full catalog, per-script usage, and the convention for adding new entries.
+See [`scripts/README.md`](scripts/README.md) for per-script usage, full flag list, and the convention for adding new entries.
+
+## Governance
+
+The `spark-match` org uses **declarative governance**: the desired state lives in [`governance/repository-governance.json`](governance/repository-governance.json), validated against a JSON Schema in [`governance/repository-governance.schema.json`](governance/repository-governance.schema.json) (validated by `.github/workflows/quality.yml` on every PR). The reconciler (`scripts/configure-repo-rulesets.sh`) brings each repo's actual state in line with the manifest.
+
+The full narrative reference — including rationale, deviation log, and the 6-point compliance checklist — lives in [`docs/GOVERNANCE-STANDARD.md`](docs/GOVERNANCE-STANDARD.md).
+
+### What the ruleset enforces
+
+Every `spark-match/*` repo runs the same `spark-match-default-branch-protection` ruleset:
+
+- **Squash-only merges** (`allowed_merge_methods: ["squash"]`).
+- **CODE OWNERS review required** (`require_code_owner_review: true`).
+- **No force-pushes** (`non_fast_forward: present`, `required_linear_history: present`).
+- **No branch deletion via API** (`deletion: present`).
+- **Status checks per-repo** (`required_status_checks` keyed by the per-repo list in the manifest).
+- **Admin bypass scoped to pull-request context only** (`bypass_actors[0].bypass_mode: "pull_request"`, not `"always"`). Direct pushes to `main` are blocked.
+
+### Current compliance (snapshot 2026-07-26)
+
+9 of 9 repos compliant: 6/6 criteria on every primary repo. The remaining 1 cosmetic drift ("branch protection" vs "ruleset" wording in the CODEOWNERS header) is non-functional and tracked separately.
+
+### Quick commands
+
+```bash
+# Audit one repo:
+./scripts/configure-repo-rulesets.sh --check --repos spark-match-01-devops
+
+# Apply the manifest to one repo (backs up + PUT):
+./scripts/configure-repo-rulesets.sh --apply --repos spark-match-01-devops
+
+# Dry-run across the whole org:
+for r in spark-match-{00-knowledge-base,01-devops,02-infrastructure,03-backend,04-frontend,05-data-pipeline,06-model-training,07-article,08-deep-agent}; do
+  ./scripts/configure-repo-rulesets.sh --dry-run --repos "$r"
+done
+```
+
+## Testing
+
+The repo ships with **43 tests** that run on every PR via `.github/workflows/quality.yml` and can be executed locally before pushing:
+
+| Suite | Count | File | What it covers |
+|---|---|---|---|
+| bats | 28 | `tests/bats/*.bats` | Composite actions: input validation (19) and pytest arg assembly (9) |
+| pytest | 15 | `tests/python/test_lambda.py` | `check_lambda_permission_source_arn.py` over 5 SAM template fixtures |
+
+### Local setup
+
+```bash
+# bats 1.11.1 (one-time install; CI uses the same version):
+curl -fsSL https://github.com/bats-core/bats-core/archive/refs/tags/v1.11.1.tar.gz | tar -xz -C /tmp
+sudo /tmp/bats-core-1.11.1/install.sh /usr/local
+bats --version
+
+# pytest 9.1.1:
+pip install pytest==9.1.1
+
+# Optional: jq (bats helpers reference it for VALUE parsing):
+# Windows: choco install jq
+# macOS:   brew install jq
+# Linux:   apt-get install jq
+```
+
+### Running locally
+
+```bash
+# All tests:
+bats tests/bats/
+python -m pytest tests/python/ -v
+
+# Just one suite:
+bats tests/bats/composite-validate.bats
+python -m pytest tests/python/test_lambda.py -v -k TestScanTemplate
+```
+
+Expected runtime: < 1 s for bats, < 0.5 s for pytest. CI adds setup overhead (~25 s total per job including bats download + pip install).
+
+### Adding a new test
+
+- For a new bash primitive → add `tests/bats/<subject>.bats`. Reuse `tests/bats/helpers/common.bash` for `ACTION_DIR` and stub definitions.
+- For a new Python script → add `tests/python/test_<subject>.py`. Reuse `tests/fixtures/<case>/template.yaml` patterns.
+
+The CI workflow auto-discovers `tests/bats/*.bats` and `tests/python/test_*.py`, so no other configuration is needed.
 
 ## Contributing
 
-Changes to the catalog follow the git workflow in this repo:
+The org uses a **single-branch model** (`main`-only) since 2026-Q3. All changes target `main` directly via pull request; there is no `dev` branch and no promotion step. The ruleset enforces 1 CODE OWNERS approval plus the strict status check list, so every PR runs the full CI matrix before merge.
 
-1. Branch from `dev` with a Conventional Commits scope (`chore(cookbook): ...`, `feat(node): ...`, `fix(deploy): ...`).
-2. Open a pull request against `dev`.
-3. Code owners review (see `.github/CODEOWNERS`).
-4. After `ci.yml` is green and at least one external caller (for example `orion-backend` for SAM changes, `orion-cognitive-agent` for Python/container changes, `orion-infrastructure` for Terraform changes) has smoke-tested the change in `dev`, the PR is promoted `dev` to `main` by a second PR.
-5. Branch is deleted on merge (ruleset policy).
+### Workflow
 
-When adding a new recipe:
+1. Branch from `main` with a Conventional Commits scope (`chore(cookbook): ...`, `feat(node): ...`, `fix(deploy): ...`, `test(composite): ...`, etc.).
+2. Open a pull request against `main`. Code owners are requested automatically via `.github/CODEOWNERS` (rule `require_code_owner_review: true`).
+3. Wait for `ci.yml` (actionlint + gitleaks + yamllint + quality) to be green and at least one CODE OWNER approval.
+4. Merge with `gh pr merge --squash --admin --delete-branch`. The ruleset deletes the branch on merge automatically.
+5. **Self-approval is impossible** even when you are the only CODE OWNER. If you are the sole reviewer, ask another team member or use the admin-bypass dance below.
+
+### Admin bypass (rare; use sparingly)
+
+The ruleset blocks direct pushes to `main` for everyone, including org admins, because `bypass_mode: "pull_request"` only covers the PR context. The escape hatch is the **dual-disable + direct push dance**, used for emergency hotfixes and CODE OWNERS migrations:
+
+1. Temporarily flip the ruleset's `bypass_actors[0].bypass_mode` to `"always"`.
+2. Temporarily DELETE the legacy branch protection's `enforce_admins` flag.
+3. Direct push to `main`.
+4. Restore both flags to their canonical state (`bypass_mode: "pull_request"` and `enforce_admins: true`).
+5. Verify with `./scripts/configure-repo-rulesets.sh --check`.
+
+The whole window must be < 5 seconds in production. Document the dance in `DEVOPS-UPGRADE.md` and never use it for ordinary PR work. CODE OWNERS review applies even when `bypass_mode: "always"` if the author is itself a CODE OWNER — in that case, push from a non-CODE-OWNER account or temporarily add the path as `* @devops`.
+
+### Adding a reusable workflow or composite action
+
+For workflows:
 
 - Place the file at the top level of `.github/workflows/`. Subfolders break `uses: ./...`.
 - Re-declare `permissions` for whatever the recipe needs (`contents: read`, `id-token: write`, etc.).
 - For deploy recipes, declare secrets by explicit name and follow the same-name convention used by existing deploy recipes.
 - Update `docs/VERSIONING.md` if the recipe introduces a new convention.
 
-When bumping external tool versions:
+For composite actions:
+
+- Place the action at `.github/actions/<name>/action.yml`. The convention is one directory per action.
+- Add bats tests at `tests/bats/<name>.bats` reusing `tests/bats/helpers/common.bash`.
+- If the action accepts an enum / pattern / required input, wire it through `validate-workflow-inputs` as the first step of every workflow that calls it.
+
+### Bumping external tool versions
 
 - Pin `actionlint` to a release tag (never `main`).
 - Pin `yamllint` to `1.35.1` unless the team agrees to migrate to the v2 rewrites.
@@ -823,4 +1063,4 @@ When bumping external tool versions:
 
 ## License
 
-Apache-2.0. See [`LICENSE`](LICENSE).
+Apache-2.0 today. The team has approved a migration to **GPL-3.0** (copyleft) tracked in [PR #8](https://github.com/spark-match/spark-match-01-devops/pulls). Once that lands, every source file will gain an SPDX header and `LICENSE` will be replaced with the GPL-3.0 text. Until then, the Apache-2.0 [`LICENSE`](LICENSE) governs.
