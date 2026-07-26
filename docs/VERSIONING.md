@@ -2,32 +2,45 @@
 
 > **Decision (2026-07)**: NO usamos SemVer en el corto plazo.
 
-## Modelo: pin por ambiente
+## Modelo: single-main-branch con smoke test del caller
 
-Los callers referencian el reusable de la rama que corresponde al ambiente destino:
+Una sola rama `main` es la fuente canonica de todos los reusables. Los callers
+siempre referencian `@main`:
 
-- Caller deploy a **dev** → `uses: .../terraform-apply.yml@dev` (reusable de la rama `dev` de `01-devops`)
-- Caller deploy a **prod** → `uses: .../terraform-apply.yml@main` (reusable de la rama `main` de `01-devops`)
+- Caller deploy a **dev** → `uses: .../terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
+- Caller deploy a **prod** → `uses: .../terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
 
-## Por que este modelo (en vez de SemVer)
+La distincion dev/prod vive en:
 
-Queremos que los cambios en `01-devops` se prueben primero contra deploys a dev (donde romper esta permitido) antes de promoverlos a `main` (que afecta deploys a prod). Es la misma logica que aplicamos al codigo de aplicacion: `dev` es donde se cocina, `main` es lo estable para prod.
+1. El **input `environment-name`** que el caller pasa al recipe (gate de GH Environment).
+2. El **secret `*_DEPLOY_ROLE_ARN`** que el caller inyecta (ARN distinto por ambiente).
+3. El **workflow caller** del repo consumidor que arma el job con la combinacion env + ARN correcta.
+
+## Por que este modelo (en vez de pin por ambiente)
+
+Consolidar sobre `main` elimina la doble fuente de verdad que producia el modelo
+anterior (`dev` para probar, `main` para prod):
+
+- **Un cambio se prueba en el caller real, no en un ambient proxy.** El PR contra `main` referencia el SHA del recipe que se va a mergear; el caller corre sus tests contra ese SHA exacto antes de aprobar.
+- **Drift reducido.** No hay periodo donde `dev` y `main` divergen silenciosamente, ni riesgo de olvidar promover un fix.
+- **Reglas unicas.** El ruleset + CODEOWNERS (transicion gradual a `required_reviewers` por team; ver `DEVOPS-UPGRADE.md` § "Modelo de aprobacion objetivo") protege la unica rama que importa.
+- **Rollback trivial.** `git revert` + push restaura el estado anterior sin coordination entre ramas.
 
 ## Trade-off
 
-- Un cambio en `01-devops@dev` solo rompe los deploys a dev. Prod no se ve afectado.
-- La promocion a `main` del reusable es deliberada (via PR aprobado) = release de facto.
-- Si un caller no respeta el pin por ambiente y deja todo en `@main`, un cambio mal hecho en `01-devops@main` afecta dev y prod simultaneamente. **Auditar cada consumer para que tenga callers separados por env.**
+- Cada PR contra `main` requiere que **al menos un caller canonico** (definido en § "Como prueba de cambios") valide el cambio antes del merge. Si el caller esta apagado o no puede validar (e.g. AWS cost), el reviewer exige evidencia explicita (logs de `act`, salida de tests locales, dry-run output).
+- Un cambio mal hecho en `main` afecta a **todos los callers simultaneamente**. Esto es exactamente lo que el CODEOWNERS + reviewer obligatorio mitiga.
+- No hay anillo de prueba "barato" antes de prod. La mitigacion es la regla de smoke test obligatoria + cherry-pick rapido si algo falla (no hay nada que re-promover).
 
 ## Cuando se justificara SemVer
 
-Si en algun momento queremos publicar versiones estables de los reusables para terceros (no solo los repos internos de spark-match), se haria un tag `vX.Y.Z` en `main` despues de un periodo de prueba en `dev`. Esto requeriria:
+Si en algun momento queremos publicar versiones estables de los reusables para terceros (no solo los repos internos de spark-match), se haria un tag `vX.Y.Z` en `main` despues de un periodo de smoke test con los callers canonicos. Esto requeriria:
 
-1. PR para configurar el proceso de release (crear GitHub Action que tagge automaticamente, etc.)
+1. PR para configurar el proceso de release (crear GitHub Action que taggee automaticamente, etc.)
 2. Migrar los callers a usar la version fija.
 3. Mantener un CHANGELOG.md con breaking changes.
 
-Mientras tanto, los callers internos referencian `@dev` o `@main` segun el ambiente destino.
+Mientras tanto, los callers internos referencian `@main` y confian en el ruleset + CODEOWNERS + reviewer obligatorio.
 
 ## Catalogo de recipes (v3)
 
@@ -170,19 +183,20 @@ callers existentes no requieren cambios.
    `node/` ni `deploy/` — este repo no tiene proyecto Node, SAM, Python ni
    Terraform donde correrlos.
 2. Cada recipe se valida cuando un caller repo la invoca desde su propio
-   PR. Mapeo canonico (`dev` branch mientras la feature no esta en `main`,
-   `@main` una vez promovida):
-   - `python-ci.yml`: `orion-cognitive-agent@dev` (caller canonico de produccion)
-   - `eslint.yml`, `node-test.yml`: `orion-frontend@dev`
-   - `sam-deploy.yml`: `orion-backend@dev`
-   - `container-deploy-ecr.yml`: `orion-cognitive-agent@dev`
+   PR contra `main`. Mapeo canonico (todos los callers usan `@main`):
+   - `python-ci.yml`: `orion-cognitive-agent` (caller canonico de produccion)
+   - `eslint.yml`, `node-test.yml`: `orion-frontend`
+   - `sam-deploy.yml`: `orion-backend`
+   - `container-deploy-ecr.yml`: `orion-cognitive-agent`
    - `terraform-plan.yml`, `terraform-apply.yml`, y los ecosystem
      recipes de Terraform (`terraform-fmt`, `terraform-validate`,
-     `tflint`, `checkov`, `cfn-nag`): `orion-infrastructure@dev`
+     `tflint`, `checkov`, `cfn-nag`): `orion-infrastructure`
+   - `latex-build.yml`, `latex-release.yml`: `spark-match-07-article`
    - `actionlint.yml`, `gitleaks.yml`, `yamllint.yml`, `lambda-permission-source-arn.yml`:
      `ci.yml` local (ver punto 1)
-3. Si la PR cambia un input o agrega un paso al recipe, el reviewer pide
-   smoke test explicito del caller correspondiente antes de promover
-   `dev` -> `main`. Es responsabilidad del PR author, no automatizable
-   sin reintroducir la dependencia cross-owner que esta arquitectura
-   evito.
+3. Si la PR cambia un input o agrega un paso al recipe, el reviewer exige
+   smoke test explicito del caller correspondiente antes de aprobar el
+   merge. Es responsabilidad del PR author declarar la evidencia en la
+   descripcion del PR (logs de `act`, output de tests, captura del
+   caller corriendo contra el SHA de la PR). No automatizable cross-owner
+   sin reintroducir la dependencia que esta arquitectura evito.
