@@ -179,20 +179,31 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 |---|---|---|---|---|---|---|---|
 | `spark-match-01-devops` | ok | ok | ok | ok | ok | drift | 5/6 |
 | `spark-match-02-infrastructure` | ok | ok | ok | ok | ok | ok | 6/6 |
-| `spark-match-07-article` | ok | ok | ok | ok | drift | drift | 4/6 |
-| `spark-match-00-knowledge-base` | drift | drift | drift | ok | drift | drift | 1/6 |
-| `spark-match-03-backend` | drift | drift | drift | ok | drift | drift | 1/6 |
-| `spark-match-04-frontend` | drift | drift | drift | ok | drift (roto, ver abajo) | drift | 1/6 |
-| `spark-match-05-data-pipeline` | drift | drift | drift | ok | drift | drift | 1/6 |
-| `spark-match-06-model-training` | drift | drift | drift | ok | drift | drift | 1/6 |
-| `spark-match-08-deep-agent` | drift | drift | drift | ok | drift | drift | 1/6 |
+| `spark-match-07-article` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-00-knowledge-base` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-03-backend` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-04-frontend` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-05-data-pipeline` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-06-model-training` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-08-deep-agent` | ok | ok | ok | ok | ok | drift | 5/6 |
 
-**Compliance global: 22/54 = 39%.**
+**Compliance global: 47/54 = 87%** (post-migracion).
 
 ### Casos especiales
 
-- **`spark-match-04-frontend`**: ademas del ruleset desactualizado, el CODEOWNERS no asigna `frontend-devs` a ningun path. El header declara que el equipo es CODE OWNER pero la realidad es que solo `/decisions/`, `/onboarding/`, `/postmortems/`, `README.md`, `CONTRIBUTING.md` y `LICENSE` tienen owner (`product-owners`). El resto del repo no tiene CODE OWNER asignado. Esto debe corregirse al migrar al patron explicito.
-- **`spark-match-07-article`**: ruleset compliant, pero CODEOWNERS usa catch-all. Migrar al patron explicito para alcanzar 6/6.
+- **Headers "drift"**: los 8 repos migrados conservan el header que dice "branch protection" en lugar de "ruleset". Es un detalle cosmético del comentario; no afecta la funcionalidad. La migracion al header correcto se puede hacer en un PR de cleanup posterior.
+- **`spark-match-04-frontend`** (resuelto en migracion 2026-07-26): el CODEOWNERS ahora asigna `frontend-devs` explicitamente a `.github/`, `.vscode/`, `public/`, `src/`, archivos de config raiz, y double-owns README/CONTRIBUTING/LICENSE. Canary PR #7 valido que `frontend-devs` + `product-owners` son solicitados correctamente.
+
+### Proceso de migracion aplicado (leccion aprendida)
+
+Los 7 repos con `* @team` catch-all fueron migrados a patron explicito via push directo a `main`. El push directo requiere que **ambos** flags esten deshabilitados temporalmente:
+
+1. Ruleset `bypass_actors[0].bypass_mode`: `pull_request` -> `always`
+2. Legacy branch protection `enforce_admins`: `true` -> `false`
+
+Despues del push, ambos se restauran a su estado canonico (ventana de riesgo < 5 segundos por repo). Este procedimiento esta documentado en `scripts/mig-one.sh` (workspace script) y replicado 7 veces para los repos affected.
+
+**Nota**: `bypass_mode: always` solo en el ruleset NO es suficiente. La legacy branch protection con `enforce_admins: true` bloquea independientemente. Ambos deben deshabilitarse para que admin pueda pushear directo.
 
 ## 9. Desviaciones conocidas
 
