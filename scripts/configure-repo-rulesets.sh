@@ -51,7 +51,8 @@ MODE=""                       # check | apply (uno de los dos obligatorio)
 DRY_RUN=false
 REPOS_FILTER=""
 BACKUP_DIR=""
-STRICT=false                 # shellcheck disable=SC2034  # reserved for future --strict mode (TODO)
+# shellcheck disable=SC2034  # STRICT reserved for future --strict mode (TODO)
+STRICT=false
 PRUNE_UNEXPECTED=false
 JSON_OUTPUT=false
 
