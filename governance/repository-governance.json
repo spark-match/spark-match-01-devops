@@ -39,7 +39,7 @@
       "filePatterns": ["**"],
       "statusChecks": [
         "Plan (dev) / Plan (dev)",
-        "Checkov / checkov (env=ci)"
+        "Checkov"
       ]
     }
   }
