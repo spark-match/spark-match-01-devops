@@ -16,7 +16,7 @@
 # USAGE (in caller repo, typically a wrapper with workflow_dispatch):
 #   jobs:
 #     migrate:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/migrations.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/migrations.yml@main
 #       with:
 #         environment-name: dev
 #         function-name: orion-identity-migrate-dev

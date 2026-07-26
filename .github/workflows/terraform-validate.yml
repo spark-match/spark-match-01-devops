@@ -15,7 +15,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     terraform-validate:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@main
 #       with:
 #         environment-name: dev
 #         terraform-version: 1.15.7     # defaults to 1.10.0
