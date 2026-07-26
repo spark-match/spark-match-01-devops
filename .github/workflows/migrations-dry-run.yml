@@ -18,7 +18,7 @@
 # USAGE (in caller repo's ci.yml or any workflow with pull_request trigger):
 #   jobs:
 #     migrations-dry-run:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/migrations-dry-run.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/migrations-dry-run.yml@main
 #       with:
 #         environment-name: ci
 #         postgres-version: '16'

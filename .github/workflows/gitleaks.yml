@@ -7,7 +7,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     gitleaks:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@main
 #       with:
 #         environment-name: dev
 #

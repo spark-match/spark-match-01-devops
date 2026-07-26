@@ -9,7 +9,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     checkov:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@main
 #       with:
 #         environment-name: dev
 #         checkov-version: 3.2.415       # default; pin for reproducibility

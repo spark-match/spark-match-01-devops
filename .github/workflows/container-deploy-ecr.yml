@@ -21,7 +21,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     deploy-dev:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@main
 #       with:
 #         environment-name: dev
 #         ecr-repository: orion-agent-core-dev

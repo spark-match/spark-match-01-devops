@@ -20,7 +20,7 @@
 # USAGE (in caller repo, typically a wrapper with workflow_dispatch):
 #   jobs:
 #     seed-advisors:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/seed-users-advisors.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/seed-users-advisors.yml@main
 #       with:
 #         environment-name: dev
 #       secrets:

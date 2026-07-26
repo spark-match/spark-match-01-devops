@@ -9,7 +9,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     terraform-fmt:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@dev
+#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@main
 #       with:
 #         environment-name: dev
 #         terraform-version: 1.15.7     # defaults to 1.10.0
