@@ -42,6 +42,42 @@
         "Plan (dev) / Plan (dev)",
         "Checkov"
       ]
+    },
+    "spark-match-00-knowledge-base": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "tech-leads",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
+    "spark-match-03-backend": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "backend-devs",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
+    "spark-match-04-frontend": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "frontend-devs",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
+    "spark-match-05-data-pipeline": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "ai-devs",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
+    "spark-match-06-model-training": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "ai-devs",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
+    "spark-match-08-deep-agent": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "ai-devs",
+      "filePatterns": ["**"],
+      "statusChecks": []
     }
   }
 }
