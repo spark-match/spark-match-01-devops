@@ -952,7 +952,7 @@ Every `spark-match/*` repo runs the same `spark-match-default-branch-protection`
 
 ### Current compliance (snapshot 2026-07-26)
 
-9 of 9 repos compliant: 6/6 criteria on every primary repo. The remaining 1 cosmetic drift ("branch protection" vs "ruleset" wording in the CODEOWNERS header) is non-functional and tracked separately.
+9 of 9 repos compliant on the 5 hard criteria (bypass, squash, deletion, code-owner review, explicit CODEOWNERS paths). 1 of 9 (`spark-match-01-devops`) at full 6/6 since PR #12 aligned its header wording to "ruleset"; the other 8 still have the legacy "branch protection" wording in their CODEOWNERS header comment, which is a cosmetic drift documented in `docs/GOVERNANCE-STANDARD.md` § 8.
 
 ### Quick commands
 

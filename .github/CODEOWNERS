@@ -21,6 +21,16 @@
 # Nota: el autor del PR no puede aprobar su propio PR, ni siquiera siendo
 # CODE OWNER (regla de GitHub). Por ejemplo, un PR abierto por ahincho
 # necesita la aprobacion de cualquier otro miembro del team.
+#
+# Ultima auditoria: 2026-07-26 (PR #12). PRs recientes que anadieron paths
+#   - PR #122: .github/, .yamllint.yml (ya estaban)
+#   - PR #125: tests/ + .shellcheckrc (nuevos, agregados aqui)
+#   - PR #126: README.md (ya estaba)
+#   - PR #129: SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md (nuevos)
+#   - PR #131: .github/release-please-config.json, .github/workflows/release-please.yml,
+#              .release-please-manifest.json, CHANGELOG.md (nuevos)
+#   - PR #132: LICENSE (ya estaba)
+#   - PR #133: examples/ (nuevo, agregado aqui)
 
 # =============================================================================
 # Documentos de governance en raiz
@@ -33,23 +43,57 @@
 # de product-owners ademas de devops.
 /LICENSE                                   @spark-match/devops @spark-match/product-owners
 
+# SECURITY.md define el proceso de disclosure y el SLA. SLA y priorizacion
+# son decisiones de governance.
+/SECURITY.md                                @spark-match/devops @spark-match/product-owners
+
+# CONTRIBUTING.md define el flujo de contribucion. Cambios afectan onboarding
+# de nuevos contribuidores; product-owners tiene voz en el proceso.
+/CONTRIBUTING.md                             @spark-match/devops @spark-match/product-owners
+
+# CODE_OF_CONDUCT.md es la politica comunitaria del repo. Governance puro.
+/CODE_OF_CONDUCT.md                          @spark-match/devops @spark-match/product-owners
+
+# CHANGELOG.md registra los releases del repo. Cambios visibles para
+# consumers; product-owners debe aprobar entradas user-facing.
+/CHANGELOG.md                                @spark-match/devops @spark-match/product-owners
+
 # =============================================================================
 # Paths tecnicos - DevOps gobierna
 # =============================================================================
-# CI/CD reusables, templates, CODEOWNERS, ruleset.
+# CI/CD reusables, templates, CODEOWNERS, ruleset, actions, PR/issue templates.
 /.github/                                    @spark-match/devops
 
-# Scripts auxiliares (configure-merge-methods.sh, futuros).
+# Scripts auxiliares (configure-merge-methods.sh, configure-repo-rulesets.sh,
+# check_lambda_permission_source_arn.py).
 /scripts/                                    @spark-match/devops
 
 # Docs (GOVERNANCE-STANDARD.md, VERSIONING.md, PYTHON-CI.md, CACHE.md).
 # Mixto: contenido tecnico + governance. Doble ownership intencional.
 /docs/                                      @spark-match/devops @spark-match/product-owners
 
-# Governance manifest (repository-governance.json). Cambios aqui afectan
-# el estado desired de TODOS los repos del org, requiere devops.
+# Governance manifest (repository-governance.json + schema). Cambios aqui
+# afectan el estado desired de TODOS los repos del org.
 /governance/                                @spark-match/devops
 
-# Configuracion tecnica de lint y git ignores.
+# Caller examples (examples/caller-minimal/*). Cambios aqui son tecnicos
+# (recetas demostradas, no governance).
+/examples/                                   @spark-match/devops
+
+# Test suite (tests/bats/*.bats, tests/python/*.py, tests/fixtures/*.yaml).
+# Cambios aqui son tecnicos.
+/tests/                                      @spark-match/devops
+
+# =============================================================================
+# Configuracion tecnica - DevOps gobierna
+# =============================================================================
+# yamllint (lint de non-workflow YAML) + gitignore.
 /.yamllint.yml                               @spark-match/devops
 /.gitignore                                  @spark-match/devops
+
+# shellcheck config (lint de bash scripts en scripts/ + .github/actions/).
+/.shellcheckrc                               @spark-match/devops
+
+# release-please manifest (version actual del paquete). Editado por el
+# workflow release-please; cambios manuales solo para bootstrap inicial.
+/.release-please-manifest.json               @spark-match/devops
