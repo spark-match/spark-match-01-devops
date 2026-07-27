@@ -76,13 +76,13 @@ jobs:
           required: project-key|project-name|organization|sources|exclude-patterns|working-directory|env|fail-on-quality-gate
 
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: true
 
       - name: Cache Sonar tools (scanner, GPG keys, embedded runtime)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.sonar
           key: sonar-tools-v8.2.1-${{ runner.os }}
