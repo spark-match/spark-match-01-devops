@@ -46,7 +46,7 @@ See [Governance](#governance) for the full picture and [Testing](#testing) for h
 spark-match-01-devops/
 ├── .github/
 │   ├── CODEOWNERS                  Approval policy (devops + product-owners)
-│   ├── dependabot.yml              Weekly GitHub Actions bump PRs (Mon 06:00 UTC, 4 groups)
+│   ├── dependabot.yml              Weekly GitHub Actions bump PRs (Mon 06:00 UTC, 5 groups, assignee + reviewer)
 │   │
 │   ├── actions/                    ─── composite actions (atomic primitives) ────
 │   │   ├── validate-workflow-inputs/   JSON-schema-driven input validation

@@ -1,24 +1,47 @@
 # =============================================================================
-# Dependabot - Automated dependency updates
+# Dependabot - Automated dependency updates for spark-match-01-devops
 # =============================================================================
 # This repo only consumes GitHub Actions, so the only ecosystem configured is
-# `github-actions`. No package manifests (package.json, requirements.txt, etc.)
-# exist in this repository.
+# `github-actions`. There are no package manifests (package.json,
+# pyproject.toml, requirements.txt, Dockerfile, *.tf) in this repository, so
+# `npm`, `pip`, `docker`, `terraform`, etc. ecosystems do not apply.
 #
-# Schedule: weekly on Mondays at 06:00 UTC.
-# Labels: every PR gets "dependencies" so triage is easy.
-# Groups: all action updates are batched into named groups to reduce noise.
-# Commit prefix: "ci" so the history groups well with other CI changes.
+# Configuration summary:
+#   - Schedule: weekly on Mondays at 06:00 UTC (low-traffic window).
+#   - Branch: defaults to the repo's default branch (`main`).
+#   - Reviewers: @spark-match/devops team (CODE OWNERS of .github/).
+#   - Assignee: ahincho (per the gh-pr-create convention).
+#   - Commit prefix: "ci" (matches existing history from prior Dependabot runs).
+#   - Commit include scope: "deps" (commit message is "ci(deps): bump X").
+#   - Labels: "dependencies" + "ci" so triage routing works.
+#   - Groups: 5 named groups to keep PR noise low (one PR per group instead
+#     of one per action).
+#   - PR limit: 5 (Dependabot default). Raise if the queue gets stale; lower if
+#     it floods.
 #
 # Group rationale:
 #   - aws-actions: stable cadence from AWS (configure-aws-credentials,
-#     setup-sam). Bundling avoids cross-PR conflicts.
-#   - actions/*:  actions/checkout, actions/setup-node, etc. - generic GH
-#     ecosystem, generally backward-compatible within major.
-#   - marocchino: pinned to v3 (sticky-pull-request-comment). Grouped
-#     separately so it doesn't get mixed with major bumps.
-#   - third-party: anything else (rhysd/actionlint via raw URL is not
-#     on this list - it stays manual).
+#     setup-sam, etc.). Bundling avoids cross-PR conflicts on the AWS side.
+#   - actions-ecosystem: actions/checkout, actions/setup-node, actions/cache,
+#     github/codeql-action, etc. - generic GH ecosystem, generally
+#     backward-compatible within major.
+#   - marocchino: pinned to v2 (sticky-pull-request-comment). Grouped
+#     separately so it doesn't get mixed with the broader ecosystem bumps.
+#   - release-tools: googleapis/release-please-action. Separated so a bump
+#     here is visible to release-please maintainers (it can affect the
+#     release-PR flow).
+#   - third-party-actions: catch-all for anything not matched above
+#     (e.g. ludeeus/actionlint, rhysd/actionlint when added as a real
+#     action reference). Always evaluated last.
+#
+# Commit prefix rationale:
+#   - We keep "ci" (matches the prior history) and add include "deps".
+#   - Final commit subject: "ci(deps): bump googleapis/release-please-action
+#     from 4.0.0 to 4.1.0".
+#   - `release-please` reads Conventional Commits. "ci" is in our scope
+#     taxonomy (CONTRIBUTING.md) and `hidden: true` in the
+#     changelog-sections config; this commit will not appear in the
+#     CHANGELOG, which is correct (dependency bumps are not user-facing).
 # =============================================================================
 
 version: 2
@@ -31,27 +54,64 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
+      # Disable Dependabot on holidays / out-of-hours for the team.
+      # Mon 06:00 UTC is well outside UTP working hours (Mon 14:00 local)
+      # and avoids the Sunday-night deploy rush.
     commit-message:
       prefix: "ci"
+      include: "scope"
     labels:
       - "dependencies"
+      - "ci"
+    # Assign Dependabot PRs to ahincho so they show up in the assignee
+    # list (per the gh-pr-create convention: every PR has ahincho as
+    # assignee).
+    assignees:
+      - "ahincho"
+    # Reviewers = CODE OWNERS of .github/. The devops team owns every
+    # GitHub Actions recipe, so a team review makes sense. If the devops
+    # team is empty, Dependabot will fail to assign a reviewer (the PR
+    # still opens; just nobody is requested).
+    reviewers:
+      - "spark-match/devops"
+    # Cap concurrent Dependabot PRs at 5 (default). Dependabot will close
+    # older open PRs in the same package-ecosystem if this is exceeded.
+    open-pull-requests-limit: 5
+    # Rebase strategy: rebase Dependabot's branch on top of the default
+    # branch before merging. Avoids noisy merge commits in the history.
+    # `auto` (default) lets Dependabot pick; we set it explicitly.
+    rebase-strategy: "auto"
     groups:
       aws-actions:
         patterns:
           - "aws-actions/*"
+        # AWS actions tend to bump in lockstep (e.g. configure-aws-credentials
+        # + setup-sam + setup-terraform). One PR per group.
       actions-ecosystem:
         patterns:
           - "actions/*"
           - "github/*"
+        # The generic GH action set: checkout, setup-node, setup-python,
+        # cache, upload-artifact, github/codeql-action, etc.
       marocchino:
         patterns:
           - "marocchino/*"
+        # Separated because sticky-pull-request-comment pins to v2 (no
+        # auto-major bump).
+      release-tools:
+        patterns:
+          - "googleapis/release-please-action"
+        # Separated so a release-please action bump is easy to spot in the
+        # queue. release-please may itself trigger a release PR on the next
+        # push, so timing matters.
       third-party-actions:
         patterns:
           - "*"
+        # Always LAST in evaluation order; matches everything not caught by
+        # the more-specific groups above.
 
 # =============================================================================
-# Known limitation: gitleaks.yml depends on the repo secret `GITLEAKS_LICENSE`,
+# KNOWN LIMITATION: gitleaks.yml depends on the repo secret `GITLEAKS_LICENSE`,
 # but GitHub does NOT forward repo-level secrets to Dependabot contexts (by
 # design - secrets have a tighter blast radius). As a result, every
 # Dependabot-triggered PR fails the gitleaks check with:
@@ -65,4 +125,30 @@ updates:
 #   same value as the repo-level `GITLEAKS_LICENSE` secret.
 # Until that UI step is done, all Dependabot bumps close or stay red on
 # gitleaks (see PR #69 closed 2026-07-21 for an example).
+# =============================================================================
+
+# =============================================================================
+# ADDING A NEW ECOSYSTEM: not currently needed (no manifests in the repo).
+# When a future caller adds package.json / pyproject.toml / Dockerfile /
+# Terraform code, add a second `updates:` entry:
+#
+#   - package-ecosystem: "npm"      # or "pip", "docker", "terraform", etc.
+#     directory: "/"                # or "live/dev" for monorepo layouts
+#     schedule:
+#       interval: "weekly"
+#       day: "monday"
+#       time: "06:00"
+#       timezone: "UTC"
+#     commit-message:
+#       prefix: "ci(deps)"
+#     labels: ["dependencies"]
+#     assignees: ["ahincho"]
+#     reviewers: ["spark-match/devops"]
+#     open-pull-requests-limit: 5
+#     rebase-strategy: "auto"
+#     groups:
+#       ...                          # package-specific grouping
+#
+# Also update the header comment at the top of this file to list the new
+# ecosystem and bump the "Configuration summary" line.
 # =============================================================================
