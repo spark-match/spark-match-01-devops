@@ -90,6 +90,17 @@ Repositories currently using `* @team` plus `/decisions/`, `/onboarding/`, etc. 
 4. Open a PR; require approval from another team member (self-approval is impossible).
 5. Re-run `--check` to confirm no drift introduced by the change.
 
+### Reference implementation: `spark-match-01-devops`
+
+The catalog repo (`spark-match-01-devops`) is the canonical example of a fully-migrated explicit-paths `CODEOWNERS`. As of 2026-07-26 (PR #12), every tracked path is listed explicitly:
+
+| Path | Owner(s) | Why |
+|---|---|---|
+| `/README.md`, `/LICENSE`, `/SECURITY.md`, `/CONTRIBUTING.md`, `/CODE_OF_CONDUCT.md`, `/CHANGELOG.md`, `/docs/` | `@devops` + `@product-owners` | Governance / community docs. Double-owned because they encode policy decisions, not just technical content. |
+| `/.github/`, `/scripts/`, `/governance/`, `/examples/`, `/tests/`, `/.yamllint.yml`, `/.gitignore`, `/.shellcheckrc`, `/.release-please-manifest.json` | `@devops` | Technical artifacts. Single-owned because no policy decisions in them. |
+
+The header comment in the file lists the PRs that introduced each new path so future maintainers can audit why a path exists.
+
 ## 4. Asignacion de equipos por repo
 
 | Repositorio | Tech team obligatorio | Miembros auditados | Notas |
@@ -177,7 +188,7 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 
 | Repositorio | bypass | squash | deletion | codeowner | CODEOWNERS explicito | Header | Compliance |
 |---|---|---|---|---|---|---|---|
-| `spark-match-01-devops` | ok | ok | ok | ok | ok | drift | 5/6 |
+| `spark-match-01-devops` | ok | ok | ok | ok | ok | ok | 6/6 |
 | `spark-match-02-infrastructure` | ok | ok | ok | ok | ok | ok | 6/6 |
 | `spark-match-07-article` | ok | ok | ok | ok | ok | drift | 5/6 |
 | `spark-match-00-knowledge-base` | ok | ok | ok | ok | ok | drift | 5/6 |
@@ -187,7 +198,7 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 | `spark-match-06-model-training` | ok | ok | ok | ok | ok | drift | 5/6 |
 | `spark-match-08-deep-agent` | ok | ok | ok | ok | ok | drift | 5/6 |
 
-**Compliance global: 47/54 = 87%** (post-migracion).
+**Compliance global: 48/54 = 89%** (post-migracion; snapshot 2026-07-26 con PR #12).
 
 ### Casos especiales
 
