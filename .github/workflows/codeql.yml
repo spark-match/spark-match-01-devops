@@ -151,7 +151,7 @@ jobs:
           SEVERITY: ${{ inputs.fail-on-severity }}
         run: |
           set -euo pipefail
-          SARIF_DIR=$(ls -d ${{ runner.temp }}/codeql-* 2>/dev/null || true)
+          SARIF_DIR=$(ls -d "${{ runner.temp }}/codeql-"* 2>/dev/null || true)
           if [ -z "${SARIF_DIR}" ]; then
             echo "::warning::No SARIF directory found; skipping alert check."
             exit 0
@@ -162,30 +162,36 @@ jobs:
             exit 0
           fi
           echo "Analyzing SARIF: ${SARIF_FILE}"
-          # Map severity input to CodeQL SARIF level
+          # Build a JQ selector for alerts at the configured minimum severity.
           case "${SEVERITY}" in
-            error)   LEVEL="error" ;;
-            warning) LEVELS='["warning","error"]' ;;
-            note)    LEVELS='["note","warning","error"]' ;;
-            *)       echo "::error::Invalid fail-on-severity '${SEVERITY}'"; exit 2 ;;
+            error)
+              COUNT=$(jq '[.runs[].results[] | select(.level == "error")] | length' "${SARIF_FILE}")
+              SELECTOR='.level == "error"'
+              ;;
+            warning)
+              COUNT=$(jq '[.runs[].results[] | select((.level // "warning") as $l | $l == "warning" or $l == "error")] | length' "${SARIF_FILE}")
+              SELECTOR='(.level == "warning" or .level == "error")'
+              ;;
+            note)
+              COUNT=$(jq '[.runs[].results[]] | length' "${SARIF_FILE}")
+              SELECTOR='true'
+              ;;
+            *)
+              echo "::error::Invalid fail-on-severity '${SEVERITY}'"
+              exit 2
+              ;;
           esac
-          if [ "${SEVERITY}" = "error" ]; then
-            COUNT=$(jq "[.runs[].results[] | select(.level == \"error\")] | length" "${SARIF_FILE}")
-          else
-            COUNT=$(jq "[.runs[].results[] | select((.level // \"warning\") as \$l | ${LEVELS} | index(\$l))] | length" "${SARIF_FILE}")
-          fi
           echo "Alerts at severity >= ${SEVERITY}: ${COUNT}"
           if [ "${COUNT}" -gt 0 ]; then
             echo "::error::CodeQL found ${COUNT} new alert(s) at severity >= ${SEVERITY} in this PR."
             echo "::group::Top alerts (severity, rule, file:line)"
-            jq -r '
+            jq -r --arg sel "${SELECTOR}" '
               .runs[].results[] |
-              select((.level // "warning") as $l |
-                (if env.SEVERITY == "error" then (.level == "error")
-                 elif env.SEVERITY == "warning" then (.level == "warning" or .level == "error")
-                 else true end)) |
+              select((.level // "warning") as $l | $sel | .) |
               "\(.level // "warning")\t\(.ruleId // "unknown")\t\(.locations[0].physicalLocation.artifactLocation.uri // "?")\:\(.locations[0].physicalLocation.region.startLine // "?")"
-            ' "${SARIF_FILE}" | sort -u | head -n 20
+            ' "${SARIF_FILE}" 2>/dev/null \
+              | sort -u \
+              | head -n 20 || true
             echo "::endgroup::"
             exit 1
           fi
