@@ -151,12 +151,12 @@ jobs:
           SEVERITY: ${{ inputs.fail-on-severity }}
         run: |
           set -euo pipefail
-          SARIF_DIR=$(ls -d "${{ runner.temp }}/codeql-"* 2>/dev/null || true)
+          SARIF_DIR=$(find "${{ runner.temp }}" -maxdepth 1 -type d -name 'codeql-*' 2>/dev/null | head -n1 || true)
           if [ -z "${SARIF_DIR}" ]; then
             echo "::warning::No SARIF directory found; skipping alert check."
             exit 0
           fi
-          SARIF_FILE=$(ls "${SARIF_DIR}"/*.sarif 2>/dev/null | head -n1 || true)
+          SARIF_FILE=$(find "${SARIF_DIR}" -maxdepth 1 -type f -name '*.sarif' 2>/dev/null | head -n1 || true)
           if [ -z "${SARIF_FILE}" ]; then
             echo "::warning::No SARIF file found in ${SARIF_DIR}; skipping alert check."
             exit 0
