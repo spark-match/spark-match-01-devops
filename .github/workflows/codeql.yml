@@ -111,14 +111,32 @@ permissions:
 # Reference: https://github.community/t/deadlock-detected-for-concurrency-group/29762
 
 jobs:
+  # Setup job: parses the comma-separated `languages` input into a JSON
+  # array, since GitHub Actions expressions do NOT have a split() function
+  # (only format/fromJson/join/tojson are available).
+  setup:
+    name: Setup (parse languages)
+    runs-on: ubuntu-latest
+    outputs:
+      languages_json: ${{ steps.parse.outputs.languages_json }}
+    steps:
+      - name: Parse languages input
+        id: parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANGS_JSON=$(echo '${{ inputs.languages }}' | jq -R 'split(",")')
+          echo "languages_json=${LANGS_JSON}" >> "$GITHUB_OUTPUT"
+
   analyze:
     name: "Analyze (${{ matrix.language }})"
     runs-on: ubuntu-latest
+    needs: setup
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJson(format('["{0}"]', inputs.languages)) }}
+        language: ${{ fromJson(needs.setup.outputs.languages_json) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
