@@ -125,7 +125,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LANGS_JSON=$(echo '${{ inputs.languages }}' | jq -R 'split(",")')
+          # jq -n builds the array from a string input via --arg; output
+          # is compact (single-line) JSON safe for GITHUB_OUTPUT.
+          LANGS_JSON=$(jq -nc --arg langs '${{ inputs.languages }}' '$langs | split(",")')
           echo "languages_json=${LANGS_JSON}" >> "$GITHUB_OUTPUT"
 
   analyze:
