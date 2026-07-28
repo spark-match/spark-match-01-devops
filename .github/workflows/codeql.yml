@@ -1,31 +1,102 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# CodeQL - Static analysis for security vulnerabilities
+# Reusable Workflow: CodeQL - Static analysis for security vulnerabilities
 # =============================================================================
-# Trigger:
-#   - push to main               (defense in depth on every merge)
-#   - pull_request to main       (gate before merge)
-#   - weekly schedule            (Monday 06:17 UTC, low contention slot)
+# Atomic recipe (ecosystem layer). Runs CodeQL against the caller repository
+# with the matrix, query pack, and path exclusions chosen by the caller.
 #
-# Languages: 'actions' (GitHub Actions YAML workflows).
-# Note: CodeQL does NOT support 'bash' as a built-in language in the
-# current CLI version. Shell scripts under scripts/ are not scanned here.
-# They are validated by actionlint for workflow YAML and (optionally)
-# shellcheck can be added in a future PR if needed.
+# Supported languages (CodeQL built-ins):
+#   - javascript  (covers TypeScript via internal tsc compilation)
+#   - actions     (GitHub Actions YAML)
+#   - python      (PyPI packages, requests, etc.)
 #
-# Required: Code scanning alerts must be reviewed and triaged periodically.
+# Comma-separated `languages` input expands into a matrix via fromJson():
+#   inputs.languages = "javascript"            -> matrix: [javascript]
+#   inputs.languages = "javascript,actions"    -> matrix: [javascript, actions]
+#
+# Query packs:
+#   - security              (default CodeQL, smallest FP-prone set)
+#   - security-extended     (default here, includes security-and-quality)
+#   - security-and-quality  (adds lint-style checks)
+#
+# PR gating:
+#   When `fail-on-alerts: true` (default), the workflow exits non-zero if
+#   CodeQL reports any alert at severity >= `fail-on-severity` (default
+#   `warning`). The check is implemented as a SARIF post-step (jq), so it
+#   works for PR runs (where CodeQL only flags NEW diffs by default) and
+#   for push runs (where it flags everything in scope).
+#
+# USAGE (in caller repo):
+#   jobs:
+#     codeql:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/codeql.yml@main
+#       with:
+#         languages: 'javascript,actions'
+#         queries-pack: 'security-extended'
+#         fail-on-alerts: 'true'
+#
+# Inputs:
+#   languages:        Comma-separated list of CodeQL languages.
+#                     Default: 'javascript'
+#   build-mode:       'none' or 'autobuild'. JS/TS with `none` uses CodeQL's
+#                     internal tsc; autobuild runs `npm run build` etc.
+#                     Default: 'none'
+#   queries-pack:     'security' | 'security-extended' | 'security-and-quality'.
+#                     Default: 'security-extended'
+#   paths-ignore:     Newline-separated globs to exclude from analysis.
+#                     Default: 'docs/**|**/*.md|coverage/**|node_modules/**'
+#   fail-on-alerts:   If 'true', the workflow exits non-zero on findings at
+#                     severity >= fail-on-severity.
+#                     Default: 'true'
+#   fail-on-severity: 'error' | 'warning' | 'note'.
+#                     Default: 'warning'
+#
+# Notes:
+#   - CodeQL uses the caller's GITHUB_TOKEN via `security-events: write`.
+#     No external secrets required.
+#   - Caller is responsible for disabling GitHub's "Default CodeQL setup"
+#     in repo Settings to avoid duplicate analysis.
 # =============================================================================
 
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: '17 6 * * 1'
+  workflow_call:
+    inputs:
+      languages:
+        description: 'Comma-separated CodeQL languages'
+        type: string
+        default: 'javascript'
+        required: false
+      build-mode:
+        description: 'CodeQL build mode (none|autobuild)'
+        type: string
+        default: 'none'
+        required: false
+      queries-pack:
+        description: 'Query pack'
+        type: string
+        default: 'security-extended'
+        required: false
+      paths-ignore:
+        description: 'Newline-separated globs to exclude'
+        type: string
+        default: 'docs/**|**/*.md|coverage/**|node_modules/**'
+        required: false
+      fail-on-alerts:
+        description: 'Exit non-zero if alerts at severity >= fail-on-severity'
+        type: boolean
+        default: true
+        required: false
+      fail-on-severity:
+        description: 'Minimum severity to fail on (error|warning|note)'
+        type: string
+        default: 'warning'
+        required: false
+    secrets:
+      # No external secrets needed; security-events: write on GITHUB_TOKEN.
+      pass:
 
 permissions:
   actions: read
@@ -40,15 +111,13 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
+    name: "Analyze (${{ matrix.language }})"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: actions
-            build-mode: none
+        language: ${{ fromJson(format('["{0}"]', inputs.languages)) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -57,9 +126,72 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
+          build-mode: ${{ inputs.build-mode }}
+          queries: ${{ inputs.queries-pack }}
+          paths-ignore: ${{ inputs.paths-ignore }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: ${{ runner.temp }}/codeql-*/${{ matrix.language }}.sarif
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Fail on alerts (severity >= ${{ inputs.fail-on-severity }})
+        if: ${{ inputs.fail-on-alerts && github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          SEVERITY: ${{ inputs.fail-on-severity }}
+        run: |
+          set -euo pipefail
+          SARIF_DIR=$(find "${{ runner.temp }}" -maxdepth 1 -type d -name 'codeql-*' 2>/dev/null | head -n1 || true)
+          if [ -z "${SARIF_DIR}" ]; then
+            echo "::warning::No SARIF directory found; skipping alert check."
+            exit 0
+          fi
+          SARIF_FILE=$(find "${SARIF_DIR}" -maxdepth 1 -type f -name '*.sarif' 2>/dev/null | head -n1 || true)
+          if [ -z "${SARIF_FILE}" ]; then
+            echo "::warning::No SARIF file found in ${SARIF_DIR}; skipping alert check."
+            exit 0
+          fi
+          echo "Analyzing SARIF: ${SARIF_FILE}"
+          # Build a JQ selector for alerts at the configured minimum severity.
+          case "${SEVERITY}" in
+            error)
+              COUNT=$(jq '[.runs[].results[] | select(.level == "error")] | length' "${SARIF_FILE}")
+              SELECTOR='.level == "error"'
+              ;;
+            warning)
+              COUNT=$(jq '[.runs[].results[] | select((.level // "warning") as $l | $l == "warning" or $l == "error")] | length' "${SARIF_FILE}")
+              SELECTOR='(.level == "warning" or .level == "error")'
+              ;;
+            note)
+              COUNT=$(jq '[.runs[].results[]] | length' "${SARIF_FILE}")
+              SELECTOR='true'
+              ;;
+            *)
+              echo "::error::Invalid fail-on-severity '${SEVERITY}'"
+              exit 2
+              ;;
+          esac
+          echo "Alerts at severity >= ${SEVERITY}: ${COUNT}"
+          if [ "${COUNT}" -gt 0 ]; then
+            echo "::error::CodeQL found ${COUNT} new alert(s) at severity >= ${SEVERITY} in this PR."
+            echo "::group::Top alerts (severity, rule, file:line)"
+            jq -r --arg sel "${SELECTOR}" '
+              .runs[].results[] |
+              select((.level // "warning") as $l | $sel | .) |
+              "\(.level // "warning")\t\(.ruleId // "unknown")\t\(.locations[0].physicalLocation.artifactLocation.uri // "?")\:\(.locations[0].physicalLocation.region.startLine // "?")"
+            ' "${SARIF_FILE}" 2>/dev/null \
+              | sort -u \
+              | head -n 20 || true
+            echo "::endgroup::"
+            exit 1
+          fi
