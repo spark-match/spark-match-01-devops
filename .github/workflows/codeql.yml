@@ -118,12 +118,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # split() on comma produces a real JSON array; fromJson(format(...))
-        # does NOT split on commas inside the value (known GH Actions quirk).
-        language: ${{ split(inputs.languages, ',') }}
+        # GitHub Actions expressions do NOT have a split() function (only
+        # format/fromJson/join/tojson etc). Pre-parse the comma-separated
+        # languages list into a JSON array via jq, then fromJson() it.
+        language: ${{ fromJson(steps.parse.outputs.languages) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Parse languages input into JSON array
+        id: parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANGS_JSON=$(echo '${{ inputs.languages }}' | jq -R 'split(",")')
+          echo "languages=${LANGS_JSON}" >> "$GITHUB_OUTPUT"
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
