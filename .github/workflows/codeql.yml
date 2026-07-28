@@ -118,7 +118,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJson(format('["{0}"]', inputs.languages)) }}
+        # split() on comma produces a real JSON array; fromJson(format(...))
+        # does NOT split on commas inside the value (known GH Actions quirk).
+        language: ${{ split(inputs.languages, ',') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
