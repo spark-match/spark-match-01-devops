@@ -103,11 +103,12 @@ permissions:
   contents: read
   security-events: write
 
-# Cancel in-progress runs for the same ref. CodeQL is idempotent and the
-# `init` action handles cancellation safely by short-circuiting.
-concurrency:
-  group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# NOTE: do NOT define a `concurrency:` block here. The caller workflow is
+# responsible for setting concurrency on its top-level run. Defining it
+# here too causes a deadlock because both the caller and the called
+# (reusable) job attempt to acquire the same group lock at the same ref.
+#
+# Reference: https://github.community/t/deadlock-detected-for-concurrency-group/29762
 
 jobs:
   analyze:
