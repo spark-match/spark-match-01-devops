@@ -206,14 +206,14 @@ jobs:
         # directory" on `cd`.
         working-directory: .
         run: |
-          if [ -n "${{ inputs.environment }}" ]; then
-            ENV="${{ inputs.environment }}"
+          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+            ENV="${INPUTS_ENVIRONMENT}"
           else
-            ENV=$(basename "${{ inputs.working-directory }}")
+            ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
           fi
           ENV_UPPER=$(echo "${ENV}" | tr '[:lower:]' '[:upper:]')
           EXPECTED="DESTROY-${ENV_UPPER}"
-          ACTUAL="${{ inputs.confirm-destroy-token }}"
+          ACTUAL="${INPUTS_CONFIRM_DESTROY_TOKEN}"
           # We don't echo ACTUAL to logs (would defeat the gate if it ends
           # up in a public job log), but we do echo its length for diagnosis
           # the same way the apply recipe does with `apply-secret-len`.
@@ -231,25 +231,37 @@ jobs:
             echo "| Field | Value |"
             echo "|:---|:---|"
             echo "| Environment | \`${ENV}\` |"
-            echo "| GH Environment (approval gate) | \`${{ inputs.gh-environment || inputs.environment }}\` |"
-            echo "| Auto-approve | \`${{ inputs.auto-approve }}\` |"
-            echo "| Dry-run | \`${{ inputs.dry-run }}\` |"
-            echo "| Target | \`${{ inputs.target }}\` |"
-            echo "| State bucket | \`${{ inputs.backend-bucket }}\` |"
-            echo "| State key | \`${{ inputs.backend-key }}\` |"
-            echo "| Working directory | \`${{ inputs.working-directory }}\` |"
-            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
-            echo "| Triggered by | @${{ github.actor }} |"
+            echo "| GH Environment (approval gate) | \`${INPUTS_GH_ENVIRONMENT}\` |"
+            echo "| Auto-approve | \`${INPUTS_AUTO_APPROVE}\` |"
+            echo "| Dry-run | \`${INPUTS_DRY_RUN}\` |"
+            echo "| Target | \`${INPUTS_TARGET}\` |"
+            echo "| State bucket | \`${INPUTS_BACKEND_BUCKET}\` |"
+            echo "| State key | \`${INPUTS_BACKEND_KEY}\` |"
+            echo "| Working directory | \`${INPUTS_WORKING_DIRECTORY}\` |"
+            echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
+            echo "| Triggered by | @${GITHUB_ACTOR} |"
             echo ""
-            if [ "${{ inputs.dry-run }}" = "true" ]; then
+            if [ "${INPUTS_DRY_RUN}" = "true" ]; then
               echo "> 🟡 **DRY RUN** — plan only, no resources will be destroyed."
-            elif [ "${{ inputs.auto-approve }}" = "true" ]; then
+            elif [ "${INPUTS_AUTO_APPROVE}" = "true" ]; then
               echo "> ⚠️ **AUTO-APPROVED** — no GH Environment approval required."
             else
               echo "> ⚠️ **DESTRUCTIVE** — this will tear down all resources in the destroy plan."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+        env:
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_CONFIRM_DESTROY_TOKEN: ${{ inputs.confirm-destroy-token }}
+          INPUTS_GH_ENVIRONMENT: ${{ inputs.gh-environment || inputs.environment }}
+          INPUTS_AUTO_APPROVE: ${{ inputs.auto-approve }}
+          INPUTS_DRY_RUN: ${{ inputs.dry-run }}
+          INPUTS_TARGET: ${{ inputs.target }}
+          INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+          INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          GITHUB_ACTOR: ${{ github.actor }}
       - name: Validate inputs
         working-directory: .
         run: |
@@ -257,32 +269,32 @@ jobs:
           ERRORS=()
 
           # working-directory: no debe ser vacio
-          if [ -z "${{ inputs.working-directory }}" ]; then
+          if [ -z "${INPUTS_WORKING_DIRECTORY}" ]; then
             ERRORS+=("working-directory: requerido (default '.' si no se especifica)")
           fi
 
           # apply-role-arn-secret: debe corresponder a un secret del caller
-          SECRET_NAME="${{ inputs.apply-role-arn-secret }}"
+          SECRET_NAME="${INPUTS_APPLY_ROLE_ARN_SECRET}"
           if [ -z "$SECRET_NAME" ]; then
             ERRORS+=("apply-role-arn-secret: requerido (ej. AWS_APPLY_ROLE_ARN_DEV)")
           fi
 
           # terraform-version: formato X.Y.Z
-          TF_VERSION="${{ inputs.terraform-version }}"
+          TF_VERSION="${INPUTS_TERRAFORM_VERSION}"
           if ! echo "$TF_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             ERRORS+=("terraform-version: '${TF_VERSION}' no tiene formato X.Y.Z (ej. 1.10.0)")
           fi
 
           # retention-days: 1-90
-          RETENTION="${{ inputs.retention-days }}"
+          RETENTION="${INPUTS_RETENTION_DAYS}"
           if ! echo "$RETENTION" | grep -qE '^[0-9]+$' || [ "$RETENTION" -lt 1 ] || [ "$RETENTION" -gt 90 ]; then
             ERRORS+=("retention-days: '${RETENTION}' fuera de rango 1-90 (limites de GitHub Actions)")
           fi
 
           # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
-          if [ -n "${{ inputs.environment }}" ]; then
-            if ! echo "${{ inputs.environment }}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
-              ERRORS+=("environment: '${{ inputs.environment }}' solo letras/digitos/_/-")
+          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+            if ! echo "${INPUTS_ENVIRONMENT}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("environment: '${INPUTS_ENVIRONMENT}' solo letras/digitos/_/-")
             fi
           fi
 
@@ -290,20 +302,20 @@ jobs:
           # (alfanumerico, guion bajo, guion — se usa como prefijo de matching).
           # Si esta vacio, lo auto-derivamos en el job cleanup-residuals desde
           # backend-bucket con patron <project>-tfstate-<env>.
-          if [ -n "${{ inputs.project-name }}" ]; then
-            if ! echo "${{ inputs.project-name }}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
-              ERRORS+=("project-name: '${{ inputs.project-name }}' solo letras/digitos/_/-")
+          if [ -n "${INPUTS_PROJECT_NAME}" ]; then
+            if ! echo "${INPUTS_PROJECT_NAME}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("project-name: '${INPUTS_PROJECT_NAME}' solo letras/digitos/_/-")
             fi
           fi
-          if [ "${{ inputs.enable-cleanup }}" = "true" ]; then
-            if [ -z "${{ inputs.cleanup-token }}" ]; then
+          if [ "${INPUTS_ENABLE_CLEANUP}" = "true" ]; then
+            if [ -z "${INPUTS_CLEANUP_TOKEN}" ]; then
               ERRORS+=("cleanup-token: requerido cuando enable-cleanup=true (formato esperado: CLEANUP-<ENV>)")
             fi
           fi
 
           # confirm-destroy-token: debe coincidir con DESTROY-<ENV> (verificado arriba)
           # Chequeo defensivo: el step anterior ya abortaria, pero garantizamos no vacio.
-          if [ -z "${{ inputs.confirm-destroy-token }}" ]; then
+          if [ -z "${INPUTS_CONFIRM_DESTROY_TOKEN}" ]; then
             ERRORS+=("confirm-destroy-token: requerido (formato esperado: DESTROY-<ENV>)")
           fi
 
@@ -317,6 +329,16 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+        env:
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_APPLY_ROLE_ARN_SECRET: ${{ inputs.apply-role-arn-secret }}
+          INPUTS_TERRAFORM_VERSION: ${{ inputs.terraform-version }}
+          INPUTS_RETENTION_DAYS: ${{ inputs.retention-days }}
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          INPUTS_PROJECT_NAME: ${{ inputs.project-name }}
+          INPUTS_ENABLE_CLEANUP: ${{ inputs.enable-cleanup }}
+          INPUTS_CLEANUP_TOKEN: ${{ inputs.cleanup-token }}
+          INPUTS_CONFIRM_DESTROY_TOKEN: ${{ inputs.confirm-destroy-token }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -339,16 +361,18 @@ jobs:
         run: terraform fmt -check -recursive -diff
 
       - name: Create plugin cache directory
-        run: mkdir -p ${{ github.workspace }}/.terraform.d/plugin-cache
+        run: mkdir -p ${GITHUB_WORKSPACE}/.terraform.d/plugin-cache
 
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
       - name: Terraform init
         run: |
           INIT_ARGS="-input=false"
-          if [ -n "${{ inputs.backend-bucket }}" ]; then
+          if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
             INIT_ARGS="$INIT_ARGS \
-              -backend-config=bucket=${{ inputs.backend-bucket }} \
-              -backend-config=key=${{ inputs.backend-key }} \
-              -backend-config=region=${{ inputs.aws-region }} \
+              -backend-config=bucket=${INPUTS_BACKEND_BUCKET} \
+              -backend-config=key=${INPUTS_BACKEND_KEY} \
+              -backend-config=region=${INPUTS_AWS_REGION} \
               -backend-config=use_lockfile=true"
           else
             # Caller migrated state to local (or is using a local backend);
@@ -360,7 +384,9 @@ jobs:
           terraform init $INIT_ARGS
         env:
           TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
-
+          INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+          INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
       - name: Backup current state pre-destroy
         # We always upload the current state as an artifact, regardless of
         # whether the caller migrated to local or is still using S3. Lets
@@ -370,9 +396,12 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p /tmp/state-backup
-          aws s3 cp "s3://${{ inputs.backend-bucket }}/${{ inputs.backend-key }}" /tmp/state-backup/terraform.tfstate
+          aws s3 cp "s3://${INPUTS_BACKEND_BUCKET}/${INPUTS_BACKEND_KEY}" /tmp/state-backup/terraform.tfstate
           ls -la /tmp/state-backup
 
+        env:
+          INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+          INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
       - name: Upload state backup artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -395,20 +424,20 @@ jobs:
           # -detailed-exitcode: exit 0 = no changes (env already empty),
           # exit 2 = changes pending, exit 1 = error.
           PLAN_ARGS="-input=false -no-color -lock=false -detailed-exitcode -destroy -out=tfplan-destroy"
-          if [ -n "${{ inputs.tfvars-file }}" ]; then
-            PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
+          if [ -n "${INPUTS_TFVARS_FILE}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var-file=${INPUTS_TFVARS_FILE}"
           fi
-          if [ -n "${{ inputs.var-files }}" ]; then
-            IFS=',' read -ra FILES <<< "${{ inputs.var-files }}"
+          if [ -n "${INPUTS_VAR_FILES}" ]; then
+            IFS=',' read -ra FILES <<< "${INPUTS_VAR_FILES}"
             for f in "${FILES[@]}"; do
               PLAN_ARGS="$PLAN_ARGS -var-file=$f"
             done
           fi
-          if [ -n "${{ inputs.target }}" ]; then
-            PLAN_ARGS="$PLAN_ARGS -target=${{ inputs.target }}"
+          if [ -n "${INPUTS_TARGET}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -target=${INPUTS_TARGET}"
           fi
-          if [ -n "${{ inputs.extra-args }}" ]; then
-            PLAN_ARGS="$PLAN_ARGS ${{ inputs.extra-args }}"
+          if [ -n "${INPUTS_EXTRA_ARGS}" ]; then
+            PLAN_ARGS="$PLAN_ARGS ${INPUTS_EXTRA_ARGS}"
           fi
           echo "Running: terraform plan $PLAN_ARGS"
           # shellcheck disable=SC2086
@@ -423,6 +452,11 @@ jobs:
             echo "had-changes=false" >> "$GITHUB_OUTPUT"
           fi
 
+        env:
+          INPUTS_TFVARS_FILE: ${{ inputs.tfvars-file }}
+          INPUTS_VAR_FILES: ${{ inputs.var-files }}
+          INPUTS_TARGET: ${{ inputs.target }}
+          INPUTS_EXTRA_ARGS: ${{ inputs.extra-args }}
       - name: Convert plan to JSON
         if: steps.plan.outputs.had-changes == 'true'
         run: terraform show -json tfplan-destroy > tfplan-destroy.json
@@ -478,7 +512,7 @@ jobs:
           {
             echo "## Result"
             echo ""
-            if [ "${{ inputs.dry-run }}" = "true" ]; then
+            if [ "${INPUTS_DRY_RUN}" = "true" ]; then
               echo "Mode: **dry-run** (plan only)"
               if [ "${{ steps.plan.outputs.had-changes }}" = "true" ]; then
                 echo ""
@@ -487,8 +521,8 @@ jobs:
             elif [ "${{ steps.apply.outputs.destroy-success }}" = "true" ]; then
               echo "Status: **✓ Destroy complete**"
               echo ""
-              echo "Triggered by: @${{ github.actor }}"
-              echo "Commit: ${{ github.sha }}"
+              echo "Triggered by: @${GITHUB_ACTOR}"
+              echo "Commit: ${GITHUB_SHA}"
               echo "Environment: ${{ steps.env.outputs.environment }}"
             elif [ "${{ steps.plan.outputs.had-changes }}" = "true" ]; then
               echo "Status: **✗ Destroy FAILED** — see logs above."
@@ -497,6 +531,10 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+        env:
+          INPUTS_DRY_RUN: ${{ inputs.dry-run }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_SHA: ${{ github.sha }}
       - name: Notify on destroy failure
         if: failure() && steps.apply.outputs.destroy-success != 'true' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
@@ -544,14 +582,14 @@ jobs:
         id: cleanup-init
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.environment }}" ]; then
-            ENV="${{ inputs.environment }}"
+          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+            ENV="${INPUTS_ENVIRONMENT}"
           else
-            ENV=$(basename "${{ inputs.working-directory }}")
+            ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
           fi
           ENV_UPPER=$(echo "${ENV}" | tr '[:lower:]' '[:upper:]')
           EXPECTED="CLEANUP-${ENV_UPPER}"
-          ACTUAL="${{ inputs.cleanup-token }}"
+          ACTUAL="${INPUTS_CLEANUP_TOKEN}"
           if [ "${ACTUAL}" != "${EXPECTED}" ]; then
             echo "::error::cleanup-token mismatch"
             echo "::error::  expected: CLEANUP-${ENV_UPPER}  (for env=${ENV})"
@@ -559,20 +597,20 @@ jobs:
             echo "::error::Aborting. Refusing to clean up without an exact confirm token."
             exit 1
           fi
-          PROJECT="${{ inputs.project-name }}"
+          PROJECT="${INPUTS_PROJECT_NAME}"
           # Auto-derive from backend-bucket if caller did not pass project-name
           # explicitly. Convention: backend-bucket = "<project>-tfstate-<env>".
           # If the bucket does not match this pattern, fall through to the
           # explicit-input branch below.
-          if [ -z "${PROJECT}" ] && [ -n "${{ inputs.backend-bucket }}" ]; then
-            BB="${{ inputs.backend-bucket }}"
+          if [ -z "${PROJECT}" ] && [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
+            BB="${INPUTS_BACKEND_BUCKET}"
             if [[ "${BB}" =~ ^(.+)-tfstate- ]]; then
               PROJECT="${BASH_REMATCH[1]}"
               echo "::notice::Auto-derived project-name='${PROJECT}' from backend-bucket='${BB}' (pattern: <project>-tfstate-<env>). Override via project-name input if the convention does not match."
             fi
           fi
           if [ -z "${PROJECT}" ]; then
-            echo "::error::project-name could not be determined. Either pass project-name explicitly, or use a backend-bucket matching the pattern <project>-tfstate-<env> (current backend-bucket: '${{ inputs.backend-bucket }}')."
+            echo "::error::project-name could not be determined. Either pass project-name explicitly, or use a backend-bucket matching the pattern <project>-tfstate-<env> (current backend-bucket: '${INPUTS_BACKEND_BUCKET}')."
             exit 1
           fi
           {
@@ -582,12 +620,12 @@ jobs:
             echo "|:---|:---|"
             echo "| Environment | \`${ENV}\` |"
             echo "| Project name (filter prefix) | \`${PROJECT}\` |"
-            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
-            echo "| Dry-run | \`${{ inputs.dry-run }}\` |"
-            echo "| Backend bucket (excluded) | \`${{ inputs.backend-bucket }}\` |"
-            echo "| Triggered by | @${{ github.actor }} |"
+            echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
+            echo "| Dry-run | \`${INPUTS_DRY_RUN}\` |"
+            echo "| Backend bucket (excluded) | \`${INPUTS_BACKEND_BUCKET}\` |"
+            echo "| Triggered by | @${GITHUB_ACTOR} |"
             echo ""
-            if [ "${{ inputs.dry-run }}" = "true" ]; then
+            if [ "${INPUTS_DRY_RUN}" = "true" ]; then
               echo "> **DRY RUN** — no resources will be deleted. Listing only."
             else
               echo "> **ACTIVE** — resources matching the pattern below will be deleted."
@@ -600,6 +638,15 @@ jobs:
             echo "- CloudFormation stacks matching \`${PROJECT}-*\` in any active state (excludes DELETE_COMPLETE history)"
           } >> "$GITHUB_STEP_SUMMARY"
 
+        env:
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_CLEANUP_TOKEN: ${{ inputs.cleanup-token }}
+          INPUTS_PROJECT_NAME: ${{ inputs.project-name }}
+          INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_DRY_RUN: ${{ inputs.dry-run }}
+          GITHUB_ACTOR: ${{ github.actor }}
       - name: Configure AWS credentials (OIDC, apply role)
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
