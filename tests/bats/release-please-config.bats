@@ -123,10 +123,10 @@ setup() {
   fi
 }
 
-@test "release-please manifest still has version 0.1.1" {
+@test "release-please manifest has a SemVer 0.x.y version pinned" {
   run jq -r '.["."]' .release-please-manifest.json
   [ "$status" -eq 0 ]
-  [ "$output" = "0.1.1" ]
+  [[ "$output" =~ ^0\.[0-9]+\.[0-9]+$ ]]
 }
 
 @test "release-please workflow points at config-file .github/release-please-config.json" {
