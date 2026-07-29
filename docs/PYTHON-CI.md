@@ -74,7 +74,7 @@ override as needed.
 | `ruff-targets` | CSV string | no | `src tests` | Passed to `ruff format/check[/--fix]`. |
 | `mypy-targets` | CSV string | no | `src` | Passed to `mypy`. |
 | `pytest-targets` | string | no | `tests` | First positional arg of `pytest`. |
-| `setup-uv-version` | string | no | `latest` | Pinned in `astral-sh/setup-uv@v7` (bumped from v6 in PR #85). |
+| `setup-uv-version` | string | no | `latest` | Pinned in `astral-sh/setup-uv@v7` (latest major). |
 | `cache-suffix` | string | no | `""` (derived) | Cache key suffix; falls back to `environment-name`. See § 4 + `docs/VERSIONING.md`. |
 
 ### 3.3 Coverage + reporting (Sprint B)
@@ -84,7 +84,7 @@ override as needed.
 | `coverage-output` | string | no | `coverage.xml` | Path under `working-directory` uploaded as an artifact. |
 | `pytest-args` | string | no | `""` | Free-form args appended after `pytest --tb=short <pytest-targets>`. Example: `'-n auto -p no:cacheprovider'`. For coverage data, add `--cov=<pkg> --cov-report=xml:<coverage-output>`. |
 | `coverage-threshold` | string | no | `""` | Numeric threshold (e.g. `"80"` or `"75.5"`) enforced via `coverage report --fail-under=N`. Empty disables. Requires `.coverage` to exist (caller adds `--cov` to `pytest-args`). |
-| `permissions-write` | boolean | no | `false` | Opt-in sticky PR coverage comment via `marocchino/sticky-pull-request-comment@v2`. The recipe grants `pull-requests: write` at the workflow level; if `permissions-write` is `false` (default) the step is skipped. |
+| `permissions-write` | boolean | no | `false` | Opt-in sticky PR coverage comment via `marocchino/sticky-pull-request-comment@v3`. The recipe grants `pull-requests: write` at the workflow level; if `permissions-write` is `false` (default) the step is skipped. |
 
 ### 3.4 Sync flags (Sprint B + C)
 
@@ -291,7 +291,7 @@ to have already promoted the lockfile).
 
 ## 8. Known limitations / backlog
 
-These are tracked in `PENDIENTES-CI-CD.md`.
+These are tracked inline below; the previous external backlog file has been retired.
 
 ### 8.0 Already shipped (Sprint B)
 
@@ -318,9 +318,10 @@ These are tracked in `PENDIENTES-CI-CD.md`.
 ### 8.2 Other open (still tracked separately)
 
 - PyPy / GraalPy alternative interpreters: the recipe hardcodes
-  `python-version: ["3.12"]` because of the upstream GHA bug (see § 8.0
-  ref `DIAGNOSTICO-GHA-MATRIX-CROSSOWNER.md`). Once the upstream bug is
-  fixed, `python-versions: '"3.12","pypy3.10"'` style invocation will work.
+  `python-version: ["3.12"]` because of the upstream GHA bug (cross-owner
+  matrix inputs aren't forwarded through reusable workflows). Once the
+  upstream bug is fixed, `python-versions: '"3.12","pypy3.10"'` style
+  invocation will work.
 - Pre-cache of wheels in S3 (cross-branch, cross-runner GHA cache miss):
   deferred — only justified if we observe low cache-hit ratios.
 
@@ -338,7 +339,7 @@ This recipe follows the **single-main-branch** model described in
 - Changes land via a single PR against `main`. The PR must include
   smoke-test evidence from the canonical caller
   (`orion-cognitive-agent`) before merge; the ruleset enforces CODEOWNERS
-  review + status checks (see `DEVOPS-UPGRADE.md` § "Modelo de aprobación").
+  review + status checks (see `CONTRIBUTING.md` § "Pull request workflow").
 
 Self-test enhancement (this Sprint D) is exactly what makes the
 "smoke-tested by orion-cognitive-agent" gate redundant for purely

@@ -13,7 +13,7 @@ Pick the path that matches what you need:
 | **Deploy a SPA / SAM stack / ECR image / Terraform** | Call one of the [deploy recipes](#deploy) with OIDC + a GitHub Environment |
 | **Apply the org ruleset to a new repo** | Add an entry to `governance/repository-governance.json`, then `./scripts/configure-repo-rulesets.sh --apply --repos <name>` ([Governance](#governance)) |
 | **Add a new reusable workflow** | See [Contributing → adding a recipe](#adding-a-reusable-workflow-or-composite-action) |
-| **Run the 90 tests locally before pushing** | See [Testing](#testing) |
+| **Run the 139 tests locally before pushing** | See [Testing](#testing) |
 
 ## Architecture
 
@@ -36,7 +36,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 75 bats tests + 15 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
+- **`tests/`** — 124 bats tests + 15 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -142,18 +142,21 @@ spark-match-01-devops/
 │   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
-├── tests/                                 75 bats + 15 pytest = 90 tests
+├── tests/                                 124 bats + 15 pytest = 139 tests
 │   ├── bats/
 │   │   ├── helpers/
 │   │   │   ├── common.bash                 stubs for uv / pytest + ACTION_DIR
 │   │   │   └── reconciler.bash             gh stub dispatching on URL + HTTP method
-│   │   ├── composite-validate.bats         19 tests for validate-workflow-inputs
+│   │   ├── composite-validate.bats         24 tests for validate-workflow-inputs
 │   │   ├── composite-run-pytest.bats       9 tests for run-pytest-with-args
+│   │   ├── merge-methods.bats              11 tests for configure-merge-methods.sh
 │   │   ├── reconciler-prereqs.bats         10 tests for arg parsing + manifest + gh auth
 │   │   ├── reconciler-payload.bats         9 tests for build_desired_payload jq
 │   │   ├── reconciler-check.bats           11 tests for --check mode
-│   │   ├── reconciler-apply.bats           11 tests for --apply mode (PUT/POST/backup)
-│   │   └── reconciler-edge-cases.bats      6 tests for team cache + CRLF + --org override
+│   │   ├── reconciler-apply.bats           16 tests for --apply mode (PUT/POST/backup)
+│   │   ├── reconciler-edge-cases.bats      6 tests for team cache + CRLF + --org override
+│   │   ├── release-please-config.bats      16 tests for .github/release-please-config.json
+│   │   └── cleanup-batch-pr8.bats          12 tests for PR-8 defaults.run.shell + prs:write + env-name
 │   ├── python/
 │   │   └── test_lambda.py                  15 tests for check_lambda_permission_source_arn.py
 │   └── fixtures/                           SAM template fixtures (5 cases)
@@ -382,7 +385,7 @@ Runs `tflint --recursive` against the caller's Terraform code. Caller must provi
 
 Pins:
 
-- `terraform-linters/setup-tflint@v6` (bumped from v4 in `orion-infrastructure` PR #13)
+- `terraform-linters/setup-tflint@v6` (bumped from v4 in an `orion-infrastructure` PR)
 - `tflint_version: latest` (caller can pin via `.tflint.hcl` config)
 
 Inputs:
@@ -405,9 +408,9 @@ jobs:
 
 #### `checkov.yml`
 
-Runs `checkov --directory . --framework terraform --compact` against the caller's Terraform code. Hard-fail mode: callers justify each skip inline with `# checkov:skip=CKV_AWS_XX:reason` next to the offending resource. Pinned to checkov `3.2.415` for reproducible output (per `orion-infrastructure` PR #18).
+Runs `checkov --directory . --framework terraform --compact` against the caller's Terraform code. Hard-fail mode: callers justify each skip inline with `# checkov:skip=CKV_AWS_XX:reason` next to the offending resource. Pinned to checkov `3.2.415` for reproducible output (discipline established in `orion-infrastructure`).
 
-Discipline (from `orion-infrastructure` PR #18):
+Discipline:
 
 - Findings must be fixed in the resource, OR
 - Findings must be skipped inline with a written justification.
@@ -962,7 +965,7 @@ Required secrets: `AWS_DEPLOY_ROLE_ARN` (same-name convention). Caller must set 
 
 OIDC Lambda invoke specialized for the `orion-identity-migrate-<env>` family of migration Lambdas. `migrations.yml` invokes with `InvocationType=RequestResponse` (waits for completion); `migrations-dry-run.yml` invokes with `InvocationType=DryRun` (read-only sanity check that the Lambda contract is honored without applying any changes).
 
-Why split into two recipes: orion-backend's CD calls the migration Lambda inline after SAM deploy (PR #120), but only on push to main. When ops needs to apply migrations out-of-band (a hotfix in the middle of the night, or a status check before approving a prod deploy), there's no first-class trigger — `migrations.yml` + `migrations-dry-run.yml` fill that gap.
+Why split into two recipes: orion-backend's CD calls the migration Lambda inline after SAM deploy, but only on push to main. When ops needs to apply migrations out-of-band (a hotfix in the middle of the night, or a status check before approving a prod deploy), there's no first-class trigger — `migrations.yml` + `migrations-dry-run.yml` fill that gap.
 
 Inputs (highlights; both files share the same schema):
 
@@ -1008,7 +1011,7 @@ See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 - No SemVer in the short term. Breaking changes are communicated by PR + release notes; consumer repos update their pin as part of their normal cadence.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
 - The org uses a **single-branch model** (`main`-only) since 2026-Q3. There is no `dev` branch and no promotion step. See [Contributing → Workflow](#workflow) for the PR-driven flow.
-- Current catalog: cache-key convention **v4** (PR #62) is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog and [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8 for the `python-ci.yml` recipe-specific history.
+- Current catalog: cache-key convention **v4** is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog and [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8 for the `python-ci.yml` recipe-specific history.
 
 ## Cache key convention
 
@@ -1084,7 +1087,7 @@ Every `spark-match/*` repo runs the same `spark-match-default-branch-protection`
 
 ### Current compliance (snapshot 2026-07-26)
 
-9 of 9 repos compliant on the 5 hard criteria (bypass, squash, deletion, code-owner review, explicit CODEOWNERS paths). 1 of 9 (`spark-match-01-devops`) at full 6/6 since PR #12 aligned its header wording to "ruleset"; the other 8 still have the legacy "branch protection" wording in their CODEOWNERS header comment, which is a cosmetic drift documented in `docs/GOVERNANCE-STANDARD.md` § 8.
+9 of 9 repos compliant on the 5 hard criteria (bypass, squash, deletion, code-owner review, explicit CODEOWNERS paths). 1 of 9 (`spark-match-01-devops`) at full 6/6 since its header wording was aligned to "ruleset"; the other 8 still have the legacy "branch protection" wording in their CODEOWNERS header comment, which is a cosmetic drift documented in `docs/GOVERNANCE-STANDARD.md` § 8.
 
 ### Quick commands
 
@@ -1103,12 +1106,15 @@ done
 
 ## Testing
 
-The repo ships with **90 tests** that run on every PR via `.github/workflows/quality.yml` and can be executed locally before pushing:
+The repo ships with **139 tests** that run on every PR via `.github/workflows/quality.yml` and can be executed locally before pushing:
 
 | Suite | Count | File | What it covers |
 |---|---|---|---|
-| bats — composite actions | 28 | `tests/bats/composite-validate.bats` (19) + `tests/bats/composite-run-pytest.bats` (9) | Input validation (REQUIRED / ENUM / PATTERN) and pytest arg assembly |
-| bats — reconciler | 47 | `tests/bats/reconciler-{prereqs,payload,check,apply,edge-cases}.bats` | Arg parsing, manifest validation, payload construction (jq), `--check` mode, `--apply` mode with PUT/POST/backup/dry-run, edge cases (team-id cache, CRLF, `--org` override) |
+| bats — composite actions | 33 | `tests/bats/composite-validate.bats` (24) + `tests/bats/composite-run-pytest.bats` (9) | Input validation (REQUIRED / ENUM / PATTERN) and pytest arg assembly |
+| bats — merge-methods | 11 | `tests/bats/merge-methods.bats` | `configure-merge-methods.sh`: -F booleans, gh failure propagation, --help exit 0 |
+| bats — reconciler | 52 | `tests/bats/reconciler-{prereqs,payload,check,apply,edge-cases}.bats` | Arg parsing, manifest validation, payload construction (jq), `--check` mode, `--apply` mode with PUT/POST/backup/dry-run, edge cases (team-id cache, CRLF, `--org` override) |
+| bats — release-please | 16 | `tests/bats/release-please-config.bats` | `.github/release-please-config.json` (PR title pattern, header/footer, changelog sections, schema validation, version pin) |
+| bats — workflow hygiene | 12 | `tests/bats/cleanup-batch-pr8.bats` | defaults.run.shell: bash on every workflow; terraform-destroy permissions; environment-name input alias; no `shell: bash` inside workflow_call.inputs |
 | pytest | 15 | `tests/python/test_lambda.py` | `check_lambda_permission_source_arn.py` over 5 SAM template fixtures under `tests/fixtures/sam-template-*/` |
 
 Shared helpers: `tests/bats/helpers/common.bash` (stubs for `uv` + `pytest`, sets `ACTION_DIR`); `tests/bats/helpers/reconciler.bash` (`gh` stub dispatching on URL + HTTP method, with `json_output` helper for JSON assertions).
@@ -1174,7 +1180,7 @@ The ruleset blocks direct pushes to `main` for everyone, including org admins, b
 4. Restore both flags to their canonical state (`bypass_mode: "pull_request"` and `enforce_admins: true`).
 5. Verify with `./scripts/configure-repo-rulesets.sh --check`.
 
-The whole window must be < 5 seconds in production. Document the dance in `DEVOPS-UPGRADE.md` and never use it for ordinary PR work. CODE OWNERS review applies even when `bypass_mode: "always"` if the author is itself a CODE OWNER — in that case, push from a non-CODE-OWNER account or temporarily add the path as `* @devops`.
+The whole window must be < 5 seconds in production. Document the dance (per repo, never in this public repo) and never use it for ordinary PR work. CODE OWNERS review applies even when `bypass_mode: "always"` if the author is itself a CODE OWNER — in that case, push from a non-CODE-OWNER account or temporarily add the path as `* @devops`.
 
 ### Adding a reusable workflow or composite action
 
