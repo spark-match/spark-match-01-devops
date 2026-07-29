@@ -56,9 +56,7 @@
 
 # CHANGELOG.md registra los releases del repo. Cambios visibles para
 # consumers; product-owners debe aprobar entradas user-facing.
-# github-actions es CODE OWNER para que el workflow release-please
-# pueda crear el PR de release con require_code_owner_review=true.
-/CHANGELOG.md                                @spark-match/devops @spark-match/product-owners @github-actions
+/CHANGELOG.md                                @spark-match/devops @spark-match/product-owners
 
 # =============================================================================
 # Paths tecnicos - DevOps gobierna
@@ -98,6 +96,4 @@
 
 # release-please manifest (version actual del paquete). Editado por el
 # workflow release-please; cambios manuales solo para bootstrap inicial.
-# github-actions es CODE OWNER para que el workflow pueda crear el
-# release PR cuando require_code_owner_review=true esta activo.
-/.release-please-manifest.json               @spark-match/devops @github-actions
+/.release-please-manifest.json               @spark-match/devops
