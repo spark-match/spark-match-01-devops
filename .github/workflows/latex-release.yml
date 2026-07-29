@@ -91,11 +91,14 @@ jobs:
 
       - name: Rename PDF with version
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          ROOT_BASE=$(echo "${{ inputs.root-file }}" | sed 's/\.tex$//')
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
+          ROOT_BASE=$(echo "${INPUTS_ROOT_FILE}" | sed 's/\.tex$//')
           cp "${ROOT_BASE}.pdf" "release-${VERSION}.pdf"
           ls -la release-*.pdf
 
+        env:
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
+          INPUTS_ROOT_FILE: ${{ inputs.root-file }}
       - name: Create GitHub Release with PDF
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3
         with:

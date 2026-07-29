@@ -67,13 +67,13 @@ jobs:
           set -euo pipefail
           ERRORS=()
 
-          if [ -z "${{ inputs.environment-name }}" ]; then
+          if [ -z "${INPUTS_ENVIRONMENT_NAME}" ]; then
             ERRORS+=("environment-name: requerido")
           fi
           # environment-name must be kebab-case lowercase + digits
           # (matches orion-infrastructure's env validation).
-          if ! echo "${{ inputs.environment-name }}" | grep -qE '^[a-z0-9-]{1,32}$'; then
-            ERRORS+=("environment-name: formato invalido '${{ inputs.environment-name }}' (esperado kebab-case lowercase, 1-32 chars)")
+          if ! echo "${INPUTS_ENVIRONMENT_NAME}" | grep -qE '^[a-z0-9-]{1,32}$'; then
+            ERRORS+=("environment-name: formato invalido '${INPUTS_ENVIRONMENT_NAME}' (esperado kebab-case lowercase, 1-32 chars)")
           fi
 
           if [ ${#ERRORS[@]} -gt 0 ]; then
@@ -85,6 +85,8 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
@@ -98,14 +100,14 @@ jobs:
         # we parse the summary on success.
         run: |
           set -euo pipefail
-          FUNCTION_NAME="orion-seed-users-${{ inputs.environment-name }}"
+          FUNCTION_NAME="orion-seed-users-${INPUTS_ENVIRONMENT_NAME}"
           PAYLOAD='{"group":"agents"}'
-          echo "===== Invoking ${FUNCTION_NAME} (env=${{ inputs.environment-name }}, group=agents) ====="
+          echo "===== Invoking ${FUNCTION_NAME} (env=${INPUTS_ENVIRONMENT_NAME}, group=agents) ====="
           echo "Payload: ${PAYLOAD}"
 
           RESULT=$(aws lambda invoke \
             --function-name "${FUNCTION_NAME}" \
-            --region "${{ inputs.aws-region }}" \
+            --region "${INPUTS_AWS_REGION}" \
             --payload "${PAYLOAD}" \
             --cli-binary-format raw-in-base64-out \
             --output json \
@@ -156,18 +158,27 @@ jobs:
             exit 1
           fi
 
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
       - name: Seed agents summary
         if: always()
         run: |
           {
-            echo "## Seed Agents - \`${{ inputs.environment-name }}\`"
+            echo "## Seed Agents - \`${INPUTS_ENVIRONMENT_NAME}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Status | \${{ job.status }} |"
-            echo "| Environment | \`${{ inputs.environment-name }}\` |"
+            echo "| Status | \${JOB_STATUS} |"
+            echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
             echo "| Group | \`agents\` |"
-            echo "| Function | \`orion-seed-users-${{ inputs.environment-name }}\` |"
+            echo "| Function | \`orion-seed-users-${INPUTS_ENVIRONMENT_NAME}\` |"
             echo ""
-            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "**Run**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          JOB_STATUS: ${{ job.status }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
