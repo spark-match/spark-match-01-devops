@@ -86,13 +86,15 @@ jobs:
             -not -path './.git/*' \
             -exec dirname {} \; 2>/dev/null | sort -u)
           if [ -z "$DIRS" ]; then
-            echo "::error::No Terraform modules discovered under '${{ inputs.working-directory }}' (no *.tf files)."
+            echo "::error::No Terraform modules discovered under '${INPUTS_WORKING_DIRECTORY}' (no *.tf files)."
             exit 1
           fi
           COUNT=$(printf '%s\n' "$DIRS" | wc -l | tr -d ' ')
           echo "Discovered ${COUNT} module(s):"
           printf '%s\n' "$DIRS" | sed 's/^/  - /'
 
+        env:
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       - name: terraform init -backend=false + validate per module
         working-directory: ${{ inputs.working-directory }}
         run: |

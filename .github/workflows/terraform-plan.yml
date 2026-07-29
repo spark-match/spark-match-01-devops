@@ -155,32 +155,32 @@ jobs:
           ERRORS=()
 
           # working-directory: no debe ser vacio
-          if [ -z "${{ inputs.working-directory }}" ]; then
+          if [ -z "${INPUTS_WORKING_DIRECTORY}" ]; then
             ERRORS+=("working-directory: requerido (default '.' si no se especifica)")
           fi
 
           # plan-role-arn-secret: debe corresponder a un secret que existe
-          SECRET_NAME="${{ inputs.plan-role-arn-secret }}"
+          SECRET_NAME="${INPUTS_PLAN_ROLE_ARN_SECRET}"
           if [ -z "$SECRET_NAME" ]; then
             ERRORS+=("plan-role-arn-secret: requerido (ej. AWS_PLAN_ROLE_ARN_DEV)")
           fi
 
           # terraform-version: formato X.Y.Z
-          TF_VERSION="${{ inputs.terraform-version }}"
+          TF_VERSION="${INPUTS_TERRAFORM_VERSION}"
           if ! echo "$TF_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             ERRORS+=("terraform-version: '$TF_VERSION' no tiene formato X.Y.Z (ej. 1.10.0)")
           fi
 
           # retention-days: 1-90 (limites de GitHub Actions)
-          RETENTION="${{ inputs.retention-days }}"
+          RETENTION="${INPUTS_RETENTION_DAYS}"
           if ! echo "$RETENTION" | grep -qE '^[0-9]+$' || [ "$RETENTION" -lt 1 ] || [ "$RETENTION" -gt 90 ]; then
             ERRORS+=("retention-days: '$RETENTION' fuera de rango 1-90 (limites de GitHub Actions)")
           fi
 
           # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
-          if [ -n "${{ inputs.environment }}" ]; then
-            if ! echo "${{ inputs.environment }}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
-              ERRORS+=("environment: '${{ inputs.environment }}' solo puede contener letras, digitos, _ o -")
+          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+            if ! echo "${INPUTS_ENVIRONMENT}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("environment: '${INPUTS_ENVIRONMENT}' solo puede contener letras, digitos, _ o -")
             fi
           fi
 
@@ -194,6 +194,12 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+        env:
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_PLAN_ROLE_ARN_SECRET: ${{ inputs.plan-role-arn-secret }}
+          INPUTS_TERRAFORM_VERSION: ${{ inputs.terraform-version }}
+          INPUTS_RETENTION_DAYS: ${{ inputs.retention-days }}
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
       - name: Resolve environment identifier
         id: env
         # Este step corre ANTES de checkout, asi que el working-directory del
@@ -201,14 +207,17 @@ jobs:
         # para que GitHub no intente hacer cd a un dir que no existe.
         working-directory: .
         run: |
-          if [ -n "${{ inputs.environment }}" ]; then
-            ENV="${{ inputs.environment }}"
+          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+            ENV="${INPUTS_ENVIRONMENT}"
           else
-            ENV=$(basename "${{ inputs.working-directory }}")
+            ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
           fi
           echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
           echo "Resolved environment: ${ENV}"
 
+        env:
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -247,16 +256,18 @@ jobs:
         run: terraform fmt -check -recursive -diff
 
       - name: Create plugin cache directory
-        run: mkdir -p ${{ github.workspace }}/.terraform.d/plugin-cache
+        run: mkdir -p ${GITHUB_WORKSPACE}/.terraform.d/plugin-cache
 
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
       - name: Terraform init
         run: |
           INIT_ARGS="-input=false"
-          if [ -n "${{ inputs.backend-bucket }}" ]; then
+          if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
             INIT_ARGS="$INIT_ARGS \
-              -backend-config=bucket=${{ inputs.backend-bucket }} \
-              -backend-config=key=${{ inputs.backend-key }} \
-              -backend-config=region=${{ inputs.aws-region }} \
+              -backend-config=bucket=${INPUTS_BACKEND_BUCKET} \
+              -backend-config=key=${INPUTS_BACKEND_KEY} \
+              -backend-config=region=${INPUTS_AWS_REGION} \
               -backend-config=use_lockfile=true"
           else
             INIT_ARGS="$INIT_ARGS -backend=false"
@@ -266,7 +277,9 @@ jobs:
           terraform init $INIT_ARGS
         env:
           TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
-
+          INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+          INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
       - name: Terraform validate
         run: terraform validate -no-color
 
@@ -278,20 +291,20 @@ jobs:
           # has-changes detection; without it plan always exits 0 and the
           # "No changes" comment is posted even when there are changes).
           PLAN_ARGS="-input=false -no-color -lock=false -detailed-exitcode -out=tfplan"
-          if [ -n "${{ inputs.tfvars-file }}" ]; then
-            PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.tfvars-file }}"
+          if [ -n "${INPUTS_TFVARS_FILE}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var-file=${INPUTS_TFVARS_FILE}"
           fi
-          if [ -n "${{ inputs.var-files }}" ]; then
-            IFS=',' read -ra FILES <<< "${{ inputs.var-files }}"
+          if [ -n "${INPUTS_VAR_FILES}" ]; then
+            IFS=',' read -ra FILES <<< "${INPUTS_VAR_FILES}"
             for f in "${FILES[@]}"; do
               PLAN_ARGS="$PLAN_ARGS -var-file=$f"
             done
           fi
-          if [ -n "${{ inputs.target }}" ]; then
-            PLAN_ARGS="$PLAN_ARGS -target=${{ inputs.target }}"
+          if [ -n "${INPUTS_TARGET}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -target=${INPUTS_TARGET}"
           fi
-          if [ -n "${{ inputs.extra-args }}" ]; then
-            PLAN_ARGS="$PLAN_ARGS ${{ inputs.extra-args }}"
+          if [ -n "${INPUTS_EXTRA_ARGS}" ]; then
+            PLAN_ARGS="$PLAN_ARGS ${INPUTS_EXTRA_ARGS}"
           fi
           echo "Running: terraform plan $PLAN_ARGS"
           # shellcheck disable=SC2086
@@ -311,6 +324,11 @@ jobs:
             echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
 
+        env:
+          INPUTS_TFVARS_FILE: ${{ inputs.tfvars-file }}
+          INPUTS_VAR_FILES: ${{ inputs.var-files }}
+          INPUTS_TARGET: ${{ inputs.target }}
+          INPUTS_EXTRA_ARGS: ${{ inputs.extra-args }}
       - name: Convert plan to JSON
         if: steps.plan.outputs.has-changes == 'true'
         run: terraform show -json tfplan > tfplan.json
@@ -319,8 +337,8 @@ jobs:
         if: steps.plan.outputs.has-changes == 'true'
         run: |
           ENV="${{ steps.env.outputs.environment }}"
-          WD="${{ inputs.working-directory }}"
-          REGION="${{ inputs.aws-region }}"
+          WD="${INPUTS_WORKING_DIRECTORY}"
+          REGION="${INPUTS_AWS_REGION}"
           {
             echo "## Terraform Plan Summary"
             echo ""
@@ -329,8 +347,8 @@ jobs:
             echo "| Environment | \`${ENV}\` |"
             echo "| Working directory | \`${WD}\` |"
             echo "| AWS region | \`${REGION}\` |"
-            echo "| State bucket | \`${{ inputs.backend-bucket }}\` |"
-            echo "| State key | \`${{ inputs.backend-key }}\` |"
+            echo "| State bucket | \`${INPUTS_BACKEND_BUCKET}\` |"
+            echo "| State key | \`${INPUTS_BACKEND_KEY}\` |"
             echo ""
             echo "### Resource changes"
             echo ""
@@ -342,6 +360,11 @@ jobs:
             ' tfplan.json || echo "_(no resource changes)_"
           } >> "$GITHUB_STEP_SUMMARY"
 
+        env:
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
+          INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
       - name: Upload plan artifact
         if: steps.plan.outputs.has-changes == 'true'
         uses: actions/upload-artifact@v7
