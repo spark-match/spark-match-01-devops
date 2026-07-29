@@ -1202,6 +1202,96 @@ When **manually** bumping (e.g. when changing the version a recipe defaults to):
 - Update the recipe header comment + the catalog's `README.md` "Catalog" section.
 - Open a PR; the Dependabot workflow picks up downstream version pinning.
 
+## Security
+
+The repo is the org-wide CI/CD catalog, so a security defect here
+propagates to every `spark-match/*` consumer. The toolchain is
+layered: cheap static checks on every PR, deeper analysis on push
+and weekly.
+
+### Layered toolchain
+
+| Tool | Scope | Trigger | Status | Where |
+|---|---|---|---|---|
+| **actionlint** | Actions YAML syntax | every PR + push | required check | `.github/workflows/actionlint.yml` |
+| **yamllint** | YAML style + parse | every PR + push | required check | `.github/workflows/yamllint.yml` |
+| **gitleaks** | secret scan over git history | every PR + push | required check (org-scoped) | `.github/workflows/gitleaks.yml` |
+| **CodeQL** | `actions/*` rules (code-injection, unpinned-tag, envvar-injection) | every PR + push + weekly | informational | `.github/workflows/codeql.yml` |
+| **Dependabot** | weekly bump PRs for GitHub Actions | Mon 06:00 UTC | enabled | `.github/dependabot.yml` |
+| **Dependabot security updates** | auto-PR for known-vulnerable dependencies | on alert | enabled | repo-level (set via `PATCH .../dependabot_security_updates`) |
+| **Secret scanning** | native GH secret detection | always | **disabled** (requires GHAS paid plan) | n/a |
+| **Push protection** | block pushes that contain secrets | always | **disabled** (requires GHAS paid plan) | n/a |
+
+### CodeQL posture (snapshot 2026-07-29)
+
+After Sprint A + B + C (PRs #148-#157):
+
+| Rule | Alerts opened | Alerts fixed |
+|---|---|---|
+| `actions/unpinned-tag` | 71 | 71 (SHA-pinning) |
+| `actions/code-injection/medium` | 410 | 410 (env-isolation) |
+| `actions/envvar-injection/medium` | 6 | 6 (newline strip + `$GITHUB_ENV` write pattern) |
+| **Total** | **502** | **502 (100%)** |
+
+### Secret scanning: paid-plan limitation
+
+The `spark-match` organization is on **GitHub Free**. The following
+features require **GitHub Advanced Security** (paid, per-user):
+
+- `secret_scanning` (provider patterns + non-provider patterns)
+- `secret_scanning_push_protection`
+- `secret_scanning_validity_checks`
+
+These are configured off at the repo level (`security_and_analysis`
+shows `disabled`). We work around this with:
+
+1. **`gitleaks.yml`** runs on every PR + push, scanning the full
+   git history. This catches the same set of secrets as native
+   secret scanning plus custom patterns.
+2. **CODEOWNERS** + `require_code_owner_review: true` ensures a
+   human reviews every line before merge.
+3. **Strict secrets policy**: no `.env` files in the repo, all
+   secrets in `gh secret set` or GitHub Actions secrets, never
+   echoed in `run:` blocks (see `.github/workflows/release-please.yml`
+   for the template).
+
+If you find a leaked secret in git history:
+
+1. **Rotate the secret immediately** (do not wait for a PR).
+2. Open a private Security Advisory (see [SECURITY.md](SECURITY.md)).
+3. The team will coordinate history rewriting (`git filter-repo`) and
+   key rotation across all consumers.
+
+### If you fork or upgrade to GitHub Team / Enterprise
+
+Upgrading `spark-match` to GitHub Team ($4/user/month) unlocks:
+
+- **Secret scanning** with provider patterns (AWS keys, GitHub PATs, etc.)
+- **Push protection** (block `git push` containing a secret)
+- **Validity checks** (alert only if the leaked credential is still active)
+
+To enable after upgrade:
+
+```bash
+gh api -X PATCH /repos/spark-match/spark-match-01-devops \
+  --input enable-ghas.json
+```
+
+`enable-ghas.json`:
+
+```json
+{
+  "security_and_analysis": {
+    "secret_scanning": {"status": "enabled"},
+    "secret_scanning_push_protection": {"status": "enabled"},
+    "secret_scanning_validity_checks": {"status": "enabled"}
+  }
+}
+```
+
+Then remove the gitleaks workaround from the catalog or keep it as
+defense-in-depth (recommended).
+
 ## License
 
 GNU General Public License v3.0 or later ([`LICENSE`](LICENSE)). All source files carry SPDX-License-Identifier headers (`GPL-3.0-or-later`). Copyleft: derivative works must also be GPL-3.0+ when distributed.

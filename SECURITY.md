@@ -60,13 +60,24 @@ The following are **not** considered vulnerabilities of this repo and should be 
 
 ## Security Baseline (inherited)
 
-This repo follows the org-wide security baseline documented in `~/.config/opencode/security-baseline.md` (per developer machine) and `docs/GOVERNANCE-STANDARD.md` § 6 (per repo). Key invariants:
+This repo follows the org-wide security baseline documented in `~/.config/opencode/security-baseline.md` (per developer machine) and `docs/GOVERNANCE-STANDARD.md` �� 6 (per repo). Key invariants:
 
 - `permissions: minimum` on every workflow (never `write-all`).
 - `secrets: inherit` is blocked cross-owner; deploy recipes use **same-name secret convention** (`AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`).
 - No `.env` files in the repo; secrets live in `gh secret` or Actions secrets only.
 - CODE OWNERS review is required on every PR to `main` (ruleset field `require_code_owner_review: true`).
 - Branch protection blocks direct pushes; admin bypass is scoped to the pull-request context.
+
+## Security Tooling (current state, 2026-07-29)
+
+See the `## Security` section in [README.md](README.md#security) for the full toolchain matrix. Summary:
+
+- **Required CI checks**: actionlint, yamllint, gitleaks (on every PR + push)
+- **CodeQL**: runs on PR + push + weekly; 502 alerts fixed across Sprints A/B/C (none open)
+- **Dependabot security updates**: enabled (auto-PR for vulnerable deps)
+- **Native GitHub secret scanning**: **disabled** (requires GitHub Advanced Security paid plan)
+
+The repo's Free-plan posture is documented inline so future maintainers know why `gitleaks.yml` exists in the catalog and how to upgrade if/when `spark-match` moves to a paid plan.
 
 ## Acknowledgements
 
