@@ -57,13 +57,21 @@ STRICT=false
 PRUNE_UNEXPECTED=false
 JSON_OUTPUT=false
 
+# Estado acumulado (declarado temprano porque log_warn puede mutarlos).
+declare -a RESULTS=()
+ANY_DRIFT=false
+ANY_FAIL=false
+
 # --- Parsing de args ---------------------------------------------------------
 usage() {
-  sed -n '2,80p' "$0" | sed -E 's/^# ?//'
+  # Imprime lineas 2..ultima linea del bloque de documentacion
+  # (incluye Uso + Salidas + Exit codes + el arg parser) y luego sale.
+  # El rango exacto se mantiene al final del `case` del arg parser; cualquier
+  # codigo nuevo antes de ese limite requiere ajustar este numero.
+  sed -n '2,90p' "$0" | sed -E 's/^# ?//'
   exit "${1:-0}"
 }
 
-# shellcheck disable=SC2034  # STRICT and PRUNE_UNEXPECTED reserved for future use (TODO: implement)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)        MODE="check"; shift ;;
@@ -127,8 +135,17 @@ validate_manifest "$MANIFEST"
 
 # --- Helpers ----------------------------------------------------------------
 log_info() { echo "[INFO] $*" >&2; }
-log_warn() { echo "[WARN] $*" >&2; }
 log_err()  { echo "[ERR ] $*" >&2; }
+# log_warn escalates a [ERR ] + ANY_FAIL cuando --strict esta activo.
+# Asi --strict convierte cualquier warning en un fallo real (exit 1 al final).
+log_warn() {
+  if [[ "$STRICT" == true ]]; then
+    log_err "$*"
+    ANY_FAIL=true
+  else
+    echo "[WARN] $*" >&2
+  fi
+}
 
 # Cache de team slug -> id dentro del proceso
 declare -A TEAM_ID_CACHE
@@ -158,32 +175,43 @@ resolve_repos() {
 }
 
 # Estado actual del ruleset administrado de un repo.
-# Imprime JSON al stdout con forma: { exists, id, payload }
+# Imprime JSON al stdout con forma: { exists, id, payload, unexpected_count, unexpected_ids }
 # payload es el GET /rulesets/{id} completo, o null si no existe.
+# unexpected_ids es la lista de IDs de rulesets con target=branch pero name distinto
+# al administrado (usado por --prune-unexpected para borrarlos).
 fetch_current_ruleset() {
   local repo="$1"
   local full="$ORG/$repo"
-  local list_json id ruleset_name unexpected_count detail
+  local list_json id ruleset_name unexpected_count unexpected_ids detail
 
   ruleset_name=$(jq -r '.defaults.rulesetName' "$MANIFEST")
   list_json=$(gh api "repos/$full/rulesets" 2>/dev/null || echo "[]")
+
+  # Foreign rulesets: target=branch pero name distinto al administrado.
+  # Se detectan SIEMPRE (exista o no el administrado) — antes solian
+  # calcularse solo cuando el administrado no existia, lo que dejaba
+  # pasar combos managed+foreign como si no hubiera foreign (bug).
+  unexpected_count=$(echo "$list_json" | jq --arg name "$ruleset_name" \
+    '[.[] | select(.target == "branch" and .name != $name)] | length' 2>/dev/null || echo 0)
+  unexpected_ids=$(echo "$list_json" | jq -r --arg name "$ruleset_name" \
+    '[.[] | select(.target == "branch" and .name != $name) | .id] | .[]' 2>/dev/null || echo "")
+
   id=$(echo "$list_json" | jq -r --arg name "$ruleset_name" \
         '.[] | select(.name == $name) | .id' 2>/dev/null | head -n1)
 
   if [[ -z "$id" || "$id" == "null" ]]; then
-    # Verificar si hay un ruleset inesperado con OTRO nombre (target=branch)
-    unexpected_count=$(echo "$list_json" | jq --arg name "$ruleset_name" \
-      '[.[] | select(.target == "branch" and .name != $name)] | length' 2>/dev/null || echo 0)
     jq -n --argjson exists false --argjson id null --argjson payload null \
       --argjson unexpected "${unexpected_count:-0}" \
-      '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected}'
+      --arg unexpected_ids "${unexpected_ids:-}" \
+      '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected, unexpected_ids: ($unexpected_ids | split("\n"))}'
     return 0
   fi
 
   detail=$(gh api "repos/$full/rulesets/$id" 2>/dev/null || echo "{}")
   jq -n --argjson exists true --argjson id "$id" --argjson payload "$detail" \
-    --argjson unexpected 0 \
-    '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected}'
+    --argjson unexpected "${unexpected_count:-0}" \
+    --arg unexpected_ids "${unexpected_ids:-}" \
+    '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected, unexpected_ids: ($unexpected_ids | split("\n"))}'
 }
 
 # Construye el payload deseado a partir del manifiesto + team_id resuelto.
@@ -285,22 +313,25 @@ canonical_diff() {
   fi
 }
 
-# Backup del ruleset actual (full GET) a BACKUP_DIR/<repo>-<id>-<ts>.json
+# Backup del ruleset actual (full GET) a BACKUP_DIR/<repo>-<id>.json.
+# Devuelve no-zero si el backup falla — el caller debe respetar el contrato y
+# abortar la mutacion destructiva (PUT) si el backup no se completo.
 backup_ruleset() {
   local repo="$1"
   local rs_id="$2"
   local full="$ORG/$repo"
   local dir="${BACKUP_DIR:-backups/rulesets/$(date +%Y%m%d-%H%M%S)}"
+  local target="$dir/${repo}-${rs_id}.json"
   mkdir -p "$dir"
-  gh api "repos/$full/rulesets/$rs_id" > "$dir/${repo}-${rs_id}.json" 2>/dev/null || true
+  if ! gh api "repos/$full/rulesets/$rs_id" > "$target" 2>/dev/null; then
+    rm -f "$target"  # limpiar partial si quedo algo
+    log_err "Backup fallo para $repo ruleset $rs_id (target: $target)"
+    return 1
+  fi
   echo "$dir"
 }
 
 # --- Loop principal ----------------------------------------------------------
-declare -a RESULTS=()
-ANY_DRIFT=false
-ANY_FAIL=false
-
 log_info "ORG=$ORG MANIFEST=$MANIFEST MODE=$MODE DRY_RUN=$DRY_RUN"
 
 while IFS=$'\n\r' read -r repo; do
@@ -334,13 +365,32 @@ while IFS=$'\n\r' read -r repo; do
   exists=$(echo "$current_json" | jq -r '.exists')
   rs_id=$(echo "$current_json" | jq -r '.id // empty')
   unexpected=$(echo "$current_json" | jq -r '.unexpected_count')
+  unexpected_ids_json=$(echo "$current_json" | jq -c '.unexpected_ids // []')
   current_payload=$(echo "$current_json" | jq -c '.payload // {}')
 
   desired_payload=$(build_desired_payload "$repo" "$team_id")
 
+  # Foreign rulesets (target=branch, name distinto al administrado).
+  # Por default: abort (no los pisamos). --prune-unexpected: borrarlos via API.
   if [[ "$unexpected" -gt 0 ]]; then
     if [[ "$PRUNE_UNEXPECTED" == true ]]; then
-      log_warn "$repo: existen $unexpected ruleset(s) inesperado(s); --prune-unexpected no implementado aun"
+      pruned=0
+      for uid in $(echo "$unexpected_ids_json" | jq -r '.[]'); do
+        if gh api -X DELETE "repos/$ORG/$repo/rulesets/$uid" >/dev/null 2>&1; then
+          log_info "$repo: borrado ruleset inesperado id=$uid"
+          pruned=$((pruned + 1))
+        else
+          log_err "$repo: fallo DELETE del ruleset inesperado id=$uid"
+          ANY_FAIL=true
+        fi
+      done
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"pruned\",\"unexpected_pruned\":$pruned}")
+      # Despues de podar, refrescar la lista para que el resto del flujo
+      # opere contra el estado real (puede que ya no haya ruleset administrado).
+      current_json=$(fetch_current_ruleset "$repo")
+      exists=$(echo "$current_json" | jq -r '.exists')
+      rs_id=$(echo "$current_json" | jq -r '.id // empty')
+      current_payload=$(echo "$current_json" | jq -c '.payload // {}')
     else
       log_err "$repo: existen $unexpected ruleset(s) inesperado(s); abort para no pisarlos (usa --prune-unexpected)"
       RESULTS+=("{\"repo\":\"$repo\",\"state\":\"unexpected\",\"unexpected_count\":$unexpected}")
@@ -360,7 +410,13 @@ while IFS=$'\n\r' read -r repo; do
       if [[ "$DRY_RUN" == true ]]; then
         RESULTS+=("{\"repo\":\"$repo\",\"state\":\"would-update\",\"ruleset_id\":$rs_id}")
       else
-        backup_dir=$(backup_ruleset "$repo" "$rs_id")
+        # Backup OBLIGATORIO antes del PUT destructivo. Si falla, abortamos
+        # este repo (no pisamos sin red de seguridad).
+        if ! backup_dir=$(backup_ruleset "$repo" "$rs_id"); then
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"backup-failed\",\"ruleset_id\":$rs_id}")
+          ANY_FAIL=true
+          continue
+        fi
         log_info "$repo: backup en $backup_dir"
         if echo "$desired_payload" | gh api -X PUT "repos/$ORG/$repo/rulesets/$rs_id" \
             -H "Accept: application/vnd.github+json" \
