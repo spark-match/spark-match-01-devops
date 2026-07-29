@@ -162,26 +162,26 @@ jobs:
           set -euo pipefail
           ERRORS=()
 
-          if [ -z "${{ inputs.s3-bucket }}" ]; then
+          if [ -z "${INPUTS_S3_BUCKET}" ]; then
             ERRORS+=("s3-bucket: requerido")
           fi
-          if [ -z "${{ inputs.cloudfront-distribution-id }}" ]; then
+          if [ -z "${INPUTS_CLOUDFRONT_DISTRIBUTION_ID}" ]; then
             ERRORS+=("cloudfront-distribution-id: requerido")
           fi
-          if ! echo "${{ inputs.cloudfront-distribution-id }}" | grep -qE '^[A-Z0-9]+$'; then
+          if ! echo "${INPUTS_CLOUDFRONT_DISTRIBUTION_ID}" | grep -qE '^[A-Z0-9]+$'; then
             ERRORS+=("cloudfront-distribution-id: formato invalido (debe ser alphanumeric uppercase, e.g. 'E1ABC2DEF3GHIJ')")
           fi
-          if [ -z "${{ inputs.artifact-path }}" ]; then
+          if [ -z "${INPUTS_ARTIFACT_PATH}" ]; then
             ERRORS+=("artifact-path: requerido")
           fi
-          if [ -z "${{ inputs.build-script }}" ]; then
+          if [ -z "${INPUTS_BUILD_SCRIPT}" ]; then
             ERRORS+=("build-script: requerido")
           fi
-          if ! echo "${{ inputs.pkg-manager }}" | grep -qE '^(npm|pnpm|yarn|bun)$'; then
-            ERRORS+=("pkg-manager: '${{ inputs.pkg-manager }}' invalido (esperado uno de: npm, pnpm, yarn, bun)")
+          if ! echo "${INPUTS_PKG_MANAGER}" | grep -qE '^(npm|pnpm|yarn|bun)$'; then
+            ERRORS+=("pkg-manager: '${INPUTS_PKG_MANAGER}' invalido (esperado uno de: npm, pnpm, yarn, bun)")
           fi
-          if ! echo "${{ inputs.node-version }}" | grep -qE '^[0-9]+$'; then
-            ERRORS+=("node-version: '${{ inputs.node-version }}' invalido (esperado entero, e.g. '24')")
+          if ! echo "${INPUTS_NODE_VERSION}" | grep -qE '^[0-9]+$'; then
+            ERRORS+=("node-version: '${INPUTS_NODE_VERSION}' invalido (esperado entero, e.g. '24')")
           fi
 
           if [ ${#ERRORS[@]} -gt 0 ]; then
@@ -199,15 +199,23 @@ jobs:
           # has no `lower()` function, so we lower-case in shell and expose via
           # $GITHUB_ENV for downstream steps (actions/cache key).
           LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
-          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${INPUTS_ENVIRONMENT_NAME}" | tr '[:upper:]' '[:lower:]')"
           case "$LOWER_OS" in
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
           esac
           echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
           echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
-          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
+        env:
+          INPUTS_S3_BUCKET: ${{ inputs.s3-bucket }}
+          INPUTS_CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront-distribution-id }}
+          INPUTS_ARTIFACT_PATH: ${{ inputs.artifact-path }}
+          INPUTS_BUILD_SCRIPT: ${{ inputs.build-script }}
+          INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
+          INPUTS_NODE_VERSION: ${{ inputs.node-version }}
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -256,13 +264,14 @@ jobs:
           # que el builder reemplace `import.meta.env.API_URL` en build
           # time. Si no se pasa api-url, la variable queda vacia.
           API_URL: ${{ inputs.api-url }}
-        run: npm run ${{ inputs.build-script }}
+          INPUTS_BUILD_SCRIPT: ${{ inputs.build-script }}
+        run: npm run "${INPUTS_BUILD_SCRIPT}"
 
       - name: Verify build output exists
         id: artifact
         run: |
           set -euo pipefail
-          ARTIFACT="${{ inputs.artifact-path }}"
+          ARTIFACT="${INPUTS_ARTIFACT_PATH}"
           if [ ! -d "$ARTIFACT" ]; then
             echo "::error::Build artifact path '$ARTIFACT' does not exist. Verify build-script and artifact-path inputs."
             exit 1
@@ -287,45 +296,53 @@ jobs:
           # shellcheck disable=SC2012
           ls -la "$ARTIFACT" | head -20
 
+        env:
+          INPUTS_ARTIFACT_PATH: ${{ inputs.artifact-path }}
       - name: Resolve CloudFront domain
         id: cf_domain
         # Non-blocking lookup of the distribution domain for the summary.
         run: |
           set -euo pipefail
           DOMAIN="$(aws cloudfront get-distribution \
-            --id "${{ inputs.cloudfront-distribution-id }}" \
+            --id "${INPUTS_CLOUDFRONT_DISTRIBUTION_ID}" \
             --query 'Distribution.DomainName' \
             --output text 2>/dev/null || echo unknown)"
           echo "domain=$DOMAIN" >> "$GITHUB_OUTPUT"
           echo "CloudFront domain: $DOMAIN"
 
+        env:
+          INPUTS_CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront-distribution-id }}
       - name: Sync to S3 (delete stale files)
         id: sync
         run: |
           set -euo pipefail
           SYNC_ARGS="--delete"
-          if [ -n "${{ inputs.sync-extra-args }}" ]; then
-            SYNC_ARGS="$SYNC_ARGS ${{ inputs.sync-extra-args }}"
+          if [ -n "${INPUTS_SYNC_EXTRA_ARGS}" ]; then
+            SYNC_ARGS="$SYNC_ARGS ${INPUTS_SYNC_EXTRA_ARGS}"
           fi
-          echo "Running: aws s3 sync ${{ inputs.artifact-path }}/ s3://${{ inputs.s3-bucket }}/ $SYNC_ARGS"
+          echo "Running: aws s3 sync ${INPUTS_ARTIFACT_PATH}/ s3://${INPUTS_S3_BUCKET}/ $SYNC_ARGS"
           # Capture sync counts (uploaded / deleted) for the summary.
           # shellcheck disable=SC2086
-          SYNC_OUTPUT="$(aws s3 sync "${{ inputs.artifact-path }}/" "s3://${{ inputs.s3-bucket }}/" $SYNC_ARGS 2>&1)"
+          SYNC_OUTPUT="$(aws s3 sync "${INPUTS_ARTIFACT_PATH}/" "s3://${INPUTS_S3_BUCKET}/" $SYNC_ARGS 2>&1)"
           echo "$SYNC_OUTPUT"
           UPLOADED="$(printf '%s\n' "$SYNC_OUTPUT" | grep -c '^upload:' || true)"
           DELETED="$(printf '%s\n' "$SYNC_OUTPUT" | grep -c '^delete:' || true)"
           echo "uploaded_count=$UPLOADED" >> "$GITHUB_OUTPUT"
           echo "deleted_count=$DELETED" >> "$GITHUB_OUTPUT"
 
+        env:
+          INPUTS_SYNC_EXTRA_ARGS: ${{ inputs.sync-extra-args }}
+          INPUTS_ARTIFACT_PATH: ${{ inputs.artifact-path }}
+          INPUTS_S3_BUCKET: ${{ inputs.s3-bucket }}
       - name: CloudFront invalidation
         id: invalidation
         run: |
           set -euo pipefail
-          PATHS="${{ inputs.cloudfront-invalidation-paths }}"
-          echo "Creating CloudFront invalidation on distribution ${{ inputs.cloudfront-distribution-id }} for paths: $PATHS"
+          PATHS="${INPUTS_CLOUDFRONT_INVALIDATION_PATHS}"
+          echo "Creating CloudFront invalidation on distribution ${INPUTS_CLOUDFRONT_DISTRIBUTION_ID} for paths: $PATHS"
           # Use --no-paginate so the output is readable in CI logs.
           RESPONSE="$(aws cloudfront create-invalidation \
-            --distribution-id "${{ inputs.cloudfront-distribution-id }}" \
+            --distribution-id "${INPUTS_CLOUDFRONT_DISTRIBUTION_ID}" \
             --paths "$PATHS" \
             --no-paginate \
             --output json)"
@@ -333,41 +350,57 @@ jobs:
           INVALIDATION_ID="$(echo "$RESPONSE" | jq -r '.Invalidation.Id // "unknown"')"
           echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
 
+        env:
+          INPUTS_CLOUDFRONT_INVALIDATION_PATHS: ${{ inputs.cloudfront-invalidation-paths }}
+          INPUTS_CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront-distribution-id }}
       - name: Deploy summary
         if: always()
         run: |
           {
-            echo "## Angular SPA Deploy - \`${{ inputs.environment-name }}\`"
+            echo "## Angular SPA Deploy - \`${INPUTS_ENVIRONMENT_NAME}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
             echo "| Status | \${{ job.status }} |"
-            echo "| Environment | \`${{ inputs.environment-name }}\` |"
-            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
-            echo "| S3 bucket | \`${{ inputs.s3-bucket }}\` |"
-            echo "| CloudFront distribution | \`${{ inputs.cloudfront-distribution-id }}\` |"
+            echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
+            echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
+            echo "| S3 bucket | \`${INPUTS_S3_BUCKET}\` |"
+            echo "| CloudFront distribution | \`${INPUTS_CLOUDFRONT_DISTRIBUTION_ID}\` |"
             echo "| CloudFront domain | \`${{ steps.cf_domain.outputs.domain }}\` |"
-            echo "| Invalidation paths | \`${{ inputs.cloudfront-invalidation-paths }}\` |"
+            echo "| Invalidation paths | \`${INPUTS_CLOUDFRONT_INVALIDATION_PATHS}\` |"
             echo "| Invalidation id | \`${{ steps.invalidation.outputs.invalidation_id }}\` |"
-            echo "| Build artifact | \`${{ inputs.artifact-path }}\` |"
+            echo "| Build artifact | \`${INPUTS_ARTIFACT_PATH}\` |"
             echo "| Bundle fingerprint | \`${{ steps.artifact.outputs.main_js }}\` + \`${{ steps.artifact.outputs.styles }}\` |"
             echo "| Files in bundle | ${{ steps.artifact.outputs.file_count }} |"
             echo "| Bundle bytes | ${{ steps.artifact.outputs.total_bytes }} |"
             echo "| S3 uploaded | ${{ steps.sync.outputs.uploaded_count }} |"
             echo "| S3 deleted | ${{ steps.sync.outputs.deleted_count }} |"
             echo ""
-            if [ -n "${{ inputs.api-url }}" ]; then
+            if [ -n "${INPUTS_API_URL}" ]; then
               echo "API_URL injected at build time."
             else
               echo "API_URL: empty (caller did not pass api-url)."
             fi
             echo ""
             echo "**Live URL**: https://${{ steps.cf_domain.outputs.domain }}/"
-            echo "**Commit**: \`${{ github.sha }}\`"
-            echo "**Triggered by**: @${{ github.actor }}"
-            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "**Commit**: \`${GITHUB_SHA}\`"
+            echo "**Triggered by**: @${GITHUB_ACTOR}"
+            echo "**Run**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_S3_BUCKET: ${{ inputs.s3-bucket }}
+          INPUTS_CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront-distribution-id }}
+          INPUTS_CLOUDFRONT_INVALIDATION_PATHS: ${{ inputs.cloudfront-invalidation-paths }}
+          INPUTS_ARTIFACT_PATH: ${{ inputs.artifact-path }}
+          INPUTS_API_URL: ${{ inputs.api-url }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
       - name: Notify on deploy failure
         if: failure()
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
