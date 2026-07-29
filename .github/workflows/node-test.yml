@@ -77,8 +77,8 @@ jobs:
       - name: Resolve cache key tags
         run: |
           set -euo pipefail
-          LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
-          ENV_NAME="$(printf '%s' "${INPUTS_ENVIRONMENT_NAME}" | tr '[:upper:]' '[:lower:]')"
+          LOWER_OS="${RUNNER_OS,,}"
+          ENV_NAME="${INPUTS_ENVIRONMENT_NAME,,}"
           case "$LOWER_OS" in
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;

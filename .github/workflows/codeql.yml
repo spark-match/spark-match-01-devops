@@ -175,9 +175,10 @@ jobs:
         shell: bash
         env:
           SEVERITY: ${{ inputs.fail-on-severity }}
+          RUNNER_TEMP: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          SARIF_DIR=$(find "${{ runner.temp }}" -maxdepth 1 -type d -name 'codeql-*' 2>/dev/null | head -n1 || true)
+          SARIF_DIR=$(find "${RUNNER_TEMP}" -maxdepth 1 -type d -name 'codeql-*' 2>/dev/null | head -n1 || true)
           if [ -z "${SARIF_DIR}" ]; then
             echo "::warning::No SARIF directory found; skipping alert check."
             exit 0
