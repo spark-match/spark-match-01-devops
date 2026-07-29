@@ -381,15 +381,14 @@ while IFS=$'\n\r' read -r repo; do
       if [[ "$DRY_RUN" == true ]]; then
         RESULTS+=("{\"repo\":\"$repo\",\"state\":\"would-create\"}")
       else
-        if echo "$desired_payload" | gh api -X POST "repos/$ORG/$repo/rulesets" \
+        if POST_BODY=$(echo "$desired_payload" | gh api -X POST "repos/$ORG/$repo/rulesets" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            --input - >/dev/null 2>&1; then
-          new_id=$(gh api "repos/$ORG/$repo/rulesets" --jq \
-            --arg n "$(jq -r '.defaults.rulesetName' "$MANIFEST")" \
-            '.[] | select(.name == $n) | .id' | head -n1)
+            --input - 2>&1); then
+          new_id=$(printf '%s' "$POST_BODY" | jq -r '.id // empty')
           RESULTS+=("{\"repo\":\"$repo\",\"state\":\"created\",\"ruleset_id\":${new_id:-null}}")
         else
+          log_warn "$repo: POST rejected: $POST_BODY"
           RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"POST-rejected\"}")
           ANY_FAIL=true
         fi
