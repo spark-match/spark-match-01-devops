@@ -41,7 +41,8 @@ Merging the release PR creates the git tag + GitHub Release.
 ## [0.1.0] - 2026-07-26
 
 Initial release. Documents the catalog as of the 16-point improvement plan
-sprint (see `DEVOPS-UPGRADE.md` § 15).
+sprint (see `CHANGELOG.md` for the migration entry; the original audit
+lived in an external workspace doc that has since been retired).
 
 ### Added
 - **Quality infra**: bats-core 1.11.1, shellcheck, JSON Schema + check-jsonschema reusable workflow under `.github/workflows/quality.yml` (#122).
