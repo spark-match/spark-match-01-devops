@@ -56,7 +56,12 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, and concurrency group. Also forms the suffix of the required confirm token (DESTROY-<ENV>). Defaults to basename of working-directory.'
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, and concurrency group. Also forms the suffix of the required confirm token (DESTROY-<ENV>). Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
+        type: string
+        required: false
+        default: ''
+      environment-name:
+        description: 'Preferred alias for `environment`. If set, takes precedence over the legacy `environment` input.'
         type: string
         required: false
         default: ''
@@ -175,21 +180,22 @@ on:
 # in flight must complete (or be rolled back by hand); cancelling midway leaves
 # partial state. Operators who want to rerun must wait the lock out.
 concurrency:
-  group: ${{ inputs.environment || inputs.working-directory }}-destroy-${{ inputs.working-directory }}
+  group: ${{ inputs.environment-name || inputs.environment || inputs.working-directory }}-destroy-${{ inputs.working-directory }}
   cancel-in-progress: false
 
 permissions:
   id-token: write          # For OIDC
   contents: read
+  pull-requests: write     # Required by marocchino/sticky-pull-request-comment@v3 (used in Notify-on-cleanup-failure + destroy-failure-comment steps)
 
 jobs:
   destroy:
-    name: Destroy (${{ inputs.environment || inputs.working-directory }})
+    name: Destroy (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # GH Environment uses input fallback: gh-environment > environment.
     # Evaluated before any step runs, can't reference step outputs.
-    environment: ${{ inputs.gh-environment || inputs.environment }}
+    environment: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
     outputs:
       destroy-success: ${{ steps.apply.outputs.destroy-success }}
       had-changes: ${{ steps.plan.outputs.had-changes }}
@@ -197,6 +203,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
+        shell: bash
 
     steps:
       - name: Resolve environment + verify confirm token
@@ -206,7 +213,9 @@ jobs:
         # directory" on `cd`.
         working-directory: .
         run: |
-          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+          if [ -n "${INPUTS_ENVIRONMENT_NAME}" ]; then
+            ENV="${INPUTS_ENVIRONMENT_NAME}"
+          elif [ -n "${INPUTS_ENVIRONMENT}" ]; then
             ENV="${INPUTS_ENVIRONMENT}"
           else
             ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
@@ -251,10 +260,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
         env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
           INPUTS_CONFIRM_DESTROY_TOKEN: ${{ inputs.confirm-destroy-token }}
-          INPUTS_GH_ENVIRONMENT: ${{ inputs.gh-environment || inputs.environment }}
+          INPUTS_GH_ENVIRONMENT: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
           INPUTS_AUTO_APPROVE: ${{ inputs.auto-approve }}
           INPUTS_DRY_RUN: ${{ inputs.dry-run }}
           INPUTS_TARGET: ${{ inputs.target }}
@@ -292,9 +302,10 @@ jobs:
           fi
 
           # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
-          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
-            if ! echo "${INPUTS_ENVIRONMENT}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
-              ERRORS+=("environment: '${INPUTS_ENVIRONMENT}' solo letras/digitos/_/-")
+          ENV_TO_CHECK="${INPUTS_ENVIRONMENT_NAME:-${INPUTS_ENVIRONMENT}}"
+          if [ -n "${ENV_TO_CHECK}" ]; then
+            if ! echo "${ENV_TO_CHECK}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("environment-name: '${ENV_TO_CHECK}' solo letras/digitos/_/-")
             fi
           fi
 
@@ -334,6 +345,7 @@ jobs:
           INPUTS_APPLY_ROLE_ARN_SECRET: ${{ inputs.apply-role-arn-secret }}
           INPUTS_TERRAFORM_VERSION: ${{ inputs.terraform-version }}
           INPUTS_RETENTION_DAYS: ${{ inputs.retention-days }}
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_PROJECT_NAME: ${{ inputs.project-name }}
           INPUTS_ENABLE_CLEANUP: ${{ inputs.enable-cleanup }}
@@ -571,12 +583,12 @@ jobs:
     # Gated by cleanup-token (must equal CLEANUP-<ENV>, case-sensitive) so it
     # cannot run accidentally on a destroy-only invocation. Idempotent: re-run
     # on already-clean state is a no-op.
-    name: Cleanup residuals (${{ inputs.environment || inputs.working-directory }})
+    name: Cleanup residuals (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
     needs: destroy
     if: always() && inputs.enable-cleanup == 'true' && needs.destroy.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: ${{ inputs.gh-environment || inputs.environment }}
+    environment: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
     outputs:
       cleanup-success: ${{ steps.aggregate.outputs.cleanup-success }}
       cleanup-deleted-count: ${{ steps.aggregate.outputs.total_deleted }}
@@ -585,7 +597,9 @@ jobs:
         id: cleanup-init
         run: |
           set -euo pipefail
-          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+          if [ -n "${INPUTS_ENVIRONMENT_NAME}" ]; then
+            ENV="${INPUTS_ENVIRONMENT_NAME}"
+          elif [ -n "${INPUTS_ENVIRONMENT}" ]; then
             ENV="${INPUTS_ENVIRONMENT}"
           else
             ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
@@ -642,6 +656,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
         env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
           INPUTS_CLEANUP_TOKEN: ${{ inputs.cleanup-token }}
