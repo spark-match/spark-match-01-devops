@@ -92,7 +92,7 @@ jobs:
       - name: Rename PDF with version
         run: |
           VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
-          ROOT_BASE=$(echo "${INPUTS_ROOT_FILE}" | sed 's/\.tex$//')
+          ROOT_BASE="${INPUTS_ROOT_FILE%.tex}"
           cp "${ROOT_BASE}.pdf" "release-${VERSION}.pdf"
           ls -la release-*.pdf
 

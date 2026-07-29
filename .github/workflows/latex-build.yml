@@ -82,7 +82,7 @@ jobs:
       - name: Determine PDF output filename
         id: pdf
         run: |
-          BASENAME=$(echo "${INPUTS_ROOT_FILE}" | sed 's/\.tex$//')
+          BASENAME="${INPUTS_ROOT_FILE%.tex}"
           echo "filename=${BASENAME}.pdf" >> "$GITHUB_OUTPUT"
 
         env:
