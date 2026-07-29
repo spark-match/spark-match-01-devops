@@ -191,7 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           SHA_SHORT="${GITHUB_SHA::7}"
-          REGISTRY="${{ steps.registry.outputs.registry }}"
+          REGISTRY="${STEPS_REGISTRY_OUTPUTS_REGISTRY}"
           REPO="${INPUTS_ECR_REPOSITORY}"
           RAW="${INPUTS_IMAGE_TAGS_INPUT}"
           # Allow the caller to encode the short SHA with __GITHUB_SHA_SHORT__
@@ -215,6 +215,7 @@ jobs:
         env:
           INPUTS_ECR_REPOSITORY: ${{ inputs.ecr-repository }}
           INPUTS_IMAGE_TAGS_INPUT: ${{ inputs.image-tags-input }}
+          STEPS_REGISTRY_OUTPUTS_REGISTRY: ${{ steps.registry.outputs.registry }}
       - name: Build and push image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7
         with:
@@ -242,7 +243,7 @@ jobs:
             echo "| Dockerfile | \`${INPUTS_DOCKERFILE_PATH}\` |"
             echo "| Build context | \`${INPUTS_CONTEXT_PATH}\` |"
             echo "| Platforms | \`${INPUTS_PLATFORMS}\` |"
-            echo "| Image tags | \`${{ steps.tags.outputs.tags }}\` |"
+            echo "| Image tags | \`${STEPS_TAGS_OUTPUTS_TAGS}\` |"
             echo "| Cache scope | \`${INPUTS_CACHE_SCOPE}\` |"
             echo ""
             echo "Commit: \`${GITHUB_SHA}\`"
@@ -259,6 +260,7 @@ jobs:
           INPUTS_CACHE_SCOPE: ${{ inputs.cache-scope }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
+          STEPS_TAGS_OUTPUTS_TAGS: ${{ steps.tags.outputs.tags }}
       - name: Notify on deploy failure
         if: failure()
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3

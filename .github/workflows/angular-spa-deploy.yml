@@ -361,20 +361,20 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Status | \${{ job.status }} |"
+            echo "| Status | \${JOB_STATUS} |"
             echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
             echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
             echo "| S3 bucket | \`${INPUTS_S3_BUCKET}\` |"
             echo "| CloudFront distribution | \`${INPUTS_CLOUDFRONT_DISTRIBUTION_ID}\` |"
-            echo "| CloudFront domain | \`${{ steps.cf_domain.outputs.domain }}\` |"
+            echo "| CloudFront domain | \`${STEPS_CF_DOMAIN_OUTPUTS_DOMAIN}\` |"
             echo "| Invalidation paths | \`${INPUTS_CLOUDFRONT_INVALIDATION_PATHS}\` |"
-            echo "| Invalidation id | \`${{ steps.invalidation.outputs.invalidation_id }}\` |"
+            echo "| Invalidation id | \`${STEPS_INVALIDATION_OUTPUTS_INVALIDATION_ID}\` |"
             echo "| Build artifact | \`${INPUTS_ARTIFACT_PATH}\` |"
-            echo "| Bundle fingerprint | \`${{ steps.artifact.outputs.main_js }}\` + \`${{ steps.artifact.outputs.styles }}\` |"
-            echo "| Files in bundle | ${{ steps.artifact.outputs.file_count }} |"
-            echo "| Bundle bytes | ${{ steps.artifact.outputs.total_bytes }} |"
-            echo "| S3 uploaded | ${{ steps.sync.outputs.uploaded_count }} |"
-            echo "| S3 deleted | ${{ steps.sync.outputs.deleted_count }} |"
+            echo "| Bundle fingerprint | \`${STEPS_ARTIFACT_OUTPUTS_MAIN_JS}\` + \`${STEPS_ARTIFACT_OUTPUTS_STYLES}\` |"
+            echo "| Files in bundle | ${STEPS_ARTIFACT_OUTPUTS_FILE_COUNT} |"
+            echo "| Bundle bytes | ${STEPS_ARTIFACT_OUTPUTS_TOTAL_BYTES} |"
+            echo "| S3 uploaded | ${STEPS_SYNC_OUTPUTS_UPLOADED_COUNT} |"
+            echo "| S3 deleted | ${STEPS_SYNC_OUTPUTS_DELETED_COUNT} |"
             echo ""
             if [ -n "${INPUTS_API_URL}" ]; then
               echo "API_URL injected at build time."
@@ -382,7 +382,7 @@ jobs:
               echo "API_URL: empty (caller did not pass api-url)."
             fi
             echo ""
-            echo "**Live URL**: https://${{ steps.cf_domain.outputs.domain }}/"
+            echo "**Live URL**: https://${STEPS_CF_DOMAIN_OUTPUTS_DOMAIN}/"
             echo "**Commit**: \`${GITHUB_SHA}\`"
             echo "**Triggered by**: @${GITHUB_ACTOR}"
             echo "**Run**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -401,6 +401,15 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+          STEPS_CF_DOMAIN_OUTPUTS_DOMAIN: ${{ steps.cf_domain.outputs.domain }}
+          STEPS_INVALIDATION_OUTPUTS_INVALIDATION_ID: ${{ steps.invalidation.outputs.invalidation_id }}
+          STEPS_ARTIFACT_OUTPUTS_MAIN_JS: ${{ steps.artifact.outputs.main_js }}
+          STEPS_ARTIFACT_OUTPUTS_STYLES: ${{ steps.artifact.outputs.styles }}
+          STEPS_ARTIFACT_OUTPUTS_FILE_COUNT: ${{ steps.artifact.outputs.file_count }}
+          STEPS_ARTIFACT_OUTPUTS_TOTAL_BYTES: ${{ steps.artifact.outputs.total_bytes }}
+          STEPS_SYNC_OUTPUTS_UPLOADED_COUNT: ${{ steps.sync.outputs.uploaded_count }}
+          STEPS_SYNC_OUTPUTS_DELETED_COUNT: ${{ steps.sync.outputs.deleted_count }}
       - name: Notify on deploy failure
         if: failure()
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3

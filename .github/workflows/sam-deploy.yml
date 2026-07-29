@@ -263,7 +263,7 @@ jobs:
       - name: SAM deploy
         run: |
           set -euo pipefail
-          DEPLOY_ARGS="--config-env ${{ steps.cfg.outputs.sam-config-env }} --no-confirm-changeset --no-fail-on-empty-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --region ${INPUTS_AWS_REGION}"
+          DEPLOY_ARGS="--config-env ${STEPS_CFG_OUTPUTS_SAM_CONFIG_ENV} --no-confirm-changeset --no-fail-on-empty-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --region ${INPUTS_AWS_REGION}"
           if [ -n "${INPUTS_STACK_NAME}" ]; then
             DEPLOY_ARGS="$DEPLOY_ARGS --stack-name ${INPUTS_STACK_NAME}"
           fi
@@ -284,3 +284,4 @@ jobs:
           INPUTS_STACK_NAME: ${{ inputs.stack-name }}
           INPUTS_S3_BUCKET: ${{ inputs.s3-bucket }}
           INPUTS_PARAMETER_OVERRIDES_JSON: ${{ inputs.parameter-overrides-json }}
+          STEPS_CFG_OUTPUTS_SAM_CONFIG_ENV: ${{ steps.cfg.outputs.sam-config-env }}

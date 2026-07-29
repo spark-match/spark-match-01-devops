@@ -367,21 +367,21 @@ jobs:
           GITHUB_WORKSPACE: ${{ github.workspace }}
       - name: Terraform init
         run: |
-          INIT_ARGS="-input=false"
+          INIT_ARGS=(-input=false)
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
-            INIT_ARGS="$INIT_ARGS \
-              -backend-config=bucket=${INPUTS_BACKEND_BUCKET} \
-              -backend-config=key=${INPUTS_BACKEND_KEY} \
-              -backend-config=region=${INPUTS_AWS_REGION} \
-              -backend-config=use_lockfile=true"
+            INIT_ARGS+=(
+              -backend-config=bucket="${INPUTS_BACKEND_BUCKET}"
+              -backend-config=key="${INPUTS_BACKEND_KEY}"
+              -backend-config=region="${INPUTS_AWS_REGION}"
+              -backend-config=use_lockfile=true
+            )
           else
             # Caller migrated state to local (or is using a local backend);
             # -backend=false skips re-init against S3.
-            INIT_ARGS="$INIT_ARGS -backend=false"
+            INIT_ARGS+=(-backend=false)
           fi
-          echo "Running: terraform init $INIT_ARGS"
-          # shellcheck disable=SC2086
-          terraform init $INIT_ARGS
+          echo "Running: terraform init ${INIT_ARGS[*]}"
+          terraform init "${INIT_ARGS[@]}"
         env:
           TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
@@ -514,17 +514,17 @@ jobs:
             echo ""
             if [ "${INPUTS_DRY_RUN}" = "true" ]; then
               echo "Mode: **dry-run** (plan only)"
-              if [ "${{ steps.plan.outputs.had-changes }}" = "true" ]; then
+              if [ "${STEPS_PLAN_OUTPUTS_HAD_CHANGES}" = "true" ]; then
                 echo ""
                 echo "> Dry-run completed. See plan summary above for resources that WOULD be destroyed on a real run."
               fi
-            elif [ "${{ steps.apply.outputs.destroy-success }}" = "true" ]; then
+            elif [ "${STEPS_APPLY_OUTPUTS_DESTROY_SUCCESS}" = "true" ]; then
               echo "Status: **✓ Destroy complete**"
               echo ""
               echo "Triggered by: @${GITHUB_ACTOR}"
               echo "Commit: ${GITHUB_SHA}"
-              echo "Environment: ${{ steps.env.outputs.environment }}"
-            elif [ "${{ steps.plan.outputs.had-changes }}" = "true" ]; then
+              echo "Environment: ${STEPS_ENV_OUTPUTS_ENVIRONMENT}"
+            elif [ "${STEPS_PLAN_OUTPUTS_HAD_CHANGES}" = "true" ]; then
               echo "Status: **✗ Destroy FAILED** — see logs above."
             else
               echo "Status: **No-op** (env was already empty)"
@@ -535,6 +535,9 @@ jobs:
           INPUTS_DRY_RUN: ${{ inputs.dry-run }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_SHA: ${{ github.sha }}
+          STEPS_PLAN_OUTPUTS_HAD_CHANGES: ${{ steps.plan.outputs.had-changes }}
+          STEPS_APPLY_OUTPUTS_DESTROY_SUCCESS: ${{ steps.apply.outputs.destroy-success }}
+          STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
       - name: Notify on destroy failure
         if: failure() && steps.apply.outputs.destroy-success != 'true' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
@@ -838,20 +841,29 @@ jobs:
         id: aggregate
         if: always()
         run: |
-          LG="${{ steps.delete-log-groups.outputs.deleted_log_groups }}"
-          SSM="${{ steps.delete-ssm-params.outputs.deleted_ssm_params }}"
-          S3="${{ steps.delete-s3-buckets.outputs.deleted_s3_buckets }}"
-          CF="${{ steps.delete-cf-stacks.outputs.deleted_cf_stacks }}"
+          LG="${STEPS_DELETE_LOG_GROUPS_OUTPUTS_DELETED_LOG_GROUPS}"
+          SSM="${STEPS_DELETE_SSM_PARAMS_OUTPUTS_DELETED_SSM_PARAMS}"
+          S3="${STEPS_DELETE_S3_BUCKETS_OUTPUTS_DELETED_S3_BUCKETS}"
+          CF="${STEPS_DELETE_CF_STACKS_OUTPUTS_DELETED_CF_STACKS}"
           LG=${LG:-0}; SSM=${SSM:-0}; S3=${S3:-0}; CF=${CF:-0}
           TOTAL=$((LG + SSM + S3 + CF))
           echo "total_deleted=${TOTAL}" >> "$GITHUB_OUTPUT"
           SUCCESS="true"
-          [ "${{ steps.delete-log-groups.conclusion }}" != "success" ] && SUCCESS="false"
-          [ "${{ steps.delete-ssm-params.conclusion }}" != "success" ] && SUCCESS="false"
-          [ "${{ steps.delete-s3-buckets.conclusion }}" != "success" ] && SUCCESS="false"
-          [ "${{ steps.delete-cf-stacks.conclusion }}" != "success" ] && SUCCESS="false"
+          [ "${STEPS_DELETE_LOG_GROUPS_CONCLUSION}" != "success" ] && SUCCESS="false"
+          [ "${STEPS_DELETE_SSM_PARAMS_CONCLUSION}" != "success" ] && SUCCESS="false"
+          [ "${STEPS_DELETE_S3_BUCKETS_CONCLUSION}" != "success" ] && SUCCESS="false"
+          [ "${STEPS_DELETE_CF_STACKS_CONCLUSION}" != "success" ] && SUCCESS="false"
           echo "cleanup-success=${SUCCESS}" >> "$GITHUB_OUTPUT"
 
+        env:
+          STEPS_DELETE_LOG_GROUPS_OUTPUTS_DELETED_LOG_GROUPS: ${{ steps.delete-log-groups.outputs.deleted_log_groups }}
+          STEPS_DELETE_SSM_PARAMS_OUTPUTS_DELETED_SSM_PARAMS: ${{ steps.delete-ssm-params.outputs.deleted_ssm_params }}
+          STEPS_DELETE_S3_BUCKETS_OUTPUTS_DELETED_S3_BUCKETS: ${{ steps.delete-s3-buckets.outputs.deleted_s3_buckets }}
+          STEPS_DELETE_CF_STACKS_OUTPUTS_DELETED_CF_STACKS: ${{ steps.delete-cf-stacks.outputs.deleted_cf_stacks }}
+          STEPS_DELETE_LOG_GROUPS_CONCLUSION: ${{ steps.delete-log-groups.conclusion }}
+          STEPS_DELETE_SSM_PARAMS_CONCLUSION: ${{ steps.delete-ssm-params.conclusion }}
+          STEPS_DELETE_S3_BUCKETS_CONCLUSION: ${{ steps.delete-s3-buckets.conclusion }}
+          STEPS_DELETE_CF_STACKS_CONCLUSION: ${{ steps.delete-cf-stacks.conclusion }}
       - name: Notify on cleanup failure
         # Sticky comment on PR with cleanup details if any step failed. Same
         # pattern as the destroy failure comment, but header differs so the
