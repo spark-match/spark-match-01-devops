@@ -119,6 +119,7 @@ jobs:
   setup:
     name: Setup (parse languages)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       languages_json: ${{ steps.parse.outputs.languages_json }}
     steps:
