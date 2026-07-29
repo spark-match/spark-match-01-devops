@@ -123,11 +123,15 @@ jobs:
       - name: Parse languages input
         id: parse
         shell: bash
+        env:
+          # Pass via env to prevent shell interpolation of ${{ inputs.languages }}
+          # (CodeQL actions/code-injection/medium). The caller controls this
+          # input; without env isolation, a malicious value could break out of
+          # the single quotes via $(...) or similar.
+          LANGS_RAW: ${{ inputs.languages }}
         run: |
           set -euo pipefail
-          # jq -n builds the array from a string input via --arg; output
-          # is compact (single-line) JSON safe for GITHUB_OUTPUT.
-          LANGS_JSON=$(jq -nc --arg langs '${{ inputs.languages }}' '$langs | split(",")')
+          LANGS_JSON=$(jq -nc --arg langs "${LANGS_RAW}" '$langs | split(",")')
           echo "languages_json=${LANGS_JSON}" >> "$GITHUB_OUTPUT"
 
   analyze:
