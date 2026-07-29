@@ -146,7 +146,7 @@ jobs:
 
     steps:
       - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
         with:
           values: |
             {"working-directory": "${{ inputs.working-directory }}","aws-region": "${{ inputs.aws-region }}","terraform-version": "${{ inputs.terraform-version }}"}
@@ -173,7 +173,7 @@ jobs:
 
 
       - name: Setup Terraform ${{ inputs.terraform-version }}
-        uses: hashicorp/setup-terraform@v4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
           # terraform_wrapper: false — the wrapper eats exit code 2 from
@@ -186,7 +186,7 @@ jobs:
         # terraform-plan.yml. The caller passes
         #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
         # explicitly (required by workflow_call on this reusable).
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
@@ -334,7 +334,7 @@ jobs:
 
       - name: Notify on apply failure
         if: failure() && steps.apply.outputs.apply-success != 'true' && inputs.drift-only != 'true'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
         with:
           header: terraform-apply-failed-${{ steps.env.outputs.environment }}
           message: |
@@ -354,7 +354,7 @@ jobs:
 
       - name: Notify on drift detected
         if: always() && inputs.drift-only == 'true' && steps.plan.outputs.has-changes == 'true'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
         with:
           header: terraform-drift-${{ steps.env.outputs.environment }}
           message: |

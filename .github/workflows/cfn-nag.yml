@@ -84,7 +84,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
@@ -92,7 +92,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Ruby ${{ inputs.ruby-version }}
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b  # v1
         with:
           ruby-version: ${{ inputs.ruby-version }}
           # Bundler not required: we install cfn-nag as a system gem.
