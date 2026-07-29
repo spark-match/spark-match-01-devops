@@ -78,15 +78,19 @@ jobs:
         run: |
           set -euo pipefail
           LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
-          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${INPUTS_ENVIRONMENT_NAME}" | tr '[:upper:]' '[:lower:]')"
           case "$LOWER_OS" in
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
           esac
           echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
           echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
-          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_NODE_VERSION: ${{ inputs.node-version }}
+          INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -109,7 +113,11 @@ jobs:
 
       - name: Pre-test hook
         if: inputs.pre-test-script != ''
-        run: npm run ${{ inputs.pre-test-script }}
+        run: npm run "${INPUTS_PRE_TEST_SCRIPT}"
 
+        env:
+          INPUTS_PRE_TEST_SCRIPT: ${{ inputs.pre-test-script }}
       - name: Run unit tests
-        run: npm run ${{ inputs.test-script }}
+        run: npm run "${INPUTS_TEST_SCRIPT}"
+        env:
+          INPUTS_TEST_SCRIPT: ${{ inputs.test-script }}
