@@ -54,11 +54,48 @@ jobs:
 
       - name: Download actionlint binary (pinned v1.7.7)
         id: get_actionlint
-        # Pin to v1.7.7 (latest stable as of 2026-07). Avoid `main` branch
-        # because that would be a moving target (supply chain risk if the
-        # upstream repo is compromised). Update this pin when bumping.
-        run: bash <(curl --fail --silent --show-error --location https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash)
         shell: bash
+        # Pin to v1.7.7. Avoid `main` branch because that would be a
+        # moving target (supply chain risk if the upstream repo is
+        # compromised). Update this pin when bumping.
+        #
+        # The install script's signature is:
+        #   bash download-actionlint.bash [VERSION] [DIR]
+        # VERSION defaults to "latest" if omitted — so we MUST pass it
+        # explicitly to honour the pin (without it the script silently
+        # installs the latest release even though the URL says v1.7.7).
+        # VERSION is semver only ("1.7.7"), NOT the "v1.7.7" tag-prefix
+        # GitHub uses in the URL — the script rejects "v" with exit 1.
+        #
+        # Use `curl | bash -s --` rather than `bash <(curl ...)`. With
+        # the latter, a failed curl makes bash run an empty script body
+        # and exit 0 — which then leaves `outputs.executable` empty and
+        # causes the next step to run `-color` (exit 127). The pipe form
+        # propagates curl's exit code through pipefail.
+        #
+        # `--retry 3 --retry-delay 5` smooths over transient connection
+        # resets on the GitHub-hosted runner.
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/actionlint-bin"
+          mkdir -p "$install_dir"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 5 \
+            https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash \
+            | bash -s -- 1.7.7 "$install_dir"
+          executable="$install_dir/actionlint"
+          if [[ ! -x "$executable" ]]; then
+            echo "::error::actionlint binary not found at $executable after install"
+            exit 1
+          fi
+          echo "executable=$executable" >> "$GITHUB_OUTPUT"
+          echo "Installed: $("$executable" --version)"
 
       - name: Run actionlint
-        run: ${{ steps.get_actionlint.outputs.executable }} -color
+        # Quote the whole command so YAML parses it as a single string
+        # value (a single-quoted prefix `'"...""...""'"` followed by
+        # ` -color` parses as two scalars and the file fails YAML
+        # validation — GitHub then refuses to schedule any jobs for
+        # the PR). `$RUNNER_TEMP/actionlint-bin/actionlint` has no
+        # spaces, but quoting is harmless and avoids the pitfall if
+        # the install path ever changes.
+        run: "${{ steps.get_actionlint.outputs.executable }} -color"
