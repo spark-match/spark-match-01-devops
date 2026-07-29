@@ -37,10 +37,23 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened]
     paths:
+      # Workflow files, composite actions, CODEOWNERS, dependabot config.
       - '.github/**'
+      # Workflow-adjacent YAML/JSON anywhere in the tree (e.g.
+      # governance/repository-governance.json, examples/*/workflow.yml).
       - '**.yml'
       - '**.yaml'
       - '**.md'
+      # Bash + Python scripts under scripts/ — must run shellcheck.
+      - 'scripts/**'
+      # bats + pytest suites — must run the test jobs.
+      - 'tests/**'
+      # Governance manifest + schema — must run shellcheck + jq
+      # validation (consumed by configure-repo-rulesets.sh).
+      - 'governance/**'
+      # .shellcheckrc is not a .yml — explicit entry so that a tweak
+      # to the shellcheck configuration re-runs the shellcheck job.
+      - '.shellcheckrc'
   push:
     branches: [main]            # no paths filter — strict mode requires checks on every commit
 
