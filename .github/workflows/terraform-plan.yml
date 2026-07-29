@@ -256,7 +256,7 @@ jobs:
         run: terraform fmt -check -recursive -diff
 
       - name: Create plugin cache directory
-        run: mkdir -p ${GITHUB_WORKSPACE}/.terraform.d/plugin-cache
+        run: mkdir -p "${GITHUB_WORKSPACE}/.terraform.d/plugin-cache"
 
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
