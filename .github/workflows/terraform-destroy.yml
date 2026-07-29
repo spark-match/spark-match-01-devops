@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Terraform ${{ inputs.terraform-version }}
-        uses: hashicorp/setup-terraform@v4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
           # terraform_wrapper: false — the wrapper eats exit code 2 from
@@ -330,7 +330,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC, apply role)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
@@ -499,7 +499,7 @@ jobs:
 
       - name: Notify on destroy failure
         if: failure() && steps.apply.outputs.destroy-success != 'true' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
         with:
           header: terraform-destroy-failed-${{ steps.env.outputs.environment }}
           message: |
@@ -601,7 +601,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS credentials (OIDC, apply role)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
@@ -810,7 +810,7 @@ jobs:
         # pattern as the destroy failure comment, but header differs so the
         # two can coexist if both fire.
         if: failure() && steps.aggregate.outputs.cleanup-success != 'true'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
         with:
           header: terraform-cleanup-residuals-failed-${{ inputs.environment || inputs.working-directory }}
           message: |

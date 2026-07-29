@@ -73,7 +73,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Compile LaTeX document
-        uses: xu-cheng/latex-action@v4
+        uses: xu-cheng/latex-action@6549dc21effb2730855a1281407ecfcececc6c1b  # v4
         with:
           root_file: ${{ inputs.root-file }}
           latexmk_use_lualatex: ${{ inputs.use-lualatex }}
