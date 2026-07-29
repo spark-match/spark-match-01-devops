@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
 name: Run pytest with args
 description: 'Runs `uv run pytest <targets> <args>` with safe arg splitting. Expects uv and Python to be installed (caller is responsible for setup).'
 inputs:
