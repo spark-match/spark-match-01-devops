@@ -30,4 +30,5 @@ runs:
         REQUIRED: ${{ inputs.required }}
         ENUMS: ${{ inputs.enums }}
         PATTERNS: ${{ inputs.patterns }}
-      run: bash ${{ github.action_path }}/validate.sh
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: bash "${GITHUB_ACTION_PATH}"/validate.sh

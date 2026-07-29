@@ -102,8 +102,10 @@ jobs:
         # ship a Gemfile. The cfn-nag gem ships both the `cfn-nag` CLI
         # wrapper and the `cfn_nag_scan` underscore binary; only the
         # latter is needed for scans.
-        run: gem install cfn-nag --no-document --version "${{ inputs.cfn-nag-version }}"
+        run: gem install cfn-nag --no-document --version "${INPUTS_CFN_NAG_VERSION}"
 
+        env:
+          INPUTS_CFN_NAG_VERSION: ${{ inputs.cfn-nag-version }}
       - name: Run cfn-nag
         # `cfn_nag_scan` (underscore binary) takes the same args as the
         # hyphen wrapper. We use --input-path per file (not --input-directory)
@@ -124,7 +126,7 @@ jobs:
           for tpl in "${TEMPLATES[@]}"; do
             [ -f "$tpl" ] || continue
             echo "=== Scanning $tpl ==="
-            if ! cfn_nag_scan --input-path "$tpl" --output-format "${{ inputs.output-format }}"; then
+            if ! cfn_nag_scan --input-path "$tpl" --output-format "${INPUTS_OUTPUT_FORMAT}"; then
               echo "::warning::cfn-nag exited non-zero on $tpl (continuing so all templates are reported)"
               SCAN_FAILED=1
             fi
@@ -133,3 +135,5 @@ jobs:
             echo "::error::cfn-nag reported FAIL findings on at least one template."
             exit 1
           fi
+        env:
+          INPUTS_OUTPUT_FORMAT: ${{ inputs.output-format }}

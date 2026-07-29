@@ -82,9 +82,11 @@ jobs:
       - name: Determine PDF output filename
         id: pdf
         run: |
-          BASENAME=$(echo "${{ inputs.root-file }}" | sed 's/\.tex$//')
+          BASENAME="${INPUTS_ROOT_FILE%.tex}"
           echo "filename=${BASENAME}.pdf" >> "$GITHUB_OUTPUT"
 
+        env:
+          INPUTS_ROOT_FILE: ${{ inputs.root-file }}
       - name: Upload PDF as artifact
         uses: actions/upload-artifact@v7
         with:

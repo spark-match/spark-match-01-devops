@@ -120,9 +120,11 @@ jobs:
       - name: Enforce Quality Gate
         if: ${{ always() && (steps.qg.outputs.quality-gate-status == 'FAILED' || (steps.qg.outcome == 'failure' && steps.qg.outputs.quality-gate-status == '')) && inputs.fail-on-quality-gate == 'true' }}
         run: |
-          if [ -z "${{ steps.qg.outputs.quality-gate-status }}" ]; then
+          if [ -z "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
             echo "::error::SonarCloud Quality Gate polling timed out (>300s). SonarCloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
           else
             echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
           fi
           exit 1
+        env:
+          STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS: ${{ steps.qg.outputs.quality-gate-status }}

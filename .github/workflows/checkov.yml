@@ -66,11 +66,13 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install checkov (pinned)
-        run: pip install --quiet checkov==${{ inputs.checkov-version }}
+        run: pip install --quiet checkov=="${INPUTS_CHECKOV_VERSION}"
 
       # `--compact` collapses duplicate-finding output into a summary table.
       # Hard-fail: if a new finding appears, fix the resource or add an inline
       # `# checkov:skip=CKV_AWS_XX:reason` annotation with justification.
+        env:
+          INPUTS_CHECKOV_VERSION: ${{ inputs.checkov-version }}
       - name: Run checkov
         working-directory: ${{ inputs.working-directory }}
         run: checkov --directory . --framework terraform --compact

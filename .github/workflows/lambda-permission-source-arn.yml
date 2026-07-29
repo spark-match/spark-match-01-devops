@@ -111,4 +111,6 @@ jobs:
         run: |
           set -euo pipefail
           # shellcheck disable=SC2086
-          python3 /tmp/check_lambda_permission_source_arn.py ${{ inputs.scan-paths }}
+          python3 /tmp/check_lambda_permission_source_arn.py "${INPUTS_SCAN_PATHS}"
+        env:
+          INPUTS_SCAN_PATHS: ${{ inputs.scan-paths }}
