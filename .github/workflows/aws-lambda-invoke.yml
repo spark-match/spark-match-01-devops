@@ -186,7 +186,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "===== Invoking ${INPUTS_FUNCTION_NAME} (env=${INPUTS_ENVIRONMENT_NAME}) ====="
-          PAYLOAD='${INPUTS_PAYLOAD}'
+          PAYLOAD="${INPUTS_PAYLOAD}"
+
           if [ -z "${PAYLOAD}" ]; then
             PAYLOAD='{}'
           fi

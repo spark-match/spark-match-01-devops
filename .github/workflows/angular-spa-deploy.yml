@@ -265,7 +265,7 @@ jobs:
           # time. Si no se pasa api-url, la variable queda vacia.
           API_URL: ${{ inputs.api-url }}
           INPUTS_BUILD_SCRIPT: ${{ inputs.build-script }}
-        run: npm run ${INPUTS_BUILD_SCRIPT}
+        run: npm run "${INPUTS_BUILD_SCRIPT}"
 
       - name: Verify build output exists
         id: artifact

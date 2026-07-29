@@ -151,7 +151,8 @@ jobs:
       - name: Validate parameter-overrides JSON shape
         run: |
           set -euo pipefail
-          PARAM_JSON='${INPUTS_PARAMETER_OVERRIDES_JSON}'
+          PARAM_JSON="${INPUTS_PARAMETER_OVERRIDES_JSON}"
+
           if [ -n "$PARAM_JSON" ] && [ "$PARAM_JSON" != "{}" ]; then
             echo "$PARAM_JSON" | jq -e . >/dev/null 2>&1 || {
               echo "::error::parameter-overrides-json is not valid JSON: $PARAM_JSON"
@@ -234,13 +235,13 @@ jobs:
 
       - name: Pre-build step
         if: inputs.pre-build-script != ''
-        run: npm run ${INPUTS_PRE_BUILD_SCRIPT}
+        run: npm run "${INPUTS_PRE_BUILD_SCRIPT}"
 
         env:
           INPUTS_PRE_BUILD_SCRIPT: ${{ inputs.pre-build-script }}
       - name: Build Lambda Layers
         if: inputs.build-layers-script != ''
-        run: npm run ${INPUTS_BUILD_LAYERS_SCRIPT}
+        run: npm run "${INPUTS_BUILD_LAYERS_SCRIPT}"
 
         env:
           INPUTS_BUILD_LAYERS_SCRIPT: ${{ inputs.build-layers-script }}
@@ -250,12 +251,12 @@ jobs:
           version: ${{ inputs.sam-cli-version }}
 
       - name: SAM validate (template + lint)
-        run: sam validate --template ${INPUTS_SAM_TEMPLATE} --lint
+        run: sam validate --template "${INPUTS_SAM_TEMPLATE}" --lint
 
         env:
           INPUTS_SAM_TEMPLATE: ${{ inputs.sam-template }}
       - name: SAM build
-        run: sam build --template ${INPUTS_SAM_TEMPLATE} --use-container
+        run: sam build --template "${INPUTS_SAM_TEMPLATE}" --use-container
 
         env:
           INPUTS_SAM_TEMPLATE: ${{ inputs.sam-template }}
@@ -269,7 +270,8 @@ jobs:
           if [ -n "${INPUTS_S3_BUCKET}" ]; then
             DEPLOY_ARGS="$DEPLOY_ARGS --s3-bucket ${INPUTS_S3_BUCKET}"
           fi
-          PARAM_JSON='${INPUTS_PARAMETER_OVERRIDES_JSON}'
+          PARAM_JSON="${INPUTS_PARAMETER_OVERRIDES_JSON}"
+
           if [ -n "$PARAM_JSON" ] && [ "$PARAM_JSON" != "{}" ]; then
             PARAM_OVERRIDES=$(echo "$PARAM_JSON" | jq -r 'to_entries | map("ParameterKey=\(.key),ParameterValue=\(.value|tostring)") | join(" ")')
             DEPLOY_ARGS="$DEPLOY_ARGS --parameter-overrides $PARAM_OVERRIDES"
