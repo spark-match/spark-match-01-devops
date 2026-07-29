@@ -204,8 +204,8 @@ jobs:
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
           esac
-          echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
-          echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
+          echo "lower_os=$(printf '%s' "$LOWER_OS" | tr -d '\n\r')" >> "$GITHUB_ENV"
+          echo "env_name=$(printf '%s' "$ENV_NAME" | tr -d '\n\r')" >> "$GITHUB_ENV"
           echo "Cache key segments: lower_os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
         env:
