@@ -26,8 +26,13 @@
 #   - pull-requests: write create/update the release PR
 #
 # Authentication:
-#   - Uses the default GITHUB_TOKEN. release-please runs on the same repo
-#     so cross-repo credentials are not needed.
+#   - Uses spark-match-bot (GitHub App, app id 4426218) via
+#     actions/create-github-app-token@v2. The default GITHUB_TOKEN fails
+#     CODE_OWNER review because it's a bot identity and `github-actions`
+#     is not a valid CODEOWNERS owner; the App identity passes review
+#     because the ruleset has a bypass actor entry for the App
+#     (see PR #159 for the ruleset patch).
+#   - Required secrets: RELEASE_PLEASE_APP_ID, RELEASE_PLEASE_APP_PRIVATE_KEY.
 #
 # First run note:
 #   - On the FIRST push after this workflow is merged, release-please
@@ -59,18 +64,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Generate App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          # owner/org scope; installation has repository_selection=all
+
       - name: Run release-please
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
         id: release
         with:
           config-file: .github/release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # Pinned to a major tag so Dependabot bumps it; the SHA of the
-          # current release is recorded in the lockfile via renovate or
-          # dependabot updates.
-          # To pin to a SHA, replace with googleapis/release-please-action@
-          # <sha> and update quarterly.
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Log result
         if: always()
