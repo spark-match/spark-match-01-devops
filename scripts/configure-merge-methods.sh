@@ -37,17 +37,18 @@ REPOS_OVERRIDE=""
 
 usage() {
   sed -n '2,/^# ====/p' "$0" | sed 's/^# \{0,1\}//'
-  exit 1
 }
 
+# Help is not an error: --help / -h exit 0.
+# Argument parse errors exit 2 (per gh-CLI convention).
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)     DRY_RUN=true; shift ;;
     --repos)       REPOS_OVERRIDE="$2"; shift 2 ;;
     --allow-merge) ALLOW_MERGE=true; shift ;;
     --allow-rebase) ALLOW_REBASE=true; shift ;;
-    -h|--help)     usage ;;
-    *)             echo "ERROR: argumento desconocido: $1" >&2; usage ;;
+    -h|--help)     usage; exit 0 ;;
+    *)             echo "ERROR: argumento desconocido: $1" >&2; usage; exit 2 ;;
   esac
 done
 
@@ -73,11 +74,24 @@ if [[ -n "$REPOS_OVERRIDE" ]]; then
   IFS=',' read -ra REPOS <<< "$REPOS_OVERRIDE"
   REPOS=("${REPOS[@]/#/$ORG/}")
 else
-  mapfile -t REPOS < <(gh api "orgs/$ORG/repos" --paginate --jq '.[] | select(.is_template == false) | .full_name')
+  # IMPORTANT: do not use `mapfile -t REPOS < <(gh api ...)` here. Process
+  # substitution swallows gh's exit code (mapfile's own exit is 0), so a
+  # failed listing silently leaves REPOS empty and the script exits 0.
+  LISTING=$(gh api "orgs/$ORG/repos" --paginate --jq '.[] | select(.is_template == false) | .full_name') || {
+    echo "ERROR: no se pudo listar los repos de $ORG (gh api fallo). Revisar auth y permisos." >&2
+    exit 1
+  }
+  if [[ -z "$LISTING" ]]; then
+    echo "ERROR: $ORG no tiene repos (o ninguno es candidato). Nada que hacer." >&2
+    exit 1
+  fi
+  mapfile -t REPOS <<< "$LISTING"
 fi
 
 printf "%-50s | %-7s | %-7s | %-7s | %-7s\n" "REPO" "SQUASH" "MERGE" "REBASE" "DEL_BR"
 printf "%-50s-+-%-7s-+-%-7s-+-%-7s-+-%-7s\n" "--------------------------------------------------" "-------" "-------" "-------" "-------"
+
+ANY_FAIL=false
 
 for REPO in "${REPOS[@]}"; do
   REPO_NAME=$(basename "$REPO")
@@ -92,17 +106,24 @@ for REPO in "${REPOS[@]}"; do
     continue
   fi
 
-  RESULT=$(gh api -X PATCH "repos/$REPO" \
-    -f allow_squash_merge=true \
-    -f allow_merge_commit="$ALLOW_MERGE" \
-    -f allow_rebase_merge="$ALLOW_REBASE" \
-    -f squash_merge_commit_title="$SQUASH_TITLE" \
-    -f squash_merge_commit_message="$SQUASH_MSG" \
-    -f delete_branch_on_merge=true \
-    --jq '{
-      s: .allow_squash_merge, m: .allow_merge_commit,
-      r: .allow_rebase_merge, d: .delete_branch_on_merge
-    } | "s=\(.s) m=\(.m) r=\(.r) d=\(.d)"' 2>/dev/null)
+  # Use -F (typed) for booleans so gh encodes them as JSON true/false,
+  # NOT the strings "true"/"false" (which would round-trip as the string
+  # and leave allow_merge_commit/allow_rebase_merge effectively enabled).
+  if ! RESULT=$(gh api -X PATCH "repos/$REPO" \
+      -F allow_squash_merge=true \
+      -F allow_merge_commit="$ALLOW_MERGE" \
+      -F allow_rebase_merge="$ALLOW_REBASE" \
+      -F squash_merge_commit_title="$SQUASH_TITLE" \
+      -F squash_merge_commit_message="$SQUASH_MSG" \
+      -F delete_branch_on_merge=true \
+      --jq '{
+        s: .allow_squash_merge, m: .allow_merge_commit,
+        r: .allow_rebase_merge, d: .delete_branch_on_merge
+      } | "s=\(.s) m=\(.m) r=\(.r) d=\(.d)"' 2>&1); then
+    echo "ERROR: PATCH rejected for $REPO: $RESULT" >&2
+    ANY_FAIL=true
+    continue
+  fi
 
   printf "%-50s | %s\n" "$REPO_NAME" "$RESULT"
 done
@@ -114,3 +135,7 @@ echo "Notas:"
 echo "  - El repo .github (perfil) tambien fue configurado."
 echo "  - Los repos tipo 'template' se omiten (se configuran al crear nuevos repos)."
 echo "  - Para revertir o re-aplicar: ejecutar este script de nuevo."
+
+if [[ "$ANY_FAIL" == "true" ]]; then
+  exit 1
+fi
