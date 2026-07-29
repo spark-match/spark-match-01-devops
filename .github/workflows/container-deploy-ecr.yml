@@ -131,7 +131,7 @@ jobs:
     environment: ${{ inputs.environment-name }}
     steps:
       - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
         with:
           values: |
             {
@@ -151,7 +151,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC, deploy role)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
@@ -167,7 +167,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64  # v2
         with:
           registries: ${{ inputs.aws-region == 'aws-cn' && 'aws' || '' }}
 
@@ -180,7 +180,7 @@ jobs:
           echo "ECR registry: ${REGISTRY}"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4
 
       - name: Compute image tags
         id: tags
@@ -209,7 +209,7 @@ jobs:
           echo "Will push tags: ${TAGS}"
 
       - name: Build and push image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7
         with:
           context: ${{ inputs.context-path }}
           file: ${{ inputs.dockerfile-path }}
@@ -244,7 +244,7 @@ jobs:
 
       - name: Notify on deploy failure
         if: failure()
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
         with:
           header: container-deploy-ecr-failed-${{ inputs.environment-name }}
           message: |

@@ -241,7 +241,7 @@ jobs:
             ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
 
       - name: Configure AWS credentials (OIDC, deploy role)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
@@ -370,7 +370,7 @@ jobs:
 
       - name: Notify on deploy failure
         if: failure()
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
         with:
           header: angular-spa-deploy-failed-${{ inputs.environment-name }}
           message: |

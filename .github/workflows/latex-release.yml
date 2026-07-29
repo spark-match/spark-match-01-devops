@@ -85,7 +85,7 @@ jobs:
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Compile LaTeX document
-        uses: xu-cheng/latex-action@v4
+        uses: xu-cheng/latex-action@6549dc21effb2730855a1281407ecfcececc6c1b  # v4
         with:
           root_file: ${{ inputs.root-file }}
 
@@ -97,7 +97,7 @@ jobs:
           ls -la release-*.pdf
 
       - name: Create GitHub Release with PDF
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: ${{ inputs.release-name-prefix }} - ${{ steps.version.outputs.version }}
