@@ -44,13 +44,20 @@
 #                     Default: 'none'
 #   queries-pack:     'security' | 'security-extended' | 'security-and-quality'.
 #                     Default: 'security-extended'
-#   paths-ignore:     Newline-separated globs to exclude from analysis.
-#                     Default: 'docs/**|**/*.md|coverage/**|node_modules/**'
 #   fail-on-alerts:   If 'true', the workflow exits non-zero on findings at
 #                     severity >= fail-on-severity.
 #                     Default: 'true'
 #   fail-on-severity: 'error' | 'warning' | 'note'.
 #                     Default: 'warning'
+#
+# Path exclusions:
+#   - Callers that need to exclude paths from CodeQL analysis should pass
+#     them via the `config-file:` input (a CodeQL config YAML in the caller
+#     repo with `paths-ignore:`). The `paths-ignore:` input was removed
+#     because `github/codeql-action/init@v4` does NOT define it as an
+#     actionlint-valid input (regression introduced in #142; fixed in #148).
+#     See https://github.com/github/codeql-action/blob/v4/init/action.yml
+#     for the full input list.
 #
 # Notes:
 #   - CodeQL uses the caller's GITHUB_TOKEN via `security-events: write`.
@@ -78,11 +85,6 @@ on:
         description: 'Query pack'
         type: string
         default: 'security-extended'
-        required: false
-      paths-ignore:
-        description: 'Newline-separated globs to exclude'
-        type: string
-        default: 'docs/**|**/*.md|coverage/**|node_modules/**'
         required: false
       fail-on-alerts:
         description: 'Exit non-zero if alerts at severity >= fail-on-severity'
@@ -153,7 +155,6 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ inputs.build-mode }}
           queries: ${{ inputs.queries-pack }}
-          paths-ignore: ${{ inputs.paths-ignore }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
