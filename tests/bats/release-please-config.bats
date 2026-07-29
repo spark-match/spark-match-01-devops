@@ -92,6 +92,17 @@ setup() {
   [ "$include_v" = "true" ]
 }
 
+@test "release-please config release-type is a valid strategy (no 'default')" {
+  local rt
+  rt=$(jq -r '.["release-type"] // .packages["."]["release-type"] // ""' "$CONFIG")
+  [ -n "$rt" ]
+  [ "$rt" != "default" ] || { echo "release-type 'default' is not a valid release-please strategy"; return 1; }
+  case "$rt" in
+    simple|node|python|go|java|rust|ruby|php|elixir|terraform-module|helm|docker|maven|dotnet|dart|krm-blueprint|ocaml|sfdx|expo) ;;
+    *) echo "unknown release-type=$rt"; return 1 ;;
+  esac
+}
+
 @test "release-please manifest still has version 0.1.1" {
   run jq -r '.["."]' .release-please-manifest.json
   [ "$status" -eq 0 ]
