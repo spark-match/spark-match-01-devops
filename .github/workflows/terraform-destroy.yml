@@ -367,21 +367,21 @@ jobs:
           GITHUB_WORKSPACE: ${{ github.workspace }}
       - name: Terraform init
         run: |
-          INIT_ARGS="-input=false"
+          INIT_ARGS=(-input=false)
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
-            INIT_ARGS="$INIT_ARGS \
-              -backend-config=bucket="${INPUTS_BACKEND_BUCKET}" \
-              -backend-config=key="${INPUTS_BACKEND_KEY}" \
-              -backend-config=region="${INPUTS_AWS_REGION}" \
-              -backend-config=use_lockfile=true"
+            INIT_ARGS+=(
+              -backend-config=bucket="${INPUTS_BACKEND_BUCKET}"
+              -backend-config=key="${INPUTS_BACKEND_KEY}"
+              -backend-config=region="${INPUTS_AWS_REGION}"
+              -backend-config=use_lockfile=true
+            )
           else
             # Caller migrated state to local (or is using a local backend);
             # -backend=false skips re-init against S3.
-            INIT_ARGS="$INIT_ARGS -backend=false"
+            INIT_ARGS+=(-backend=false)
           fi
-          echo "Running: terraform init $INIT_ARGS"
-          # shellcheck disable=SC2086
-          terraform init $INIT_ARGS
+          echo "Running: terraform init ${INIT_ARGS[*]}"
+          terraform init "${INIT_ARGS[@]}"
         env:
           TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
