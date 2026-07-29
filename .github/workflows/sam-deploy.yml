@@ -151,7 +151,7 @@ jobs:
       - name: Validate parameter-overrides JSON shape
         run: |
           set -euo pipefail
-          PARAM_JSON='${{ inputs.parameter-overrides-json }}'
+          PARAM_JSON='${INPUTS_PARAMETER_OVERRIDES_JSON}'
           if [ -n "$PARAM_JSON" ] && [ "$PARAM_JSON" != "{}" ]; then
             echo "$PARAM_JSON" | jq -e . >/dev/null 2>&1 || {
               echo "::error::parameter-overrides-json is not valid JSON: $PARAM_JSON"
@@ -162,17 +162,22 @@ jobs:
             echo "parameter-overrides-json empty - using samconfig.toml defaults only."
           fi
 
+        env:
+          INPUTS_PARAMETER_OVERRIDES_JSON: ${{ inputs.parameter-overrides-json }}
       - name: Resolve effective sam-config-env
         id: cfg
         run: |
-          if [ -n "${{ inputs.sam-config-env }}" ]; then
-            ENV="${{ inputs.sam-config-env }}"
+          if [ -n "${INPUTS_SAM_CONFIG_ENV}" ]; then
+            ENV="${INPUTS_SAM_CONFIG_ENV}"
           else
-            ENV="${{ inputs.environment-name }}"
+            ENV="${INPUTS_ENVIRONMENT_NAME}"
           fi
           echo "sam-config-env=${ENV}" >> "$GITHUB_OUTPUT"
           echo "Effective samconfig section: [${ENV}]"
 
+        env:
+          INPUTS_SAM_CONFIG_ENV: ${{ inputs.sam-config-env }}
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
       - name: Resolve cache key tags
         # Lowercase runner.os + environment-name into env vars for the
         # canonical cache key convention. actions/cache step references
@@ -180,15 +185,19 @@ jobs:
         run: |
           set -euo pipefail
           LOWER_OS="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
-          ENV_NAME="$(printf '%s' "${{ inputs.environment-name }}" | tr '[:upper:]' '[:lower:]')"
+          ENV_NAME="$(printf '%s' "${INPUTS_ENVIRONMENT_NAME}" | tr '[:upper:]' '[:lower:]')"
           case "$LOWER_OS" in
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
           esac
           echo "lower_os=$LOWER_OS" >> "$GITHUB_ENV"
           echo "env_name=$ENV_NAME" >> "$GITHUB_ENV"
-          echo "Cache key segments: lower_os=$LOWER_OS node=${{ inputs.node-version }} pm=${{ inputs.pkg-manager }} env=$ENV_NAME"
+          echo "Cache key segments: lower_os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_NODE_VERSION: ${{ inputs.node-version }}
+          INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -225,34 +234,42 @@ jobs:
 
       - name: Pre-build step
         if: inputs.pre-build-script != ''
-        run: npm run ${{ inputs.pre-build-script }}
+        run: npm run ${INPUTS_PRE_BUILD_SCRIPT}
 
+        env:
+          INPUTS_PRE_BUILD_SCRIPT: ${{ inputs.pre-build-script }}
       - name: Build Lambda Layers
         if: inputs.build-layers-script != ''
-        run: npm run ${{ inputs.build-layers-script }}
+        run: npm run ${INPUTS_BUILD_LAYERS_SCRIPT}
 
+        env:
+          INPUTS_BUILD_LAYERS_SCRIPT: ${{ inputs.build-layers-script }}
       - name: Install SAM CLI
         uses: aws-actions/setup-sam@89ddb14d60e682855e3fea4be85b3c56485de310  # v3
         with:
           version: ${{ inputs.sam-cli-version }}
 
       - name: SAM validate (template + lint)
-        run: sam validate --template ${{ inputs.sam-template }} --lint
+        run: sam validate --template ${INPUTS_SAM_TEMPLATE} --lint
 
+        env:
+          INPUTS_SAM_TEMPLATE: ${{ inputs.sam-template }}
       - name: SAM build
-        run: sam build --template ${{ inputs.sam-template }} --use-container
+        run: sam build --template ${INPUTS_SAM_TEMPLATE} --use-container
 
+        env:
+          INPUTS_SAM_TEMPLATE: ${{ inputs.sam-template }}
       - name: SAM deploy
         run: |
           set -euo pipefail
-          DEPLOY_ARGS="--config-env ${{ steps.cfg.outputs.sam-config-env }} --no-confirm-changeset --no-fail-on-empty-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --region ${{ inputs.aws-region }}"
-          if [ -n "${{ inputs.stack-name }}" ]; then
-            DEPLOY_ARGS="$DEPLOY_ARGS --stack-name ${{ inputs.stack-name }}"
+          DEPLOY_ARGS="--config-env ${{ steps.cfg.outputs.sam-config-env }} --no-confirm-changeset --no-fail-on-empty-changeset --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --region ${INPUTS_AWS_REGION}"
+          if [ -n "${INPUTS_STACK_NAME}" ]; then
+            DEPLOY_ARGS="$DEPLOY_ARGS --stack-name ${INPUTS_STACK_NAME}"
           fi
-          if [ -n "${{ inputs.s3-bucket }}" ]; then
-            DEPLOY_ARGS="$DEPLOY_ARGS --s3-bucket ${{ inputs.s3-bucket }}"
+          if [ -n "${INPUTS_S3_BUCKET}" ]; then
+            DEPLOY_ARGS="$DEPLOY_ARGS --s3-bucket ${INPUTS_S3_BUCKET}"
           fi
-          PARAM_JSON='${{ inputs.parameter-overrides-json }}'
+          PARAM_JSON='${INPUTS_PARAMETER_OVERRIDES_JSON}'
           if [ -n "$PARAM_JSON" ] && [ "$PARAM_JSON" != "{}" ]; then
             PARAM_OVERRIDES=$(echo "$PARAM_JSON" | jq -r 'to_entries | map("ParameterKey=\(.key),ParameterValue=\(.value|tostring)") | join(" ")')
             DEPLOY_ARGS="$DEPLOY_ARGS --parameter-overrides $PARAM_OVERRIDES"
@@ -260,3 +277,8 @@ jobs:
           echo "Running: sam deploy $DEPLOY_ARGS"
           # shellcheck disable=SC2086
           sam deploy $DEPLOY_ARGS
+        env:
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_STACK_NAME: ${{ inputs.stack-name }}
+          INPUTS_S3_BUCKET: ${{ inputs.s3-bucket }}
+          INPUTS_PARAMETER_OVERRIDES_JSON: ${{ inputs.parameter-overrides-json }}
