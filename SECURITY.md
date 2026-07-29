@@ -60,7 +60,7 @@ The following are **not** considered vulnerabilities of this repo and should be 
 
 ## Security Baseline (inherited)
 
-This repo follows the org-wide security baseline documented in `~/.config/opencode/security-baseline.md` (per developer machine) and `docs/GOVERNANCE-STANDARD.md` �� 6 (per repo). Key invariants:
+This repo follows the org-wide security baseline documented in `docs/GOVERNANCE-STANDARD.md` § 6 (per repo). Key invariants:
 
 - `permissions: minimum` on every workflow (never `write-all`).
 - `secrets: inherit` is blocked cross-owner; deploy recipes use **same-name secret convention** (`AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`).

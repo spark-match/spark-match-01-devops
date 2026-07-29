@@ -89,7 +89,7 @@ git checkout main
 
 ## Running tests
 
-The repo ships **75 bats tests + 15 pytest tests = 90 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
+The repo ships **124 bats tests + 15 pytest tests = 139 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
 
 ```bash
 # All tests (bats + pytest)
@@ -233,7 +233,7 @@ The ruleset blocks direct pushes to `main` for everyone, including org admins, b
 4. Restore both flags to their canonical state (`bypass_mode: "pull_request"` and `enforce_admins: true`).
 5. Verify with `./scripts/configure-repo-rulesets.sh --check`.
 
-The whole window must be **< 5 seconds** in production. Document the dance in `DEVOPS-UPGRADE.md` and never use it for ordinary PR work.
+The whole window must be **< 5 seconds** in production. Document the dance (per repo, never in this public repo) and never use it for ordinary PR work.
 
 CODE OWNERS review applies even when `bypass_mode: "always"` if the author is itself a CODE OWNER — in that case, push from a non-CODE-OWNER account or temporarily add the path as `* @devops`.
 

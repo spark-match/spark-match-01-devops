@@ -59,7 +59,7 @@ mirrors the structure the maintainers expect; do not delete sections.
 - [ ] I ran `shellcheck scripts/*.sh .github/actions/*/action.sh` with no warnings.
 - [ ] I ran `actionlint .github/workflows/*.yml` with no errors.
 - [ ] If I changed a recipe, I added or updated tests in `tests/bats/` or `tests/python/`.
-- [ ] If I added a new top-level path, I noted it in the PR body for the CODEOWNERS follow-up (PR #12).
+- [ ] If I added a new top-level path, I noted it in the PR body for the CODEOWNERS follow-up.
 - [ ] I followed the branch-naming convention (`<type>/<scope>-<short-desc>`).
 - [ ] My commit subject follows Conventional Commits 1.0.0.
 - [ ] I am NOT the sole CODE OWNER of the paths I changed (self-approval is impossible).

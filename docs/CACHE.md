@@ -136,12 +136,11 @@ The cache backend is opaque, so debugging is limited. Useful angles:
 
 ## 6. Migration notes (v3 → v4)
 
-PR #62 in `spark-match-01-devops` was the v3 → v4 transition. Cache keys
-became strictly lowercase, included `pkgmanager`, and the `<H>` was
-narrowed to a single file. Existing v3 entries are orphaned and will be
-GC'd by the 7-day retention. No consumer (other than `orion-frontend`
-which exercises both recipes daily) was affected; the consumer PR is
-`ahincho/orion-frontend#13`.
+The v3 → v4 transition was tracked in this repo's git history (search
+for `tag: cache-key-v4` in commit messages). Cache keys became strictly
+lowercase, included `pkgmanager`, and the `<H>` was narrowed to a single
+file. Existing v3 entries are orphaned and will be GC'd by the 7-day
+retention.
 
 ## 7. Inline test job (orion-frontend/ci.yml)
 
@@ -154,6 +153,6 @@ restore-keys: |
   linux-node24-npm-ci-
 ```
 
-Switching to the new `node-test.yml` reusable workflow (PR #65 + consumer
-PR #15) makes this exact same key dynamic from the recipe, so future
-node-version bumps automatically re-key.
+Switching to the new `node-test.yml` reusable workflow makes this exact
+same key dynamic from the recipe, so future node-version bumps
+automatically re-key.

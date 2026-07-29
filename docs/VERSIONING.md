@@ -23,7 +23,7 @@ anterior (`dev` para probar, `main` para prod):
 
 - **Un cambio se prueba en el caller real, no en un ambient proxy.** El PR contra `main` referencia el SHA del recipe que se va a mergear; el caller corre sus tests contra ese SHA exacto antes de aprobar.
 - **Drift reducido.** No hay periodo donde `dev` y `main` divergen silenciosamente, ni riesgo de olvidar promover un fix.
-- **Reglas unicas.** El ruleset + CODEOWNERS (transicion gradual a `required_reviewers` por team; ver `DEVOPS-UPGRADE.md` § "Modelo de aprobacion objetivo") protege la unica rama que importa.
+- **Reglas unicas.** El ruleset + CODEOWNERS (transicion gradual a `required_reviewers` por team; el plan historico vivia en un doc externo que se retiro) protege la unica rama que importa.
 - **Rollback trivial.** `git revert` + push restaura el estado anterior sin coordination entre ramas.
 
 ## Trade-off
@@ -42,7 +42,7 @@ Si en algun momento queremos publicar versiones estables de los reusables para t
 
 Mientras tanto, los callers internos referencian `@main` y confian en el ruleset + CODEOWNERS + reviewer obligatorio.
 
-## Catalogo de recipes (v3)
+## Catalogo de recipes (v4 cache-key convention)
 
 Estructura actual bajo `.github/workflows/`:
 
@@ -101,10 +101,14 @@ Es el sibling generico de `migrations.yml`: cualquier recipe futura que
 solo necesite "invoke esta Lambda y checkear 200 + sin FunctionError"
 puede usar este sin copy-paste de los pasos de AWS config + invoke +
 validation. NO declara `environment:` en su job (resuelto en callee
-repo, no caller; PR #96 diagnostico completo). Los 3 recipes
-`seed-users-{advisors,supervisors,agents}.yml` siguen el mismo patron
-con su propio parser de summary `{created, skipped, errors}` porque la
-UX role-specific (job display name, step labels) gana con ser bespoke.
+repo, no caller; el bypass requiere que el caller declare `environment:`
+en su job wrapper o preflight porque GitHub Actions rechaza
+`environment:` declarado en un reusable workflow job — los reusables
+solo pueden propagarlo via el input `environment-name` del caller). Los 3
+recipes `seed-users-{advisors,supervisors,agents}.yml` siguen el mismo
+patron con su propio parser de summary `{created, skipped, errors}`
+porque la UX role-specific (job display name, step labels) gana con
+ser bespoke.
 
 ### `seed-users-{advisors,supervisors,agents}.yml`
 

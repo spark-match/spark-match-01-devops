@@ -92,7 +92,7 @@ Repositories currently using `* @team` plus `/decisions/`, `/onboarding/`, etc. 
 
 ### Reference implementation: `spark-match-01-devops`
 
-The catalog repo (`spark-match-01-devops`) is the canonical example of a fully-migrated explicit-paths `CODEOWNERS`. As of 2026-07-26 (PR #12), every tracked path is listed explicitly:
+The catalog repo (`spark-match-01-devops`) is the canonical example of a fully-migrated explicit-paths `CODEOWNERS`. As of 2026-07-26 every tracked path is listed explicitly:
 
 | Path | Owner(s) | Why |
 |---|---|---|
@@ -198,12 +198,12 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 | `spark-match-06-model-training` | ok | ok | ok | ok | ok | drift | 5/6 |
 | `spark-match-08-deep-agent` | ok | ok | ok | ok | ok | drift | 5/6 |
 
-**Compliance global: 48/54 = 89%** (post-migracion; snapshot 2026-07-26 con PR #12).
+**Compliance global: 47/54 = 87%** (post-migracion; snapshot 2026-07-26).
 
 ### Casos especiales
 
 - **Headers "drift"**: los 8 repos migrados conservan el header que dice "branch protection" en lugar de "ruleset". Es un detalle cosmético del comentario; no afecta la funcionalidad. La migracion al header correcto se puede hacer en un PR de cleanup posterior.
-- **`spark-match-04-frontend`** (resuelto en migracion 2026-07-26): el CODEOWNERS ahora asigna `frontend-devs` explicitamente a `.github/`, `.vscode/`, `public/`, `src/`, archivos de config raiz, y double-owns README/CONTRIBUTING/LICENSE. Canary PR #7 valido que `frontend-devs` + `product-owners` son solicitados correctamente.
+- **`spark-match-04-frontend`** (resuelto en migracion 2026-07-26): el CODEOWNERS ahora asigna `frontend-devs` explicitamente a `.github/`, `.vscode/`, `public/`, `src/`, archivos de config raiz, y double-owns README/CONTRIBUTING/LICENSE. Un canary PR anterior valido que `frontend-devs` + `product-owners` son solicitados correctamente.
 
 ### Proceso de migracion aplicado (leccion aprendida)
 
@@ -259,6 +259,5 @@ done
 
 - **Manifest**: `governance/repository-governance.json` (schema v2).
 - **Reconciler**: `scripts/configure-repo-rulesets.sh`.
-- **Plan completo**: `DEVOPS-UPGRADE.md` (workspace doc, fuera del repo).
-- **PRs de Phase 4**: #109 (manifest + reconciler), #111 (fix Checkov), #112 (Windows compat), #113 (CODEOWNERS default).
-- **Pilot**: ruleset 18893014 sobre `spark-match-01-devops`, canary PR #110.
+- **Plan completo**: see `CHANGELOG.md` for the audit + migration timeline. (Original external workspace doc has been retired.)
+- **Pilot**: ruleset 18893014 sobre `spark-match-01-devops`.
