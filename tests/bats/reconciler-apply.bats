@@ -217,3 +217,78 @@ EOF
   echo "$output_json" | jq -e 'type == "array"' >/dev/null
   echo "$output_json" | jq -e '.[] | select(.repo == "spark-match-foo") | .state == "would-create"' >/dev/null
 }
+
+# -----------------------------------------------------------------------------
+# PR-6 regression guards:
+#   - --prune-unexpected really deletes foreign rulesets (was: log "no
+#     implementado" and proceed with PUT).
+#   - backup failure blocks the destructive PUT (was: 2>/dev/null || true
+#     silently swallowed, PUT proceeded).
+#   - --strict escalates log_warn to log_err + ANY_FAIL.
+# -----------------------------------------------------------------------------
+
+@test "apply: --prune-unexpected really DELETEs foreign rulesets via API" {
+  # rulesets-list has both managed (id=99) and a foreign ruleset (id=7).
+  echo '[{"id": 99, "name": "spark-match-default-branch-protection"},
+        {"id": 7, "name": "some-other-ruleset", "target": "branch"}]' \
+    > fixtures/rulesets-list.json
+  echo '{"id": 99, "name": "x", "target": "branch", "enforcement": "active",
+        "conditions": {"ref_name": {"include": [], "exclude": []}},
+        "bypass_actors": [], "rules": []}' \
+    > fixtures/rule-99.json
+
+  run bash "$SCRIPT" --apply --prune-unexpected \
+                       --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" \
+                       --repos spark-match-foo
+  [ "$status" -eq 0 ]
+  # DELETE was issued for the foreign ruleset.
+  grep -q "gh api -X DELETE repos/spark-match/spark-match-foo/rulesets/7" gh.log
+  # Then PUT was issued for the managed one (after pruning, the script
+  # refetches and proceeds with the reconciliation of the managed ruleset).
+  grep -q "gh api -X PUT repos/spark-match/spark-match-foo/rulesets/99" gh.log
+  # No "no implementado" warning in output.
+  [[ "$output" != *"no implementado"* ]]
+}
+
+@test "apply: backup failure -> state=failed backup-failed, no PUT issued" {
+  echo '[{"id": 99, "name": "spark-match-default-branch-protection"}]' \
+    > fixtures/rulesets-list.json
+  echo '{"id": 99, "name": "x", "target": "branch", "enforcement": "active",
+        "conditions": {"ref_name": {"include": [], "exclude": []}},
+        "bypass_actors": [], "rules": []}' \
+    > fixtures/rule-99.json
+  # 2nd+ GET to rulesets/99 fails (1st = fetch_current_ruleset, 2nd = backup).
+  touch fixtures/backup-fail
+
+  run bash "$SCRIPT" --apply --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" \
+                       --repos spark-match-foo --json
+  [ "$status" -eq 1 ]
+  output_json=$(json_output)
+  echo "$output_json" | jq -e '.[] | select(.repo == "spark-match-foo") | .reason == "backup-failed"' >/dev/null
+  # PUT was NEVER issued (backup failure must block the destructive PUT).
+  ! grep -q "gh api -X PUT" gh.log
+  # The script logged the backup failure as [ERR ].
+  [[ "$output" == *"[ERR ]"* ]]
+}
+
+@test "apply: --strict escalates POST-rejected log_warn to log_err + failure" {
+  touch fixtures/post-rejected
+  run bash "$SCRIPT" --apply --strict --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" \
+                       --repos spark-match-foo --json
+  [ "$status" -eq 1 ]
+  output_json=$(json_output)
+  # POST-rejected still records state=failed.
+  echo "$output_json" | jq -e '.[] | select(.repo == "spark-match-foo") | .reason == "POST-rejected"' >/dev/null
+  # But the message goes through log_err (which prints [ERR ]) rather than
+  # log_warn (which prints [WARN]). --strict converts the warning to an error.
+  [[ "$output" == *"[ERR ]"* ]]
+  [[ "$output" != *"[WARN]"* ]]
+}
+
+@test "apply: without --strict, POST-rejected still prints [WARN] (not [ERR ])" {
+  touch fixtures/post-rejected
+  run bash "$SCRIPT" --apply --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" \
+                       --repos spark-match-foo --json
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[WARN]"* ]]
+}

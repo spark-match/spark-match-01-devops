@@ -13,6 +13,10 @@
 #   rule-<id>.json            JSON of single ruleset (GET /rulesets/<id>)
 #   put-rejected              presence forces PUT to exit non-zero
 #   post-rejected             presence forces POST to exit non-zero
+#   backup-fail               presence forces the 2nd+ GET to rulesets/<id>
+#                              to exit non-zero (used to test backup-failure-
+#                              blocks-PUT; first GET is the script's
+#                              fetch_current_ruleset, second is the backup)
 #
 # All `gh` invocations are logged to $BATS_TEST_TMPDIR/gh.log so tests can
 # assert on call count + ordering (PUT/POST presence/absence).
@@ -168,6 +172,14 @@ gh() {
         return 0
       fi
 
+      # DELETE repos/<owner>/<repo>/rulesets/<id>  (used by --prune-unexpected).
+      # Default: success (no output). Markers to opt into failure modes:
+      #   delete-rejected      -> exit non-zero (delete fails)
+      if [[ "$method" == "DELETE" && "$url" =~ ^repos/[^/]+/[^/]+/rulesets/([^/]+)$ ]]; then
+        if [[ -f "$fx/delete-rejected" ]]; then return 1; fi
+        return 0
+      fi
+
       # GET orgs/<org>/teams/<slug>  (team_id resolution)
       if [[ "$url" =~ ^orgs/[^/]+/teams/(.+)$ ]]; then
         local slug="${BASH_REMATCH[1]}"
@@ -182,6 +194,19 @@ gh() {
       # GET repos/<owner>/<repo>/rulesets/<id>  (single ruleset)
       if [[ "$url" =~ ^repos/[^/]+/[^/]+/rulesets/([^/]+)$ ]]; then
         local id="${BASH_REMATCH[1]}"
+        if [[ -f "$fx/backup-fail" ]]; then
+          # 1ra llamada = fetch_current_ruleset (debe OK).
+          # 2da+        = backup_ruleset        (debe fallar).
+          local cnt_file="$fx/_get-count"
+          local cnt
+          cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
+          cnt=$((cnt + 1))
+          echo "$cnt" > "$cnt_file"
+          if [[ "$cnt" -gt 1 ]]; then
+            echo "fake backup failure for ruleset $id" >&2
+            return 1
+          fi
+        fi
         if [[ -f "$fx/rule-$id.json" ]]; then
           cat "$fx/rule-$id.json"
           return 0
