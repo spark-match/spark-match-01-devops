@@ -103,6 +103,26 @@ setup() {
   esac
 }
 
+@test "pull-request-header and pull-request-footer do NOT contain literal template vars" {
+  # release-please source (src/strategies/base.ts) does NOT interpolate
+  # template variables in pull-request-header / pull-request-footer -- only
+  # pull-request-title-pattern gets interpolated. So we forbid "${...}" in
+  # the header/footer to keep release notes readable.
+  local header footer
+  header=$(jq -r '.["pull-request-header"] // .packages["."]["pull-request-header"] // ""' "$CONFIG")
+  footer=$(jq -r '.["pull-request-footer"] // .packages["."]["pull-request-footer"] // ""' "$CONFIG")
+  echo "# header=${header:0:120}..."
+  echo "# footer=${footer:0:120}..."
+  if echo "$header" | grep -qE '\$\{[a-zA-Z]+\}'; then
+    echo "literal template var found in header: $(echo "$header" | grep -oE '\\\$\{[a-zA-Z]+\}' | head -1)"
+    return 1
+  fi
+  if echo "$footer" | grep -qE '\$\{[a-zA-Z]+\}'; then
+    echo "literal template var found in footer: $(echo "$footer" | grep -oE '\\\$\{[a-zA-Z]+\}' | head -1)"
+    return 1
+  fi
+}
+
 @test "release-please manifest still has version 0.1.1" {
   run jq -r '.["."]' .release-please-manifest.json
   [ "$status" -eq 0 ]
