@@ -87,6 +87,22 @@ EOF
   [[ "$output" == *"created"* ]]
 }
 
+# Regression guard: the previous implementation used
+#   gh api ".../rulesets" --jq --arg n "..." '<expr>'
+# which is broken (--arg is not a `gh api` flag). The captured id was
+# always null and the script silently recorded state=created,ruleset_id=null.
+# The fix extracts `.id` directly from the POST response body.
+# The stub returns '{"id":99}' on POST success (see helpers/reconciler.bash),
+# so this test asserts the captured id matches the numeric id from the response.
+@test "apply: POST success captures numeric ruleset_id from response body" {
+  run bash "$SCRIPT" --apply --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" \
+                       --repos spark-match-foo --json
+  [ "$status" -eq 0 ]
+  output_json=$(json_output)
+  echo "$output_json" | jq -e '.[] | select(.repo == "spark-match-foo") | .state == "created"' >/dev/null
+  echo "$output_json" | jq -e '.[] | select(.repo == "spark-match-foo") | .ruleset_id == 99' >/dev/null
+}
+
 @test "apply: drifting ruleset -> PUT issued, backup created, state=updated" {
   echo '[{"id": 99, "name": "spark-match-default-branch-protection"}]' \
     > fixtures/rulesets-list.json
