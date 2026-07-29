@@ -212,3 +212,59 @@ run_validate() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"All inputs validated"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# Boolean false / number 0 — regression guard for jq `//` semantics
+# ---------------------------------------------------------------------------
+# jq's `//` is the "alternative" operator and fires on BOTH null and
+# false. Before PR-3, `.[$k] // ""` would treat a boolean false (a value
+# that callers might intentionally pass to opt out of a feature) as
+# "missing", so a required input with value false was wrongly reported
+# as required. These tests pin the fix: only JSON null / missing key
+# is treated as empty.
+
+@test "validate: required input with boolean false -> exits 0 (not reported as missing)" {
+  export VALUES='{"permissions-write":false,"project-key":"abc"}'
+  export REQUIRED='permissions-write|project-key'
+  run bash "$TARGET"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"All inputs validated"* ]]
+}
+
+@test "validate: required input with number 0 -> exits 0" {
+  export VALUES='{"coverage-threshold":0,"project-key":"abc"}'
+  export REQUIRED='coverage-threshold|project-key'
+  run bash "$TARGET"
+  [ "$status" -eq 0 ]
+}
+
+@test "validate: enum with boolean false value matching allowed list -> exits 0" {
+  # Workflow inputs are strings; resolve_value() round-trips JSON false
+  # to the string "false", so the enum list must also contain "false"
+  # as a string. This is the realistic caller shape.
+  export VALUES='{"fail-fast":false}'
+  export ENUMS='{"fail-fast":["true","false"]}'
+  run bash "$TARGET"
+  [ "$status" -eq 0 ]
+}
+
+@test "validate: enum with boolean false value NOT in allowed list -> exits 1" {
+  # Boolean false is now treated as a real value, so it must participate
+  # in enum validation rather than being silently skipped as if absent.
+  export VALUES='{"fail-fast":false}'
+  export ENUMS='{"fail-fast":["true"]}'
+  run bash "$TARGET"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fail-fast: must be one of"* ]]
+  [[ "$output" == *"got 'false'"* ]]
+}
+
+@test "validate: pattern with boolean false -> does not match numeric regex (errors)" {
+  # Boolean false is now a real string "false", so it participates in
+  # pattern matching. The numeric regex must reject it.
+  export VALUES='{"python-version":false}'
+  export PATTERNS='{"python-version":"^[0-9]+\\.[0-9]+$"}'
+  run bash "$TARGET"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"python-version: must match"* ]]
+}
