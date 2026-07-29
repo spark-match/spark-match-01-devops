@@ -245,7 +245,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Status | \${{ job.status }} |"
+            echo "| Status | \${JOB_STATUS} |"
             echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
             echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
             echo "| Function | \`${INPUTS_FUNCTION_NAME}\` |"
@@ -261,3 +261,4 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}

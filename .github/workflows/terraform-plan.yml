@@ -265,9 +265,9 @@ jobs:
           INIT_ARGS="-input=false"
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
             INIT_ARGS="$INIT_ARGS \
-              -backend-config=bucket=${INPUTS_BACKEND_BUCKET} \
-              -backend-config=key=${INPUTS_BACKEND_KEY} \
-              -backend-config=region=${INPUTS_AWS_REGION} \
+              -backend-config=bucket="${INPUTS_BACKEND_BUCKET}" \
+              -backend-config=key="${INPUTS_BACKEND_KEY}" \
+              -backend-config=region="${INPUTS_AWS_REGION}" \
               -backend-config=use_lockfile=true"
           else
             INIT_ARGS="$INIT_ARGS -backend=false"
@@ -336,7 +336,7 @@ jobs:
       - name: Generate plan summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
-          ENV="${{ steps.env.outputs.environment }}"
+          ENV="${STEPS_ENV_OUTPUTS_ENVIRONMENT}"
           WD="${INPUTS_WORKING_DIRECTORY}"
           REGION="${INPUTS_AWS_REGION}"
           {
@@ -365,6 +365,7 @@ jobs:
           INPUTS_AWS_REGION: ${{ inputs.aws-region }}
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
+          STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
       - name: Upload plan artifact
         if: steps.plan.outputs.has-changes == 'true'
         uses: actions/upload-artifact@v7

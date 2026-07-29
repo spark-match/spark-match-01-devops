@@ -210,9 +210,9 @@ jobs:
           INIT_ARGS="-input=false"
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
             INIT_ARGS="$INIT_ARGS \
-              -backend-config=bucket=${INPUTS_BACKEND_BUCKET} \
-              -backend-config=key=${INPUTS_BACKEND_KEY} \
-              -backend-config=region=${INPUTS_AWS_REGION} \
+              -backend-config=bucket="${INPUTS_BACKEND_BUCKET}" \
+              -backend-config=key="${INPUTS_BACKEND_KEY}" \
+              -backend-config=region="${INPUTS_AWS_REGION}" \
               -backend-config=use_lockfile=true"
           else
             INIT_ARGS="$INIT_ARGS -backend=false"
@@ -279,7 +279,7 @@ jobs:
       - name: Generate plan summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
-          ENV="${{ steps.env.outputs.environment }}"
+          ENV="${STEPS_ENV_OUTPUTS_ENVIRONMENT}"
           WD="${INPUTS_WORKING_DIRECTORY}"
           REGION="${INPUTS_AWS_REGION}"
           {
@@ -311,6 +311,7 @@ jobs:
           INPUTS_DRIFT_ONLY: ${{ inputs.drift-only }}
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
+          STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
       - name: Terraform apply
         id: apply
         if: steps.plan.outputs.has-changes == 'true' && inputs.drift-only != 'true'
@@ -329,24 +330,24 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Terraform Apply Result — \`${{ steps.env.outputs.environment }}\`"
+            echo "## Terraform Apply Result — \`${STEPS_ENV_OUTPUTS_ENVIRONMENT}\`"
             echo ""
             if [ "${INPUTS_DRIFT_ONLY}" = "true" ]; then
               echo "Mode: **drift-only** (plan completed, no apply performed)"
-              if [ "${{ steps.plan.outputs.has-changes }}" = "true" ]; then
+              if [ "${STEPS_PLAN_OUTPUTS_HAS_CHANGES}" = "true" ]; then
                 echo ""
                 echo "> Drift detected: see plan summary above."
               else
                 echo ""
                 echo "> No drift."
               fi
-            elif [ "${{ steps.apply.outputs.apply-success }}" = "true" ]; then
+            elif [ "${STEPS_APPLY_OUTPUTS_APPLY_SUCCESS}" = "true" ]; then
               echo "Status: **Success**"
               echo ""
               echo "Triggered by: @${GITHUB_ACTOR}"
               echo "Commit: ${GITHUB_SHA}"
-              echo "Environment: ${{ steps.env.outputs.environment }}"
-            elif [ "${{ steps.plan.outputs.has-changes }}" = "true" ]; then
+              echo "Environment: ${STEPS_ENV_OUTPUTS_ENVIRONMENT}"
+            elif [ "${STEPS_PLAN_OUTPUTS_HAS_CHANGES}" = "true" ]; then
               echo "Status: **Failed** (apply error)"
             else
               echo "Status: **No changes** (nothing to apply)"
@@ -357,6 +358,9 @@ jobs:
           INPUTS_DRIFT_ONLY: ${{ inputs.drift-only }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_SHA: ${{ github.sha }}
+          STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
+          STEPS_PLAN_OUTPUTS_HAS_CHANGES: ${{ steps.plan.outputs.has-changes }}
+          STEPS_APPLY_OUTPUTS_APPLY_SUCCESS: ${{ steps.apply.outputs.apply-success }}
       - name: Notify on apply failure
         if: failure() && steps.apply.outputs.apply-success != 'true' && inputs.drift-only != 'true'
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3
