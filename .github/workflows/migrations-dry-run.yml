@@ -146,6 +146,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
+        shell: bash
     steps:
       - name: Validate inputs
         working-directory: .

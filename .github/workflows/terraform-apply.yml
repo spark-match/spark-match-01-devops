@@ -33,7 +33,12 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, concurrency group. Defaults to basename of working-directory.'
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, concurrency group. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
+        type: string
+        required: false
+        default: ''
+      environment-name:
+        description: 'Preferred alias for `environment`. If set, takes precedence over the legacy `environment` input.'
         type: string
         required: false
         default: ''
@@ -120,7 +125,7 @@ on:
 # Concurrency group keyed by resolved environment (env || working-directory basename)
 # and the working directory. Prevents concurrent applies to the same env.
 concurrency:
-  group: ${{ inputs.environment || inputs.working-directory }}-apply-${{ inputs.working-directory }}
+  group: ${{ inputs.environment-name || inputs.environment || inputs.working-directory }}-apply-${{ inputs.working-directory }}
   cancel-in-progress: false
 
 permissions:
@@ -130,12 +135,12 @@ permissions:
 
 jobs:
   apply:
-    name: Apply (${{ inputs.environment || inputs.working-directory }})
+    name: Apply (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # GH Environment uses input fallback: gh-environment > environment.
     # This is evaluated before any step runs, so it can't reference step outputs.
-    environment: ${{ inputs.gh-environment || inputs.environment }}
+    environment: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
     outputs:
       apply-success: ${{ steps.apply.outputs.apply-success }}
       has-changes: ${{ steps.plan.outputs.has-changes }}
@@ -143,6 +148,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
+        shell: bash
 
     steps:
       - name: Validate inputs
@@ -160,7 +166,9 @@ jobs:
         # para que GitHub no intente hacer cd a un dir que no existe.
         working-directory: .
         run: |
-          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+          if [ -n "${INPUTS_ENVIRONMENT_NAME}" ]; then
+            ENV="${INPUTS_ENVIRONMENT_NAME}"
+          elif [ -n "${INPUTS_ENVIRONMENT}" ]; then
             ENV="${INPUTS_ENVIRONMENT}"
           else
             ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
@@ -169,9 +177,10 @@ jobs:
           echo "Resolved env=${ENV} | gh-env=${INPUTS_GH_ENVIRONMENT} | auto-approve=${INPUTS_AUTO_APPROVE} | drift-only=${INPUTS_DRIFT_ONLY}"
 
         env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-          INPUTS_GH_ENVIRONMENT: ${{ inputs.gh-environment || inputs.environment }}
+          INPUTS_GH_ENVIRONMENT: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
           INPUTS_AUTO_APPROVE: ${{ inputs.auto-approve }}
           INPUTS_DRIFT_ONLY: ${{ inputs.drift-only }}
       - name: Checkout caller repository

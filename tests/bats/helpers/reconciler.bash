@@ -3,7 +3,6 @@
 # =============================================================================
 # helpers/reconciler.bash - bats helpers for configure-repo-rulesets.sh tests
 # =============================================================================
-# Loads bats-support / bats-assert if present (best-effort).
 # Defines a `gh` stub that routes `gh api` calls to fixture files, so the
 # reconciler script can be exercised end-to-end without hitting GitHub.
 #
@@ -24,27 +23,6 @@
 
 REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME:-}")/../.." && pwd)"
 SCRIPT="$REPO_ROOT/scripts/configure-repo-rulesets.sh"
-
-# bats-support / bats-assert (best-effort load, no-op if not present)
-load_bats_helpers() {
-  for lib in "$BATS_LIBPATH/bats-support/load.bash" \
-             "$HOME/.local/share/bats/bats-support/load.bash"; do
-    if [[ -f "$lib" ]]; then
-      # shellcheck source=/dev/null
-      source "$lib"
-      break
-    fi
-  done
-  for lib in "$BATS_LIBPATH/bats-assert/load.bash" \
-             "$HOME/.local/share/bats/bats-assert/load.bash"; do
-    if [[ -f "$lib" ]]; then
-      # shellcheck source=/dev/null
-      source "$lib"
-      break
-    fi
-  done
-}
-load_bats_helpers
 
 # --- Default manifest (tests override per-case) ----------------------------
 DEFAULT_MANIFEST='{

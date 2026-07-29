@@ -41,7 +41,12 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory.'
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
+        type: string
+        required: false
+        default: ''
+      environment-name:
+        description: 'Preferred alias for `environment`. If set, takes precedence over the legacy `environment` input.'
         type: string
         required: false
         default: ''
@@ -128,12 +133,12 @@ permissions:
 # Cancel in-progress plans for the same PR + env. Saves runner minutes
 # when a PR is pushed multiple times. New pushes supersede old plans.
 concurrency:
-  group: terraform-plan-${{ inputs.environment || inputs.working-directory }}-${{ github.ref }}
+  group: terraform-plan-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   plan:
-    name: Plan (${{ inputs.environment || inputs.working-directory }})
+    name: Plan (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -143,6 +148,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
+        shell: bash
 
     steps:
       - name: Validate inputs
@@ -178,9 +184,10 @@ jobs:
           fi
 
           # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
-          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
-            if ! echo "${INPUTS_ENVIRONMENT}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
-              ERRORS+=("environment: '${INPUTS_ENVIRONMENT}' solo puede contener letras, digitos, _ o -")
+          ENV_TO_CHECK="${INPUTS_ENVIRONMENT_NAME:-${INPUTS_ENVIRONMENT}}"
+          if [ -n "${ENV_TO_CHECK}" ]; then
+            if ! echo "${ENV_TO_CHECK}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+              ERRORS+=("environment-name: '${ENV_TO_CHECK}' solo puede contener letras, digitos, _ o -")
             fi
           fi
 
@@ -199,6 +206,7 @@ jobs:
           INPUTS_PLAN_ROLE_ARN_SECRET: ${{ inputs.plan-role-arn-secret }}
           INPUTS_TERRAFORM_VERSION: ${{ inputs.terraform-version }}
           INPUTS_RETENTION_DAYS: ${{ inputs.retention-days }}
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
       - name: Resolve environment identifier
         id: env
@@ -207,7 +215,9 @@ jobs:
         # para que GitHub no intente hacer cd a un dir que no existe.
         working-directory: .
         run: |
-          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
+          if [ -n "${INPUTS_ENVIRONMENT_NAME}" ]; then
+            ENV="${INPUTS_ENVIRONMENT_NAME}"
+          elif [ -n "${INPUTS_ENVIRONMENT}" ]; then
             ENV="${INPUTS_ENVIRONMENT}"
           else
             ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
@@ -216,6 +226,7 @@ jobs:
           echo "Resolved environment: ${ENV}"
 
         env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       - name: Checkout caller repository
