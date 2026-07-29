@@ -138,11 +138,15 @@ jobs:
           cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.lockfile-name }}
 
       - name: Install dependencies
-        run: ${{ inputs.install-command }}
+        run: ${INPUTS_INSTALL_COMMAND}
 
+        env:
+          INPUTS_INSTALL_COMMAND: ${{ inputs.install-command }}
       - name: Run tests with coverage
-        run: ${{ inputs.test-command }}
+        run: ${INPUTS_TEST_COMMAND}
 
+        env:
+          INPUTS_TEST_COMMAND: ${{ inputs.test-command }}
       - name: Cache Sonar tools (scanner, GPG keys, embedded runtime)
         uses: actions/cache@v6
         with:
@@ -185,9 +189,11 @@ jobs:
       - name: Enforce Quality Gate
         if: ${{ always() && (steps.qg.outputs.quality-gate-status == 'FAILED' || (steps.qg.outcome == 'failure' && steps.qg.outputs.quality-gate-status == '')) && inputs.fail-on-quality-gate == 'true' }}
         run: |
-          if [ -z "${{ steps.qg.outputs.quality-gate-status }}" ]; then
+          if [ -z "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
             echo "::error::SonarCloud Quality Gate polling timed out (>300s). SonarCloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
           else
             echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
           fi
           exit 1
+        env:
+          STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS: ${{ steps.qg.outputs.quality-gate-status }}
