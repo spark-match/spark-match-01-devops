@@ -153,26 +153,26 @@ jobs:
           set -euo pipefail
           ERRORS=()
 
-          if ! echo "${{ inputs.postgres-version }}" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
-            ERRORS+=("postgres-version: formato invalido '${{ inputs.postgres-version }}' (esperado major[.minor], e.g. '16' o '16.4')")
+          if ! echo "${INPUTS_POSTGRES_VERSION}" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            ERRORS+=("postgres-version: formato invalido '${INPUTS_POSTGRES_VERSION}' (esperado major[.minor], e.g. '16' o '16.4')")
           fi
-          if ! echo "${{ inputs.node-version }}" | grep -qE '^[0-9]+$'; then
-            ERRORS+=("node-version: '${{ inputs.node-version }}' invalido (esperado entero, e.g. '24')")
+          if ! echo "${INPUTS_NODE_VERSION}" | grep -qE '^[0-9]+$'; then
+            ERRORS+=("node-version: '${INPUTS_NODE_VERSION}' invalido (esperado entero, e.g. '24')")
           fi
-          if [ -z "${{ inputs.migrations-dir }}" ]; then
+          if [ -z "${INPUTS_MIGRATIONS_DIR}" ]; then
             ERRORS+=("migrations-dir: requerido")
           fi
-          if [ -z "${{ inputs.migrations-table }}" ]; then
+          if [ -z "${INPUTS_MIGRATIONS_TABLE}" ]; then
             ERRORS+=("migrations-table: requerido")
           fi
-          if [ -z "${{ inputs.migrations-schema }}" ]; then
+          if [ -z "${INPUTS_MIGRATIONS_SCHEMA}" ]; then
             ERRORS+=("migrations-schema: requerido")
           fi
-          if [ -z "${{ inputs.npm-script }}" ]; then
+          if [ -z "${INPUTS_NPM_SCRIPT}" ]; then
             ERRORS+=("npm-script: requerido")
           fi
-          if ! echo "${{ inputs.timeout-minutes }}" | grep -qE '^[0-9]+$'; then
-            ERRORS+=("timeout-minutes: '${{ inputs.timeout-minutes }}' invalido (esperado entero)")
+          if ! echo "${INPUTS_TIMEOUT_MINUTES}" | grep -qE '^[0-9]+$'; then
+            ERRORS+=("timeout-minutes: '${INPUTS_TIMEOUT_MINUTES}' invalido (esperado entero)")
           fi
 
           if [ ${#ERRORS[@]} -gt 0 ]; then
@@ -184,6 +184,14 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+        env:
+          INPUTS_POSTGRES_VERSION: ${{ inputs.postgres-version }}
+          INPUTS_NODE_VERSION: ${{ inputs.node-version }}
+          INPUTS_MIGRATIONS_DIR: ${{ inputs.migrations-dir }}
+          INPUTS_MIGRATIONS_TABLE: ${{ inputs.migrations-table }}
+          INPUTS_MIGRATIONS_SCHEMA: ${{ inputs.migrations-schema }}
+          INPUTS_NPM_SCRIPT: ${{ inputs.npm-script }}
+          INPUTS_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -204,7 +212,7 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 1 30); do
-            if pg_isready -h localhost -p 5432 -U "${{ inputs.postgres-user }}" >/dev/null 2>&1; then
+            if pg_isready -h localhost -p 5432 -U "${INPUTS_POSTGRES_USER}" >/dev/null 2>&1; then
               echo "Postgres ready after ${i} attempt(s)"
               exit 0
             fi
@@ -214,6 +222,8 @@ jobs:
           echo "::error::Postgres did not become ready within 60s"
           exit 1
 
+        env:
+          INPUTS_POSTGRES_USER: ${{ inputs.postgres-user }}
       - name: Install caller dependencies
         # The caller's package.json pins node-pg-migrate (or whatever
         # migration tool npm-script invokes). npm ci reproduces the
@@ -224,17 +234,20 @@ jobs:
       - name: Verify migrations directory exists
         run: |
           set -euo pipefail
-          if [ ! -d "${{ inputs.migrations-dir }}" ]; then
-            echo "::error::migrations-dir '${{ inputs.migrations-dir }}' does not exist (relative to working-directory '${{ inputs.working-directory }}')"
+          if [ ! -d "${INPUTS_MIGRATIONS_DIR}" ]; then
+            echo "::error::migrations-dir '${INPUTS_MIGRATIONS_DIR}' does not exist (relative to working-directory '${INPUTS_WORKING_DIRECTORY}')"
             exit 1
           fi
-          SQL_COUNT=$(find "${{ inputs.migrations-dir }}" -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')
+          SQL_COUNT=$(find "${INPUTS_MIGRATIONS_DIR}" -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')
           if [ "${SQL_COUNT}" = "0" ]; then
-            echo "::error::No *.sql files in '${{ inputs.migrations-dir }}' (the recipe cannot validate an empty migration set)."
+            echo "::error::No *.sql files in '${INPUTS_MIGRATIONS_DIR}' (the recipe cannot validate an empty migration set)."
             exit 1
           fi
-          echo "Found ${SQL_COUNT} migration file(s) in '${{ inputs.migrations-dir }}'"
+          echo "Found ${SQL_COUNT} migration file(s) in '${INPUTS_MIGRATIONS_DIR}'"
 
+        env:
+          INPUTS_MIGRATIONS_DIR: ${{ inputs.migrations-dir }}
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       - name: Apply migrations against ephemeral Postgres
         # The recipe is intentionally a thin wrapper around the caller's
         # npm script. node-pg-migrate v9 (as of mid-2026) silently ignores
@@ -260,10 +273,11 @@ jobs:
         # at connection time.
         env:
           DATABASE_URL: postgres://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@localhost:5432/${{ inputs.postgres-db }}
+          INPUTS_NPM_SCRIPT: ${{ inputs.npm-script }}
         run: |
           set -euo pipefail
-          echo "===== Applying migrations via 'npm run ${{ inputs.npm-script }}' ====="
-          npm run "${{ inputs.npm-script }}" --if-present
+          echo "===== Applying migrations via 'npm run ${INPUTS_NPM_SCRIPT}' ====="
+          npm run "${INPUTS_NPM_SCRIPT}" --if-present
 
       - name: Migration summary
         # Read the tracking table directly via psql (preinstalled on
@@ -274,27 +288,46 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          echo "===== Applied migrations (${{ inputs.migrations-schema }}.${{ inputs.migrations-table }}) ====="
-          PGPASSWORD="${{ inputs.postgres-password }}" \
-            psql -h localhost -U "${{ inputs.postgres-user }}" -d "${{ inputs.postgres-db }}" \
-            -c "SELECT name FROM ${{ inputs.migrations-schema }}.${{ inputs.migrations-table }} ORDER BY id;" \
+          echo "===== Applied migrations (${INPUTS_MIGRATIONS_SCHEMA}.${INPUTS_MIGRATIONS_TABLE}) ====="
+          PGPASSWORD="${INPUTS_POSTGRES_PASSWORD}" \
+            psql -h localhost -U "${INPUTS_POSTGRES_USER}" -d "${INPUTS_POSTGRES_DB}" \
+            -c "SELECT name FROM ${INPUTS_MIGRATIONS_SCHEMA}.${INPUTS_MIGRATIONS_TABLE} ORDER BY id;" \
             || echo "::warning::Could not query tracking table (migration step likely failed)"
 
+        env:
+          INPUTS_MIGRATIONS_SCHEMA: ${{ inputs.migrations-schema }}
+          INPUTS_MIGRATIONS_TABLE: ${{ inputs.migrations-table }}
+          INPUTS_POSTGRES_PASSWORD: ${{ inputs.postgres-password }}
+          INPUTS_POSTGRES_USER: ${{ inputs.postgres-user }}
+          INPUTS_POSTGRES_DB: ${{ inputs.postgres-db }}
       - name: Migrations dry-run summary
         if: always()
         run: |
           {
-            echo "## Migrations dry-run - \`${{ inputs.environment-name }}\`"
+            echo "## Migrations dry-run - \`${INPUTS_ENVIRONMENT_NAME}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Status | \${{ job.status }} |"
-            echo "| Postgres version | \`${{ inputs.postgres-version }}\` |"
-            echo "| Database | \`${{ inputs.postgres-db }}\` |"
-            echo "| Migrations dir | \`${{ inputs.migrations-dir }}\` |"
-            echo "| Tracking table | \`${{ inputs.migrations-schema }}.${{ inputs.migrations-table }}\` |"
-            echo "| npm script | \`${{ inputs.npm-script }}\` |"
-            echo "| Node | \`${{ inputs.node-version }}\` |"
+            echo "| Status | \${JOB_STATUS} |"
+            echo "| Postgres version | \`${INPUTS_POSTGRES_VERSION}\` |"
+            echo "| Database | \`${INPUTS_POSTGRES_DB}\` |"
+            echo "| Migrations dir | \`${INPUTS_MIGRATIONS_DIR}\` |"
+            echo "| Tracking table | \`${INPUTS_MIGRATIONS_SCHEMA}.${INPUTS_MIGRATIONS_TABLE}\` |"
+            echo "| npm script | \`${INPUTS_NPM_SCRIPT}\` |"
+            echo "| Node | \`${INPUTS_NODE_VERSION}\` |"
             echo ""
-            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "**Run**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          JOB_STATUS: ${{ job.status }}
+          INPUTS_POSTGRES_VERSION: ${{ inputs.postgres-version }}
+          INPUTS_POSTGRES_DB: ${{ inputs.postgres-db }}
+          INPUTS_MIGRATIONS_DIR: ${{ inputs.migrations-dir }}
+          INPUTS_MIGRATIONS_SCHEMA: ${{ inputs.migrations-schema }}
+          INPUTS_MIGRATIONS_TABLE: ${{ inputs.migrations-table }}
+          INPUTS_NPM_SCRIPT: ${{ inputs.npm-script }}
+          INPUTS_NODE_VERSION: ${{ inputs.node-version }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}

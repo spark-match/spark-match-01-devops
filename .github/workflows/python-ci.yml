@@ -164,12 +164,14 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           set -euo pipefail
-          case "${{ inputs.commands }}" in
+          case "${INPUTS_COMMANDS}" in
             *security:pip-audit*|*lint:ruff-format-fix*|*lint:ruff-check-fix*|*lock:check*|*lint:bandit*|*lint:ruff-format*|*lint:ruff-check*|*typecheck:mypy*|*test:pytest*|*coverage:upload*|*none*) ;;
-            *) echo "::error::commands: unknown pipeline step in '${{ inputs.commands }}'. Valid steps: lint:ruff-format, lint:ruff-format-fix, lint:ruff-check, lint:ruff-check-fix, lock:check, typecheck:mypy, test:pytest, security:pip-audit, lint:bandit, coverage:upload, none."; exit 1 ;;
+            *) echo "::error::commands: unknown pipeline step in '${INPUTS_COMMANDS}'. Valid steps: lint:ruff-format, lint:ruff-format-fix, lint:ruff-check, lint:ruff-check-fix, lock:check, typecheck:mypy, test:pytest, security:pip-audit, lint:bandit, coverage:upload, none."; exit 1 ;;
           esac
           echo "Commands token validated"
 
+        env:
+          INPUTS_COMMANDS: ${{ inputs.commands }}
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
@@ -185,22 +187,28 @@ jobs:
 
       - name: Set up Python ${{ matrix.python-version }}
         working-directory: ${{ inputs.working-directory }}
-        run: uv python install ${{ matrix.python-version }}
+        run: uv python install "${MATRIX_PYTHON_VERSION}"
 
+        env:
+          MATRIX_PYTHON_VERSION: ${{ matrix.python-version }}
       - name: "Sync dependencies (sync-mode=${{ inputs.sync-mode }} groups=${{ inputs.dependency-groups }} lock-check=${{ inputs.lock-check }} frozen=${{ inputs.frozen }})"
         working-directory: ${{ inputs.working-directory }}
         env:
           UV_PRINT_ENV: "1"
+          INPUTS_LOCK_CHECK: ${{ inputs.lock-check }}
+          INPUTS_SYNC_MODE: ${{ inputs.sync-mode }}
+          INPUTS_DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
+          INPUTS_FROZEN: ${{ inputs.frozen }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.lock-check }}" = "true" ]; then
+          if [ "${INPUTS_LOCK_CHECK}" = "true" ]; then
             echo "Running uv lock --check (input lock-check=true)"
             uv lock --check
           fi
           sync_args=()
-          case "${{ inputs.sync-mode }}" in
+          case "${INPUTS_SYNC_MODE}" in
             full)
-              for g in ${{ inputs.dependency-groups }}; do
+              for g in ${INPUTS_DEPENDENCY_GROUPS}; do
                 sync_args+=(--group "$g")
               done
               ;;
@@ -211,7 +219,7 @@ jobs:
               sync_args+=(--only-group lint)
               ;;
           esac
-          if [ "${{ inputs.frozen }}" = "true" ]; then
+          if [ "${INPUTS_FROZEN}" = "true" ]; then
             sync_args+=("--frozen")
           fi
           if [ "${#sync_args[@]}" -eq 0 ]; then
@@ -228,41 +236,53 @@ jobs:
       - name: Lint (ruff format)
         if: ${{ contains(inputs.commands, 'lint:ruff-format') }}
         working-directory: ${{ inputs.working-directory }}
-        run: uv run ruff format --check ${{ inputs.ruff-targets }}
+        run: uv run ruff format --check "${INPUTS_RUFF_TARGETS}"
 
+        env:
+          INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
       - name: Lint (ruff format fix)
         if: ${{ contains(inputs.commands, 'lint:ruff-format-fix') }}
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::notice::Running 'ruff format' (mutates files; does not commit)"
-          uv run ruff format ${{ inputs.ruff-targets }}
+          uv run ruff format "${INPUTS_RUFF_TARGETS}"
           echo "::notice::Files modified; review the diff in PR or in Actions artifacts (uncommitted changes stay in the runner)."
 
+        env:
+          INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
       - name: Lint (ruff check)
         if: ${{ contains(inputs.commands, 'lint:ruff-check') }}
         working-directory: ${{ inputs.working-directory }}
-        run: uv run ruff check ${{ inputs.ruff-targets }}
+        run: uv run ruff check "${INPUTS_RUFF_TARGETS}"
 
+        env:
+          INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
       - name: Lint (ruff check fix)
         if: ${{ contains(inputs.commands, 'lint:ruff-check-fix') }}
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::notice::Running 'ruff check --fix' (mutates files; does not commit)"
-          uv run ruff check --fix ${{ inputs.ruff-targets }}
+          uv run ruff check --fix "${INPUTS_RUFF_TARGETS}"
           echo "::notice::Files modified; review the diff in PR or in Actions artifacts."
 
+        env:
+          INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
       - name: Lint (bandit)
         if: ${{ contains(inputs.commands, 'lint:bandit') }}
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::notice::Running bandit security linter"
-          uv run bandit --recursive ${{ inputs.ruff-targets }} --skip B101
+          uv run bandit --recursive "${INPUTS_RUFF_TARGETS}" --skip B101
 
+        env:
+          INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
       - name: Type check (mypy)
         if: ${{ contains(inputs.commands, 'typecheck:mypy') }}
         working-directory: ${{ inputs.working-directory }}
-        run: uv run mypy ${{ inputs.mypy-targets }}
+        run: uv run mypy "${INPUTS_MYPY_TARGETS}"
 
+        env:
+          INPUTS_MYPY_TARGETS: ${{ inputs.mypy-targets }}
       - name: Run tests (pytest)
         if: ${{ contains(inputs.commands, 'test:pytest') }}
         uses: spark-match/spark-match-01-devops/.github/actions/run-pytest-with-args@d8b128c31046b475be607d6e04daa281590ac3cc  # main
@@ -275,10 +295,12 @@ jobs:
         if: ${{ always() && inputs.coverage-threshold != '' && contains(inputs.commands, 'test:pytest') }}
         working-directory: ${{ inputs.working-directory }}
         run: |
-          THRESHOLD="${{ inputs.coverage-threshold }}"
+          THRESHOLD="${INPUTS_COVERAGE_THRESHOLD}"
           echo "Enforcing coverage threshold >= ${THRESHOLD}%"
           uv run coverage report --fail-under="${THRESHOLD}"
 
+        env:
+          INPUTS_COVERAGE_THRESHOLD: ${{ inputs.coverage-threshold }}
       - name: Upload coverage report
         if: ${{ always() && contains(inputs.commands, 'coverage:upload') }}
         uses: actions/upload-artifact@v7
@@ -313,25 +335,43 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Python CI - \`${{ inputs.environment-name }}\`"
+            echo "## Python CI - \`${INPUTS_ENVIRONMENT_NAME}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Environment | \`${{ inputs.environment-name }}\` |"
-            echo "| Python version | \`${{ matrix.python-version }}\` (hardcoded single-version matrix) |"
-            echo "| Runs on | \`${{ inputs.runs-on }}\` |"
-            echo "| Working directory | \`${{ inputs.working-directory }}\` |"
-            echo "| Dependency groups | \`${{ inputs.dependency-groups }}\` |"
-            echo "| Cache suffix | \`${{ inputs.cache-suffix || inputs.environment-name }}\` |"
-            echo "| Sync mode | \`${{ inputs.sync-mode }}\` |"
-            echo "| Lock check | \`${{ inputs.lock-check }}\` |"
-            echo "| Frozen | \`${{ inputs.frozen }}\` |"
-            echo "| Timeout (min) | \`${{ inputs.timeout-minutes }}\` |"
-            echo "| Fail-fast | \`${{ inputs.fail-fast }}\` |"
-            echo "| Coverage threshold | \`${{ inputs.coverage-threshold || 'not enforced' }}\` |"
-            echo "| Permissions (write) | \`${{ inputs.permissions-write }}\` |"
-            echo "| Pytest extra args | \`${{ inputs.pytest-args || 'none' }}\` |"
-            echo "| Pipeline steps | \`${{ inputs.commands }}\` |"
-            echo "| Commit | \`${{ github.sha }}\` |"
-            echo "| Triggered by | @${{ github.actor }} |"
+            echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
+            echo "| Python version | \`${MATRIX_PYTHON_VERSION}\` (hardcoded single-version matrix) |"
+            echo "| Runs on | \`${INPUTS_RUNS_ON}\` |"
+            echo "| Working directory | \`${INPUTS_WORKING_DIRECTORY}\` |"
+            echo "| Dependency groups | \`${INPUTS_DEPENDENCY_GROUPS}\` |"
+            echo "| Cache suffix | \`${INPUTS_CACHE_SUFFIX}\` |"
+            echo "| Sync mode | \`${INPUTS_SYNC_MODE}\` |"
+            echo "| Lock check | \`${INPUTS_LOCK_CHECK}\` |"
+            echo "| Frozen | \`${INPUTS_FROZEN}\` |"
+            echo "| Timeout (min) | \`${INPUTS_TIMEOUT_MINUTES}\` |"
+            echo "| Fail-fast | \`${INPUTS_FAIL_FAST}\` |"
+            echo "| Coverage threshold | \`${INPUTS_COVERAGE_THRESHOLD}\` |"
+            echo "| Permissions (write) | \`${INPUTS_PERMISSIONS_WRITE}\` |"
+            echo "| Pytest extra args | \`${INPUTS_PYTEST_ARGS}\` |"
+            echo "| Pipeline steps | \`${INPUTS_COMMANDS}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Triggered by | @${GITHUB_ACTOR} |"
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          MATRIX_PYTHON_VERSION: ${{ matrix.python-version }}
+          INPUTS_RUNS_ON: ${{ inputs.runs-on }}
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_DEPENDENCY_GROUPS: ${{ inputs.dependency-groups }}
+          INPUTS_CACHE_SUFFIX: ${{ inputs.cache-suffix || inputs.environment-name }}
+          INPUTS_SYNC_MODE: ${{ inputs.sync-mode }}
+          INPUTS_LOCK_CHECK: ${{ inputs.lock-check }}
+          INPUTS_FROZEN: ${{ inputs.frozen }}
+          INPUTS_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+          INPUTS_FAIL_FAST: ${{ inputs.fail-fast }}
+          INPUTS_COVERAGE_THRESHOLD: ${{ inputs.coverage-threshold || 'not enforced' }}
+          INPUTS_PERMISSIONS_WRITE: ${{ inputs.permissions-write }}
+          INPUTS_PYTEST_ARGS: ${{ inputs.pytest-args || 'none' }}
+          INPUTS_COMMANDS: ${{ inputs.commands }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}

@@ -126,20 +126,20 @@ jobs:
           set -euo pipefail
           ERRORS=()
 
-          if [ -z "${{ inputs.environment-name }}" ]; then
+          if [ -z "${INPUTS_ENVIRONMENT_NAME}" ]; then
             ERRORS+=("environment-name: requerido")
           fi
-          if [ -z "${{ inputs.function-name }}" ]; then
+          if [ -z "${INPUTS_FUNCTION_NAME}" ]; then
             ERRORS+=("function-name: requerido")
           fi
           # Lambda function names follow [a-zA-Z0-9-_]{1,64}.
-          if ! echo "${{ inputs.function-name }}" | grep -qE '^[A-Za-z0-9_-]{1,64}$'; then
-            ERRORS+=("function-name: formato invalido '${{ inputs.function-name }}' (esperado [A-Za-z0-9_-]{1,64})")
+          if ! echo "${INPUTS_FUNCTION_NAME}" | grep -qE '^[A-Za-z0-9_-]{1,64}$'; then
+            ERRORS+=("function-name: formato invalido '${INPUTS_FUNCTION_NAME}' (esperado [A-Za-z0-9_-]{1,64})")
           fi
           # payload must be valid JSON (or empty, which defaults to {}).
-          if [ -n "${{ inputs.payload }}" ]; then
-            if ! echo "${{ inputs.payload }}" | jq -e . >/dev/null 2>&1; then
-              ERRORS+=("payload: '${{ inputs.payload }}' no es JSON valido")
+          if [ -n "${INPUTS_PAYLOAD}" ]; then
+            if ! echo "${INPUTS_PAYLOAD}" | jq -e . >/dev/null 2>&1; then
+              ERRORS+=("payload: '${INPUTS_PAYLOAD}' no es JSON valido")
             fi
           fi
 
@@ -152,6 +152,10 @@ jobs:
           fi
           echo "All inputs validated successfully"
 
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_FUNCTION_NAME: ${{ inputs.function-name }}
+          INPUTS_PAYLOAD: ${{ inputs.payload }}
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
         with:
@@ -167,16 +171,17 @@ jobs:
         # the step and dumps the response body for diagnostics.
         run: |
           set -euo pipefail
-          echo "===== Invoking ${{ inputs.function-name }} (env=${{ inputs.environment-name }}) ====="
-          PAYLOAD='${{ inputs.payload }}'
+          echo "===== Invoking ${INPUTS_FUNCTION_NAME} (env=${INPUTS_ENVIRONMENT_NAME}) ====="
+          PAYLOAD="${INPUTS_PAYLOAD}"
+
           if [ -z "${PAYLOAD}" ]; then
             PAYLOAD='{}'
           fi
           echo "Payload: ${PAYLOAD}"
 
           RESULT=$(aws lambda invoke \
-            --function-name "${{ inputs.function-name }}" \
-            --region "${{ inputs.aws-region }}" \
+            --function-name "${INPUTS_FUNCTION_NAME}" \
+            --region "${INPUTS_AWS_REGION}" \
             --payload "${PAYLOAD}" \
             --cli-binary-format raw-in-base64-out \
             --output json \
@@ -211,19 +216,33 @@ jobs:
               /tmp/migrate-result.json
           fi
 
+        env:
+          INPUTS_FUNCTION_NAME: ${{ inputs.function-name }}
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_PAYLOAD: ${{ inputs.payload }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
       - name: Migration summary
         if: always()
         run: |
           {
-            echo "## Migrations - \`${{ inputs.environment-name }}\`"
+            echo "## Migrations - \`${INPUTS_ENVIRONMENT_NAME}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Status | \${{ job.status }} |"
-            echo "| Environment | \`${{ inputs.environment-name }}\` |"
-            echo "| AWS region | \`${{ inputs.aws-region }}\` |"
-            echo "| Function | \`${{ inputs.function-name }}\` |"
-            echo "| Payload | \`${{ inputs.payload }}\` |"
+            echo "| Status | \${JOB_STATUS} |"
+            echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
+            echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
+            echo "| Function | \`${INPUTS_FUNCTION_NAME}\` |"
+            echo "| Payload | \`${INPUTS_PAYLOAD}\` |"
             echo ""
-            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "**Run**: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          JOB_STATUS: ${{ job.status }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_FUNCTION_NAME: ${{ inputs.function-name }}
+          INPUTS_PAYLOAD: ${{ inputs.payload }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
