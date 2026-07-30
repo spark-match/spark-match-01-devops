@@ -105,7 +105,7 @@ git commit --no-verify
 
 ## Running tests
 
-The repo ships **249 bats tests + 18 pytest tests = 267 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
+The repo ships **266 bats tests + 18 pytest tests = 284 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
 
 ```bash
 # All tests (bats + pytest)
