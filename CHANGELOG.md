@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.6](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.5...v0.1.6) (2026-07-30)
+
+
+### Documentation
+
+* **versioning:** fix typo (canonica → canónica) ([#196](https://github.com/spark-match/spark-match-01-devops/issues/196)) ([bcdd5da](https://github.com/spark-match/spark-match-01-devops/commit/bcdd5da2f8d38b67389ae8c31b31448191a8b059))
+
 ## [0.1.4](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.3...v0.1.4) (2026-07-30)
 
 
