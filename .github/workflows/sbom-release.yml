@@ -3,6 +3,11 @@
 # =============================================================================
 # sbom-release.yml - Generate CycloneDX SBOM and attach to GitHub Release
 # =============================================================================
+# NOTE: workflow_dispatch is declared below for manual re-runs of an
+# existing release tag. Useful when a release was published before the
+# SBOM workflow existed (e.g. retroactively attaching sbom.cdx.json to
+# v0.1.4). Required: workflow_dispatch with a `tag:` input that names
+# the target release.
 # Trigger:
 #   - release { types: [published] }  : fires after release-please creates
 #                                       a tagged release (this catalog
