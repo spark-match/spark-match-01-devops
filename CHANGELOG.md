@@ -20,6 +20,28 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.5](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.4...v0.1.5) (2026-07-30)
+
+
+### Bug Fixes
+
+* **cleanup-merged-branches:** handle 'remote already deleted' case ([#193](https://github.com/spark-match/spark-match-01-devops/issues/193)) ([d693862](https://github.com/spark-match/spark-match-01-devops/commit/d693862177a6e87cae66f5c196283fd0e16313e6))
+* **workflows:** env-isolate step outputs in quality.yml + release-please.yml ([#184](https://github.com/spark-match/spark-match-01-devops/issues/184)) ([65d64d5](https://github.com/spark-match/spark-match-01-devops/commit/65d64d59aa8b4d6a1604e0f347bc10b280c6654a))
+
+
+### Documentation
+
+* **sbom-release:** clarify workflow_dispatch usage in header ([#187](https://github.com/spark-match/spark-match-01-devops/issues/187)) ([521821b](https://github.com/spark-match/spark-match-01-devops/commit/521821b9bbb47a827ccf24e9697026f296d05b5a))
+
+
+### CI/CD
+
+* **dependabot:** tighten config — vulnerability-alerts + auto-merge patch-only ([#189](https://github.com/spark-match/spark-match-01-devops/issues/189)) ([1391d9d](https://github.com/spark-match/spark-match-01-devops/commit/1391d9d454d0653886ce0eebb39422c05513278b))
+* **governance:** verify CODEOWNERS + ruleset enforcement ([#190](https://github.com/spark-match/spark-match-01-devops/issues/190)) ([c212cd3](https://github.com/spark-match/spark-match-01-devops/commit/c212cd3e19b2af30900e045773ee86bf86068475))
+* **release:** attach CycloneDX SBOM to GitHub Release on release:published ([#186](https://github.com/spark-match/spark-match-01-devops/issues/186)) ([6bd9c0f](https://github.com/spark-match/spark-match-01-devops/commit/6bd9c0fc66d120c34c29e278d56986b959731f42))
+* **s bom:** rename sbom-release.yml to sbom.yml (force GH Actions re-registration) ([#188](https://github.com/spark-match/spark-match-01-devops/issues/188)) ([07d6c0d](https://github.com/spark-match/spark-match-01-devops/commit/07d6c0dc28f6f7787f3be5bf13cf29801fd5bad8))
+* **secrets:** add .gitleaks.toml + pre-commit hook + SECURITY.md upgrade ([#191](https://github.com/spark-match/spark-match-01-devops/issues/191)) ([ddb7aae](https://github.com/spark-match/spark-match-01-devops/commit/ddb7aae816a73404f780ab2646b95d46b71cf6b0))
+
 ## [0.1.4](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.3...v0.1.4) (2026-07-30)
 
 
