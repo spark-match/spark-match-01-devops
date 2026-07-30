@@ -830,6 +830,7 @@ Inputs:
 | cache-scope | string | `container-dev` | GHA cache key segment (`cache-from type=gha,scope=<scope>`). Lets multiple recipes coexist on the same runner without cross-contamination. |
 | provenance | boolean | `true` | `provenance:` flag for `docker build-push-action`. Default `true` so every image carries a SLSA Build Level 3 provenance attestation. Override to `false` only for ad-hoc dev builds where attestation cost outweighs audit value. |
 | sbom | boolean | `true` | `sbom:` flag for `docker build-push-action`. Default `true`; emits an SPDX SBOM attestation alongside the provenance. Override to `false` only for ad-hoc dev builds. |
+| cosign-sign | boolean | `false` | After build-push, sign every pushed tag with Sigstore cosign keyless via GitHub OIDC + Fulcio. Opt-in because production secrets must not be re-tagged with a new signature on every build. Requires `id-token: write` (already declared at workflow level). |
 | extra-buildx-args | string | `''` | Raw extra args passed through. Rarely needed. |
 
 Required secrets (caller-side, scoped to the GitHub Environment):

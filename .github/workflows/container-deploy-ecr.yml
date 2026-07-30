@@ -99,6 +99,11 @@ on:
         type: boolean
         required: false
         default: true
+      cosign-sign:
+        description: 'Sign every pushed tag with Sigstore cosign (keyless via GitHub OIDC + Fulcio). Default false (opt-in). Requires `id-token: write` which this workflow already declares.'
+        type: boolean
+        required: false
+        default: false
       extra-buildx-args:
         description: 'Reserved for caller-side raw passthrough. Not used in v1; do not set.'
         type: string
@@ -229,6 +234,27 @@ jobs:
           provenance: ${{ inputs.provenance }}
           sbom: ${{ inputs.sbom }}
 
+      - name: Install cosign
+        if: ${{ inputs.cosign-sign }}
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62  # v3.10.0
+
+      - name: Sign image with Sigstore cosign (keyless)
+        if: ${{ inputs.cosign-sign }}
+        env:
+          INPUTS_IMAGE_TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          # Keyless signing via Sigstore Fulcio. The OIDC token comes from
+          # the GHA runner (requires id-token: write, already declared at
+          # workflow level). We sign each tag so consumers can verify any
+          # of them independently.
+          IFS=',' read -ra TAGS <<< "${INPUTS_IMAGE_TAGS}"
+          for TAG in "${TAGS[@]}"; do
+            echo "::group::cosign sign ${TAG}"
+            cosign sign --yes "${TAG}"
+            echo "::endgroup::"
+          done
+
       - name: Deploy summary
         if: always()
         run: |
@@ -247,6 +273,7 @@ jobs:
             echo "| Cache scope | \`${INPUTS_CACHE_SCOPE}\` |"
             echo "| Provenance (SLSA) | \`${INPUTS_PROVENANCE}\` |"
             echo "| SBOM (SPDX) | \`${INPUTS_SBOM}\` |"
+            echo "| Cosign sign | \`${INPUTS_COSIGN_SIGN}\` |"
             echo ""
             echo "Commit: \`${GITHUB_SHA}\`"
             echo "Triggered by: @${GITHUB_ACTOR}"
@@ -262,6 +289,7 @@ jobs:
           INPUTS_CACHE_SCOPE: ${{ inputs.cache-scope }}
           INPUTS_PROVENANCE: ${{ inputs.provenance }}
           INPUTS_SBOM: ${{ inputs.sbom }}
+          INPUTS_COSIGN_SIGN: ${{ inputs.cosign-sign }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
           STEPS_TAGS_OUTPUTS_TAGS: ${{ steps.tags.outputs.tags }}
