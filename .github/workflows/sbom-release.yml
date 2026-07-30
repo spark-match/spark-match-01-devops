@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# sbom-release.yml - Generate CycloneDX SBOM and attach to GitHub Release
+# =============================================================================
+# Trigger:
+#   - release { types: [published] }  : fires after release-please creates
+#                                       a tagged release (this catalog
+#                                       releases via release-please; see
+#                                       .github/workflows/release-please.yml).
+#   - workflow_dispatch               : manual re-run for an existing
+#                                       release tag (input `tag:` is the
+#                                       release tag, e.g. `v0.1.4`).
+#
+# Behavior:
+#   1. Checkout the tagged commit.
+#   2. Run anchore/sbom-action in `cyclonedx-json` format. This scans for
+#      any npm / pip / gradle / maven manifests and emits a CycloneDX
+#      JSON SBOM. For a repo with no real dependencies (this catalog
+#      only has stdlib Python tests, no package.json, no requirements.txt)
+#      the SBOM is metadata-only but the file is still produced and
+#      attached to the release.
+#   3. Upload the SBOM to the release as `sbom.cdx.json` via `gh release
+#      upload`. The default GITHUB_TOKEN is sufficient.
+#
+# Why this exists:
+#   - Compliance: SLSA Build Level 3 + supply-chain transparency
+#     frameworks (US Executive Order 14028, EU Cyber Resilience Act)
+#     require a machine-readable SBOM for each release artifact.
+#   - Downstream tooling: vulnerability scanners, license auditors, and
+#     dependency-graph analyzers all consume CycloneDX.
+#
+# Cross-owner safe: uses default GITHUB_TOKEN; no caller secrets.
+#
+# Pin: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb
+#   = v0.17.7. anchore/sbom-action is a maintained, widely-used SBOM
+#   generator that supports SPDX + CycloneDX. The CycloneDX native
+#   GitHub Action (CycloneDX/cyclonedx-action) was deprecated in 2024;
+#   anchore's action is the recommended successor.
+# =============================================================================
+
+name: SBOM Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the SBOM to (e.g. v0.1.4). Required only for manual runs.'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  # One SBOM attach per release tag. Never cancel an in-flight upload
+  # (could leave a half-attached asset).
+  group: sbom-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  sbom:
+    name: sbom (tag=${{ github.event.release.tag_name || inputs.tag || 'manual' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v7
+        with:
+          # release:published event includes the tag's commit SHA; check
+          # out that exact commit so the SBOM matches what was released.
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb  # v0.17.7
+        with:
+          format: cyclonedx-json
+          artifact-name: sbom.cdx.json
+
+      - name: Verify SBOM artifact exists and is valid JSON
+        run: |
+          set -euo pipefail
+          test -s sbom.cdx.json
+          # Validate JSON shape (must have a "bomFormat" field equal to "CycloneDX").
+          BOM_FORMAT=$(jq -r '.bomFormat // ""' sbom.cdx.json)
+          if [ "${BOM_FORMAT}" != "CycloneDX" ]; then
+            echo "::error::sbom.cdx.json is not a CycloneDX SBOM (bomFormat=${BOM_FORMAT:-<missing>})"
+            exit 1
+          fi
+          echo "CycloneDX SBOM ok: $(wc -c < sbom.cdx.json) bytes, specVersion=$(jq -r '.specVersion' sbom.cdx.json)"
+
+      - name: Attach SBOM to GitHub Release
+        env:
+          # Env-isolate the tag name so a crafted tag value cannot
+          # inject shell tokens via `gh release upload`. Same
+          # env-isolate pattern as PR #183 + PR #184.
+          INPUTS_TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${INPUTS_TAG_NAME}" ]; then
+            echo "::error::No release tag available (event.release.tag_name and inputs.tag are both empty)."
+            exit 1
+          fi
+          gh release upload "${INPUTS_TAG_NAME}" sbom.cdx.json --clobber
+
+      - name: Attach summary
+        if: always()
+        run: |
+          {
+            echo "## SBOM Release - \`${{ github.event.release.tag_name || inputs.tag || 'manual' }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Tag | \`${{ github.event.release.tag_name || inputs.tag || '(none)' }}\` |"
+            echo "| Format | \`cyclonedx-json\` |"
+            echo "| Artifact | \`sbom.cdx.json\` |"
+            echo "| Generator | \`anchore/sbom-action@fc46e51f (v0.17.7)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

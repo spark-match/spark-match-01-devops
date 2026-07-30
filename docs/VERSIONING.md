@@ -60,6 +60,7 @@ Estructura actual bajo `.github/workflows/`:
 +-- tflint.yml                   # Atomic (ecosystem): tflint --recursive
 +-- checkov.yml                  # Atomic (ecosystem): checkov SCA
 +-- trivy.yml                    # Atomic (ecosystem): Trivy fs/image/config scan (SHA-pinned v0.36.0)
++-- sbom-release.yml             # Internal: CycloneDX SBOM attached to GitHub Release on release:published (anchore/sbom-action v0.17.7)
 +-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
 +-- python-ci.yml                # Atomic (python): uv + ruff + mypy + pytest (or-cog-agent, otros proyectos Python uv-based)
 +-- sam-deploy.yml               # Atomic (deploy): sam build + deploy, samconfig env, layers build

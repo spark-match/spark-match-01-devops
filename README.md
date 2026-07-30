@@ -36,7 +36,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 159 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
+- **`tests/`** — 193 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -142,7 +142,7 @@ spark-match-01-devops/
 │   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
-├── tests/                                 159 bats + 18 pytest = 177 tests
+├── tests/                                 193 bats + 18 pytest = 211 tests
 │   ├── bats/
 │   │   ├── helpers/
 │   │   │   ├── common.bash                 stubs for uv / pytest + ACTION_DIR
@@ -497,6 +497,14 @@ jobs:
       severity: CRITICAL,HIGH
       format: sarif
 ```
+
+#### `sbom-release.yml`
+
+Internal workflow (not a reusable recipe — runs only on this catalog). Fires on `release: { types: [published] }` (i.e. after `release-please` publishes a tagged release) and generates a CycloneDX JSON SBOM using [`anchore/sbom-action`](https://github.com/anchore/sbom-action). The SBOM is checked in at the tagged commit (not main HEAD) and uploaded to the GitHub Release as `sbom.cdx.json`. Manual re-run via `workflow_dispatch` accepts a `tag:` input.
+
+`permissions: contents: write` is required (upload needs write); `id-token`, `packages`, and `deployments` are explicitly NOT requested.
+
+This workflow is part of the SLSA Build Level 3 + supply-chain transparency posture (US Executive Order 14028, EU Cyber Resilience Act). For a repo with no real `package.json` / `requirements.txt` the SBOM is metadata-only, but it is still produced and attached.
 
 #### `lambda-permission-source-arn.yml`
 
