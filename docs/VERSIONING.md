@@ -4,7 +4,7 @@
 
 ## Modelo: single-main-branch con smoke test del caller
 
-Una sola rama `main` es la fuente canonica de todos los reusables. Los callers
+Una sola rama `main` es la fuente canónica de todos los reusables. Los callers
 siempre referencian `@main`:
 
 - Caller deploy a **dev** → `uses: .../terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
