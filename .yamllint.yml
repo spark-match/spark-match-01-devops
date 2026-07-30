@@ -9,6 +9,8 @@ ignore: |
   .terraform/
   node_modules/
   .github/workflows/
+  .github/dependabot.yml
+  tests/fixtures/
   *.md
 
 rules:
