@@ -36,7 +36,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 124 bats tests + 15 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
+- **`tests/`** — 159 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -142,7 +142,7 @@ spark-match-01-devops/
 │   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
-├── tests/                                 124 bats + 15 pytest = 139 tests
+├── tests/                                 159 bats + 18 pytest = 177 tests
 │   ├── bats/
 │   │   ├── helpers/
 │   │   │   ├── common.bash                 stubs for uv / pytest + ACTION_DIR
@@ -455,6 +455,47 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/cfn-nag.yml@main
     with:
       environment-name: dev
+```
+
+#### `trivy.yml`
+
+Runs [Aqua Trivy](https://github.com/aquasecurity/trivy) against the caller's repo. Three scan modes: `fs` (filesystem — Dockerfile misconfig, lockfile CVEs, IaC misconfig, secrets), `image` (container image — OS pkg vulns, library vulns), and `config` (IaC config scan). Defaults to `severity: CRITICAL` so the workflow fails only on the most severe findings; callers can tighten with `severity: CRITICAL,HIGH`. `aquasecurity/trivy-action` SHA-pinned to `ed142fd` (v0.36.0).
+
+Inputs:
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `scan-type` | string | `fs` | `fs`, `image`, or `config`. |
+| `scan-ref` | string | `.` | Path to scan when `scan-type` is `fs` or `config`. |
+| `image-ref` | string | `''` | Container image ref when `scan-type=image` (e.g. `my-org/my-app:${{ github.sha }}` or a full ECR URI). |
+| `severity` | string | `CRITICAL` | Comma-separated list. Trivy fails when issues at or above these levels are found. |
+| `format` | string | `table` | `table` for humans or `sarif` to upload to GitHub Security tab. |
+| `exit-code` | string | `1` | Trivy exit code on findings. |
+| `ignore-unfixed` | boolean | `true` | Skip vulns without an upstream fix. |
+| `timeout` | string | `5m0s` | Scan timeout. |
+| `scanners` | string | `vuln,secret,misconfig` | Comma-separated scanner list. |
+
+Usage (filesystem scan):
+
+```yaml
+jobs:
+  trivy:
+    uses: spark-match/spark-match-01-devops/.github/workflows/trivy.yml@main
+    with:
+      scan-type: fs
+```
+
+Usage (image scan against a pushed ECR image):
+
+```yaml
+jobs:
+  trivy:
+    uses: spark-match/spark-match-01-devops/.github/workflows/trivy.yml@main
+    with:
+      scan-type: image
+      image-ref: ${{ steps.deploy.outputs.registry }}/my-repo:${{ github.sha }}
+      severity: CRITICAL,HIGH
+      format: sarif
 ```
 
 #### `lambda-permission-source-arn.yml`
