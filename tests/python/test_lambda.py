@@ -47,6 +47,11 @@ def no_permissions_template() -> Path:
     return FIXTURES / "sam-template-no-permissions" / "template.yaml"
 
 
+@pytest.fixture
+def multi_offenders_template() -> Path:
+    return FIXTURES / "sam-template-multi-offenders" / "template.yaml"
+
+
 # ---------------------------------------------------------------------------
 # _scan_template
 # ---------------------------------------------------------------------------
@@ -101,6 +106,44 @@ class TestScanTemplate:
     ):
         offenders = clpsa._scan_template(no_permissions_template)
         assert offenders == []
+
+    def test_multi_offenders_all_reported_in_one_pass(
+        self, multi_offenders_template: Path
+    ):
+        """A template with 4 non-compliant permissions + 2 compliant ones
+        + 1 non-Permission resource must report all 4 offenders and
+        nothing else. Guards against 'return on first match' bugs."""
+        offenders = clpsa._scan_template(multi_offenders_template)
+        offender_ids = {logical_id for logical_id, _ in offenders}
+        assert offender_ids == {
+            "AuthorizerFunctionPermission",
+            "ScheduledFunctionPermission",
+            "SnsPublishFunctionPermission",
+            "SecondAuthorizerFunctionPermission",
+        }, f"unexpected offender set: {offender_ids}"
+
+    def test_multi_offenders_each_carry_their_own_line_number(
+        self, multi_offenders_template: Path
+    ):
+        """Each offender must report the line of its own Permission header,
+        not a single shared line number (regression guard for the line
+        counter advancing across the file)."""
+        offenders = clpsa._scan_template(multi_offenders_template)
+        line_numbers = sorted({line_no for _, line_no in offenders})
+        assert len(line_numbers) == 4
+        assert all(ln > 0 for ln in line_numbers)
+        assert line_numbers == sorted(line_numbers)
+        assert min(line_numbers) > 0
+
+    def test_multi_offenders_compliant_resources_not_in_set(
+        self, multi_offenders_template: Path
+    ):
+        """The 2 compliant Permission resources (SourceArn + SourceAccount)
+        must NOT appear in offenders."""
+        offenders = clpsa._scan_template(multi_offenders_template)
+        offender_ids = {logical_id for logical_id, _ in offenders}
+        assert "ValidApiGatewayPermission" not in offender_ids
+        assert "SourceAccountOnlyPermission" not in offender_ids
 
     def test_lambda_alias_resource_not_matched(
         self, comments_and_edges_template: Path
