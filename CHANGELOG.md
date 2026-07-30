@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.7](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.6...v0.1.7) (2026-07-30)
+
+
+### Bug Fixes
+
+* **sbom:** download SBOM artifact for verify step + drop redundant gh release upload ([#198](https://github.com/spark-match/spark-match-01-devops/issues/198)) ([900b70f](https://github.com/spark-match/spark-match-01-devops/commit/900b70f317ac26c45384a884c9c58362f04d4452))
+
 ## [0.1.6](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.5...v0.1.6) (2026-07-30)
 
 
