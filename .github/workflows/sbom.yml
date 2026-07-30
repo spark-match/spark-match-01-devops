@@ -19,14 +19,14 @@
 #
 # Behavior:
 #   1. Checkout the tagged commit.
-#   2. Run anchore/sbom-action in `cyclonedx-json` format. This scans for
-#      any npm / pip / gradle / maven manifests and emits a CycloneDX
-#      JSON SBOM. For a repo with no real dependencies (this catalog
-#      only has stdlib Python tests, no package.json, no requirements.txt)
-#      the SBOM is metadata-only but the file is still produced and
-#      attached to the release.
-#   3. Upload the SBOM to the release as `sbom.cdx.json` via `gh release
-#      upload`. The default GITHUB_TOKEN is sufficient.
+#   2. Run anchore/sbom-action in `cyclonedx-json` format with
+#      `upload-release-assets: true`. The action itself uploads the SBOM
+#      as `sbom.cdx.json` to the GitHub Release that triggered the run.
+#      It also uploads the SBOM as a workflow artifact under the same
+#      name so we can validate it locally.
+#   3. Download the workflow artifact back to cwd so the verify step
+#      can validate the CycloneDX JSON shape (`bomFormat == CycloneDX`,
+#      `specVersion` present).
 #
 # Why this exists:
 #   - Compliance: SLSA Build Level 3 + supply-chain transparency
@@ -42,6 +42,14 @@
 #   generator that supports SPDX + CycloneDX. The CycloneDX native
 #   GitHub Action (CycloneDX/cyclonedx-action) was deprecated in 2024;
 #   anchore's action is the recommended successor.
+#
+# History:
+#   - PR-G4 (#186): initial sbom-release.yml
+#   - rename (#188): sbom-release.yml → sbom.yml
+#   - fix-sbom-verify-step: add download-artifact before verify (closes
+#     the false-positive "Process completed with exit code 1" on the
+#     verify step; the action uploads the SBOM as artifact but does NOT
+#     place it in cwd by default). Discovered when v0.1.6 release ran.
 # =============================================================================
 
 name: SBOM Release
@@ -84,32 +92,42 @@ jobs:
         with:
           format: cyclonedx-json
           artifact-name: sbom.cdx.json
+          # upload-release-assets: the action itself uploads sbom.cdx.json
+          # to the GitHub Release that triggered this workflow run.
+          # No follow-up `gh release upload` step is needed; the previous
+          # iteration of this workflow did that, but it was redundant.
+          upload-release-assets: true
+
+      - name: Download SBOM artifact for verification
+        # anchore/sbom-action uploads the SBOM as a workflow artifact but
+        # does NOT place it in the working directory by default. Pull it
+        # back to cwd so the verify step can validate the JSON shape.
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: sbom.cdx.json
+          path: ${{ runner.temp }}/sbom-download
+        # Always run so a verify failure does not block the attach-summary
+        # step from emitting useful diagnostics to the run page.
+        continue-on-error: false
 
       - name: Verify SBOM artifact exists and is valid JSON
-        run: |
-          set -euo pipefail
-          test -s sbom.cdx.json
-          # Validate JSON shape (must have a "bomFormat" field equal to "CycloneDX").
-          BOM_FORMAT=$(jq -r '.bomFormat // ""' sbom.cdx.json)
-          if [ "${BOM_FORMAT}" != "CycloneDX" ]; then
-            echo "::error::sbom.cdx.json is not a CycloneDX SBOM (bomFormat=${BOM_FORMAT:-<missing>})"
-            exit 1
-          fi
-          echo "CycloneDX SBOM ok: $(wc -c < sbom.cdx.json) bytes, specVersion=$(jq -r '.specVersion' sbom.cdx.json)"
-
-      - name: Attach SBOM to GitHub Release
         env:
-          # Env-isolate the tag name so a crafted tag value cannot
-          # inject shell tokens via `gh release upload`. Same
-          # env-isolate pattern as PR #183 + PR #184.
-          INPUTS_TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+          SBOM_DIR: ${{ runner.temp }}/sbom-download
         run: |
           set -euo pipefail
-          if [ -z "${INPUTS_TAG_NAME}" ]; then
-            echo "::error::No release tag available (event.release.tag_name and inputs.tag are both empty)."
+          # Find the artifact (filename matches the artifact-name pattern).
+          SBOM_PATH=$(find "${SBOM_DIR}" -type f -name 'sbom.cdx.json' | head -n1)
+          if [ -z "${SBOM_PATH}" ] || [ ! -s "${SBOM_PATH}" ]; then
+            echo "::error::sbom.cdx.json was not produced by anchore/sbom-action (searched ${SBOM_DIR})"
             exit 1
           fi
-          gh release upload "${INPUTS_TAG_NAME}" sbom.cdx.json --clobber
+          # Validate JSON shape (must have a "bomFormat" field equal to "CycloneDX").
+          BOM_FORMAT=$(jq -r '.bomFormat // ""' "${SBOM_PATH}")
+          if [ "${BOM_FORMAT}" != "CycloneDX" ]; then
+            echo "::error::${SBOM_PATH} is not a CycloneDX SBOM (bomFormat=${BOM_FORMAT:-<missing>})"
+            exit 1
+          fi
+          echo "CycloneDX SBOM ok: $(wc -c < "${SBOM_PATH}") bytes, specVersion=$(jq -r '.specVersion' "${SBOM_PATH}")"
 
       - name: Attach summary
         if: always()
