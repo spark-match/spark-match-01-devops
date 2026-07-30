@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# .githooks/pre-commit - gitleaks pre-commit hook
+# =============================================================================
+# Runs gitleaks on staged changes BEFORE the commit is created. Catches
+# secrets at commit time (the cheapest detection point) instead of
+# waiting for the CI workflow to fail and have to amend.
+#
+# Installation (run once per clone):
+#
+#   git config core.hooksPath .githooks
+#
+# After that, every `git commit` runs this hook. To skip for a specific
+# commit (rare; usually wrong):
+#
+#   git commit --no-verify
+#
+# Requirements:
+#   - gitleaks installed locally (https://github.com/gitleaks/gitleaks
+#     releases; brew install gitleaks / scoop install gitleaks /
+#     download the binary directly).
+#   - `.gitleaks.toml` at repo root (this script points gitleaks at it).
+#
+# This script lives in .githooks/ (NOT .git/hooks/) so it is committed
+# to the repo and shared with all contributors. The `core.hooksPath`
+# config redirects git to use this directory.
+# =============================================================================
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="$REPO_ROOT/.gitleaks.toml"
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "::warning::gitleaks not installed; skipping pre-commit secret scan." >&2
+  echo "::warning::Install from https://github.com/gitleaks/gitleaks/releases" >&2
+  echo "::warning::CI (workflow: gitleaks) will still catch secrets before merge." >&2
+  exit 0
+fi
+
+if [[ ! -f "$CONFIG" ]]; then
+  echo "::error::$CONFIG not found; refusing to commit." >&2
+  exit 1
+fi
+
+# `gitleaks protect --staged` scans staged changes against the config.
+# Exits 1 if any finding is reported; 0 otherwise.
+#
+# Flags:
+#   --staged: scan only staged files (matches what is about to commit)
+#   --config: point at our repo config (custom rules + allowlists)
+#   --verbose: surface the finding IDs so the user can fix them
+#   --no-banner: keep the output focused on findings, not the ASCII art
+echo "Running gitleaks pre-commit scan (staged files only)..."
+exec gitleaks protect \
+  --staged \
+  --config="$CONFIG" \
+  --verbose \
+  --no-banner \
+  --redact

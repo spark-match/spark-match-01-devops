@@ -87,9 +87,25 @@ cd spark-match-01-devops
 git checkout main
 ```
 
+### Pre-commit hook (gitleaks)
+
+The repo ships a shared gitleaks pre-commit hook at `.githooks/pre-commit`. Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Every `git commit` then runs gitleaks against staged changes using `.gitleaks.toml` (custom AWS rules + allowlists for test fixtures). If gitleaks is not installed locally the hook skips with a warning; CI still catches secrets via the `gitleaks` workflow on every PR.
+
+To skip the hook for a specific commit (rare; usually wrong):
+
+```bash
+git commit --no-verify
+```
+
 ## Running tests
 
-The repo ships **224 bats tests + 18 pytest tests = 242 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
+The repo ships **249 bats tests + 18 pytest tests = 267 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
 
 ```bash
 # All tests (bats + pytest)

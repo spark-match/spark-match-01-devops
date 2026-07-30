@@ -36,7 +36,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 224 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
+- **`tests/`** — 249 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -143,7 +143,7 @@ spark-match-01-devops/
 │   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
-├── tests/                                 224 bats + 18 pytest = 242 tests
+├── tests/                                 249 bats + 18 pytest = 267 tests
 │   ├── bats/
 │   │   ├── helpers/
 │   │   │   ├── common.bash                 stubs for uv / pytest + ACTION_DIR
