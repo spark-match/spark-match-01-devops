@@ -169,21 +169,38 @@ jobs:
 
       - name: Trivy summary
         if: always()
+        env:
+          # Env-isolate every caller-supplied input so the shell ${{ }}
+          # substitution never appears inside `run:` blocks. CodeQL would
+          # otherwise flag each occurrence as a code-injection vector
+          # because the input value (controlled by the caller) would be
+          # evaluated as a shell token. This pattern was established in
+          # earlier sprints (see PRs that closed 33/55/105/107/132
+          # code-injection alerts) and is required for any new workflow
+          # that interpolates an input into a `run:` block.
+          INPUTS_SCAN_TYPE: ${{ inputs.scan-type }}
+          INPUTS_SCAN_REF: ${{ inputs.scan-ref }}
+          INPUTS_IMAGE_REF: ${{ inputs.image-ref }}
+          INPUTS_SEVERITY: ${{ inputs.severity }}
+          INPUTS_FORMAT: ${{ inputs.format }}
+          INPUTS_IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+          INPUTS_TIMEOUT: ${{ inputs.timeout }}
+          INPUTS_SCANNERS: ${{ inputs.scanners }}
         run: |
           {
-            echo "## Trivy Scan - \`${{ inputs.scan-type }}\`"
+            echo "## Trivy Scan - \`${INPUTS_SCAN_TYPE}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
-            echo "| Scan type | \`${{ inputs.scan-type }}\` |"
-            if [ "${{ inputs.scan-type }}" = "image" ]; then
-              echo "| Image ref | \`${{ inputs.image-ref }}\` |"
+            echo "| Scan type | \`${INPUTS_SCAN_TYPE}\` |"
+            if [ "${INPUTS_SCAN_TYPE}" = "image" ]; then
+              echo "| Image ref | \`${INPUTS_IMAGE_REF}\` |"
             else
-              echo "| Scan ref | \`${{ inputs.scan-ref }}\` |"
+              echo "| Scan ref | \`${INPUTS_SCAN_REF}\` |"
             fi
-            echo "| Severity threshold | \`${{ inputs.severity }}\` |"
-            echo "| Format | \`${{ inputs.format }}\` |"
-            echo "| Scanners | \`${{ inputs.scanners }}\` |"
-            echo "| Ignore unfixed | \`${{ inputs.ignore-unfixed }}\` |"
-            echo "| Timeout | \`${{ inputs.timeout }}\` |"
+            echo "| Severity threshold | \`${INPUTS_SEVERITY}\` |"
+            echo "| Format | \`${INPUTS_FORMAT}\` |"
+            echo "| Scanners | \`${INPUTS_SCANNERS}\` |"
+            echo "| Ignore unfixed | \`${INPUTS_IGNORE_UNFIXED}\` |"
+            echo "| Timeout | \`${INPUTS_TIMEOUT}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
