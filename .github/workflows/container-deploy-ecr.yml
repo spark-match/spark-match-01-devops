@@ -90,15 +90,15 @@ on:
         required: false
         default: 'container-dev'
       provenance:
-        description: 'Set `provenance: true` on `docker build-push-action` (default false for dev speed).'
+        description: 'Set `provenance: true` on `docker build-push-action` (default true for SLSA Build Level 3 provenance attestation).'
         type: boolean
         required: false
-        default: false
+        default: true
       sbom:
-        description: 'Set `sbom: true` on `docker build-push-action` (default false for dev speed).'
+        description: 'Set `sbom: true` on `docker build-push-action` (default true; emits an SPDX SBOM attestation alongside the provenance).'
         type: boolean
         required: false
-        default: false
+        default: true
       extra-buildx-args:
         description: 'Reserved for caller-side raw passthrough. Not used in v1; do not set.'
         type: string
@@ -245,6 +245,8 @@ jobs:
             echo "| Platforms | \`${INPUTS_PLATFORMS}\` |"
             echo "| Image tags | \`${STEPS_TAGS_OUTPUTS_TAGS}\` |"
             echo "| Cache scope | \`${INPUTS_CACHE_SCOPE}\` |"
+            echo "| Provenance (SLSA) | \`${INPUTS_PROVENANCE}\` |"
+            echo "| SBOM (SPDX) | \`${INPUTS_SBOM}\` |"
             echo ""
             echo "Commit: \`${GITHUB_SHA}\`"
             echo "Triggered by: @${GITHUB_ACTOR}"
@@ -258,6 +260,8 @@ jobs:
           INPUTS_CONTEXT_PATH: ${{ inputs.context-path }}
           INPUTS_PLATFORMS: ${{ inputs.platforms }}
           INPUTS_CACHE_SCOPE: ${{ inputs.cache-scope }}
+          INPUTS_PROVENANCE: ${{ inputs.provenance }}
+          INPUTS_SBOM: ${{ inputs.sbom }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
           STEPS_TAGS_OUTPUTS_TAGS: ${{ steps.tags.outputs.tags }}
