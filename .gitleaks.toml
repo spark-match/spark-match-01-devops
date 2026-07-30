@@ -1,0 +1,109 @@
+# =============================================================================
+# .gitleaks.toml - gitleaks configuration for spark-match-01-devops
+# =============================================================================
+# Default gitleaks rules cover most common secret formats (AWS access key
+# IDs, GitHub PATs, Slack tokens, etc.). This file ADDS:
+#
+#   1. Org-specific allowlists so legitimate fixtures in tests/fixtures/
+#      are not flagged. Without these, the gitleaks CI job fails on
+#      every PR because test SAM templates contain literal
+#      "AKIA..." strings and other obviously-fake credential-looking
+#      values.
+#
+#   2. Custom rules for AWS patterns that the default rule set does NOT
+#      match (or that we want to flag more aggressively than the
+#      default does):
+#         - aws-account-id: 12-digit AWS account numbers (digits-only)
+#         - aws-role-arn: arn:aws:iam::ACCOUNT:role/ROLE pattern
+#         - aws-sts-session-token: ASIA-prefixed session tokens
+#
+# References:
+#   - https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+#   - https://github.com/gitleaks/gitleaks/tree/master/rules
+# =============================================================================
+
+title = "spark-match-01-devops gitleaks config"
+
+[extend]
+useDefault = true
+
+# -----------------------------------------------------------------------------
+# Allowlists: paths / patterns that should NEVER be flagged.
+# -----------------------------------------------------------------------------
+# Test fixtures under tests/fixtures/ contain literal strings that look
+# like secrets (AKIA..., wJalrXUtnFEMI/K7MDENG/..., etc.) for the
+# purpose of testing scripts/check_lambda_permission_source_arn.py.
+# They are NOT real credentials; flagging them creates noise.
+[allowlist]
+description = "Allow test fixtures, docs, examples, and known-fake strings"
+paths = [
+  # Test fixtures with literal credential-looking strings.
+  '''tests/fixtures/.*''',
+  # CHANGELOG.md contains historical references to PRs that are not
+  # secrets but gitleaks entropy rules occasionally flag.
+  '''CHANGELOG\.md''',
+  # Documentation that documents secret formats (not actual secrets).
+  '''docs/.*''',
+  # Example payloads shown in workflow comments. These are illustrative,
+  # not real.
+  '''examples/.*\.md$''',
+  # Allowlist the gitleaks config itself (contains regex syntax with
+  # entropy-bearing escape sequences).
+  '''\.gitleaks\.toml$''',
+]
+regexes = [
+  # The exact fake strings used in test fixtures.
+  'AKIAIOSFODNN7EXAMPLE',
+  'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+  # Documentation ARN placeholders.
+  'arn:aws:iam::123456789012:role/ExampleRole',
+  'arn:aws:sts::123456789012:assumed-role/ExampleRole/session',
+]
+# Stopwords: words that, when adjacent to a candidate secret, cause
+# gitleaks to NOT flag it. Reduces false positives in fixtures + docs.
+stopwords = [
+  'example',
+  'Example',
+  'EXAMPLE',
+  'placeholder',
+  'Placeholder',
+  'PLACEHOLDER',
+  'fake',
+  'Fake',
+  'FAKE',
+  'test',
+  'Test',
+  'TEST',
+]
+
+# -----------------------------------------------------------------------------
+# Custom rules: AWS-specific patterns not in the default rule set.
+# -----------------------------------------------------------------------------
+
+# AWS account ID (12 digits). Default gitleaks rules do NOT match
+# bare 12-digit numbers. We flag them in code that mentions AWS or
+# ARN contexts to avoid false positives in years (2026) or
+# timestamps.
+[[rules]]
+id = "aws-account-id"
+description = "AWS Account ID (12 digits)"
+regex = '\b\d{12}\b'
+tags = ["aws", "identifier", "custom"]
+keywords = ["aws", "arn", "account"]
+
+# IAM role ARN. The default gitleaks rule set has a generic
+# `aws-arn` pattern but it is noisy. This rule is more targeted.
+[[rules]]
+id = "aws-role-arn"
+description = "AWS IAM Role ARN"
+regex = 'arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_\-/]+'
+tags = ["aws", "arn", "iam", "custom"]
+keywords = ["arn:aws:iam"]
+
+# STS session token. These start with ASIA and are short-lived.
+[[rules]]
+id = "aws-sts-session-token"
+description = "AWS STS Session Token (ASIA-prefixed)"
+regex = '\bASIA[A-Z0-9]{16}\b'
+tags = ["aws", "token", "session"]
+keywords = ["ASIA"]
