@@ -76,8 +76,21 @@ See the `## Security` section in [README.md](README.md#security) for the full to
 - **CodeQL**: runs on PR + push + weekly; 502 alerts fixed across Sprints A/B/C (none open)
 - **Dependabot security updates**: enabled (auto-PR for vulnerable deps)
 - **Native GitHub secret scanning**: **disabled** (requires GitHub Advanced Security paid plan)
+- **Gitleaks custom config**: `.gitleaks.toml` at repo root with custom AWS rules (`aws-account-id`, `aws-role-arn`, `aws-sts-session-token`) and allowlists for `tests/fixtures/`, `docs/`, `examples/*.md`, and `CHANGELOG.md`.
+- **Pre-commit secret scan**: `.githooks/pre-commit` (gitleaks). Enable per clone via `git config core.hooksPath .githooks`. Catches secrets at commit time before they reach CI.
 
 The repo's Free-plan posture is documented inline so future maintainers know why `gitleaks.yml` exists in the catalog and how to upgrade if/when `spark-match` moves to a paid plan.
+
+### Enabling native GitHub secret scanning (admin task, no code change)
+
+When the org moves to GitHub Advanced Security:
+
+1. GitHub → repository **Settings** → **Code security and analysis**.
+2. Enable **Secret scanning** (detects ~200 partner token formats that gitleaks may miss, including GitHub PATs, Slack tokens, Stripe keys, etc.).
+3. Enable **Push protection** to block pushes containing detected secrets before they land on the remote.
+4. Configure **custom patterns** for org-specific secrets if needed (org-level secret scanning settings).
+
+Until that step is done, gitleaks is the sole secret scanner. See `.gitleaks.toml` for custom AWS rules that complement the default rule set.
 
 ## Acknowledgements
 
