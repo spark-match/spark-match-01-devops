@@ -787,8 +787,8 @@ Inputs:
 | platforms | string | `linux/arm64` | Comma-separated `docker buildx` platforms. Use `linux/amd64` for x86_64 deploys. |
 | image-tags-input | string | `latest,__GITHUB_SHA_SHORT__` | Comma-separated tag list; `__GITHUB_SHA_SHORT__` expands to the first 7 chars of `${{ github.sha }}`. |
 | cache-scope | string | `container-dev` | GHA cache key segment (`cache-from type=gha,scope=<scope>`). Lets multiple recipes coexist on the same runner without cross-contamination. |
-| provenance | string | `false` | `provenance:` flag for `docker build-push-action`. |
-| sbom | string | `false` | `sbom:` flag for `docker build-push-action`. |
+| provenance | boolean | `true` | `provenance:` flag for `docker build-push-action`. Default `true` so every image carries a SLSA Build Level 3 provenance attestation. Override to `false` only for ad-hoc dev builds where attestation cost outweighs audit value. |
+| sbom | boolean | `true` | `sbom:` flag for `docker build-push-action`. Default `true`; emits an SPDX SBOM attestation alongside the provenance. Override to `false` only for ad-hoc dev builds. |
 | extra-buildx-args | string | `''` | Raw extra args passed through. Rarely needed. |
 
 Required secrets (caller-side, scoped to the GitHub Environment):
