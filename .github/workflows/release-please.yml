@@ -82,8 +82,16 @@ jobs:
 
       - name: Log result
         if: always()
+        env:
+          # Env-isolate every step output (URLs + numeric counters) so a
+          # crafted value containing $(...) or backticks cannot be
+          # evaluated by bash when GHA interpolates ${{ }} into the run
+          # block. Same env-isolate pattern as PR #183 (trivy.yml).
+          RELEASES_CREATED: ${{ steps.release.outputs.releases_created || '0' }}
+          PULL_REQUEST_URL: ${{ steps.release.outputs.pull_request_url || '(none)' }}
+          UPLOAD_URL: ${{ steps.release.outputs.upload_url || '(none)' }}
         run: |
           echo "release-please result:"
-          echo "  releases_created=${{ steps.release.outputs.releases_created || '0' }}"
-          echo "  pull_request_url=${{ steps.release.outputs.pull_request_url || '(none)' }}"
-          echo "  upload_url=${{ steps.release.outputs.upload_url || '(none)' }}"
+          echo "  releases_created=${RELEASES_CREATED}"
+          echo "  pull_request_url=${PULL_REQUEST_URL}"
+          echo "  upload_url=${UPLOAD_URL}"
