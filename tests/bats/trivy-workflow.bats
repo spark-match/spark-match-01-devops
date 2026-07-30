@@ -263,3 +263,103 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/trivy.yml"
   run grep -E "scan-type == .image." "$WORKFLOW"
   [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# Code-injection regression guards (PR-G2 post-mortem)
+# ---------------------------------------------------------------------------
+# After PR-G2 was merged, CodeQL flagged 10 alerts on the `Trivy summary`
+# step because every ${{ inputs.X }} was interpolated directly inside a
+# shell `run:` block. The fix is the env-isolate pattern: declare each
+# input under `env:` as INPUTS_X, then reference ${INPUTS_X} from the
+# shell. The guards below fail loudly if a future edit re-introduces the
+# bug.
+# ---------------------------------------------------------------------------
+
+@test "trivy: no \${{ inputs.* }} interpolation inside any run: block (CodeQL guard)" {
+  # Walk each `run: |` block and assert no ${{ inputs.* }} substitution.
+  # A `run: |` block ends when we hit a sibling key at the same indent.
+  local offenders=()
+  local in_run=0
+  local run_indent=-1
+  local line_num=0
+  while IFS= read -r line; do
+    line_num=$((line_num + 1))
+    if [[ $in_run -eq 0 ]]; then
+      if [[ "$line" =~ ^([[:space:]]+)run:[[:space:]]*\|[[:space:]]*$ ]]; then
+        in_run=1
+        run_indent="${#BASH_REMATCH[1]}"
+      fi
+    else
+      # Inside run: block. Check if we exited (sibling key at same indent).
+      if [[ "$line" =~ ^([[:space:]]+)[a-zA-Z_-]+: ]]; then
+        local current_indent="${#BASH_REMATCH[1]}"
+        if [[ $current_indent -le $run_indent ]]; then
+          in_run=0
+          run_indent=-1
+          # Re-check this line in case it's another run: block start.
+          if [[ "$line" =~ ^([[:space:]]+)run:[[:space:]]*\|[[:space:]]*$ ]]; then
+            in_run=1
+            run_indent="${#BASH_REMATCH[1]}"
+          fi
+          continue
+        fi
+      fi
+      # Inside run: block; flag any ${{ inputs.* }} interpolation.
+      if [[ "$line" =~ \$\{\{[[:space:]]*inputs\. ]]; then
+        offenders+=("$line_num: $line")
+      fi
+    fi
+  done < "$WORKFLOW"
+  if [[ ${#offenders[@]} -gt 0 ]]; then
+    echo "# Code-injection risk: \${{ inputs.* }} interpolated directly in run: block:"
+    printf '  %s\n' "${offenders[@]}"
+    echo "# Fix: declare inputs under env: as INPUTS_X, reference as \${INPUTS_X} in shell."
+    return 1
+  fi
+}
+
+@test "trivy: Trivy summary step uses env-isolated INPUTS_* vars (no direct inputs.* interpolation)" {
+  # Specifically verify the summary step (the offender in PR-G2) uses
+  # shell vars from env: not ${{ inputs.* }} directly. We walk ONLY the
+  # run: | block (skipping the env: block, where ${{ inputs.* }} is the
+  # correct pattern for env isolation).
+  local offenders=()
+  local line_num=0
+  local in_summary=0
+  local in_run=0
+  local summary_indent=-1
+  local run_indent=-1
+  while IFS= read -r line; do
+    line_num=$((line_num + 1))
+    if [[ $in_summary -eq 0 ]]; then
+      if [[ "$line" =~ ^([[:space:]]+)-[[:space:]]name:[[:space:]]+Trivy[[:space:]]summary ]]; then
+        in_summary=1
+        summary_indent="${#BASH_REMATCH[1]}"
+      fi
+      continue
+    fi
+    # We're inside the Trivy summary step.
+    # Exit if we hit a sibling step at the same indent.
+    if [[ "$line" =~ ^([[:space:]]+)-[[:space:]]name: ]] && [[ ${#BASH_REMATCH[1]} -le $summary_indent ]]; then
+      in_summary=0
+      in_run=0
+      continue
+    fi
+    if [[ $in_run -eq 0 ]]; then
+      if [[ "$line" =~ ^([[:space:]]+)run:[[:space:]]*\|[[:space:]]*$ ]]; then
+        in_run=1
+        run_indent="${#BASH_REMATCH[1]}"
+      fi
+    else
+      # Inside run: block. Flag any ${{ inputs.* }} substitution.
+      if [[ "$line" =~ \$\{\{[[:space:]]*inputs\. ]]; then
+        offenders+=("$line_num: $line")
+      fi
+    fi
+  done < "$WORKFLOW"
+  if [[ ${#offenders[@]} -gt 0 ]]; then
+    echo "# Trivy summary run: block still has direct inputs.* interpolation:"
+    printf '  %s\n' "${offenders[@]}"
+    return 1
+  fi
+}
