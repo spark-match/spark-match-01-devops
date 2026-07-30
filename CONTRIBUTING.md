@@ -89,7 +89,7 @@ git checkout main
 
 ## Running tests
 
-The repo ships **124 bats tests + 15 pytest tests = 139 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
+The repo ships **159 bats tests + 18 pytest tests = 177 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
 
 ```bash
 # All tests (bats + pytest)
