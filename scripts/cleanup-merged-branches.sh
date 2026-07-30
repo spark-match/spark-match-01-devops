@@ -161,15 +161,22 @@ if [[ $DO_REMOTE -eq 1 ]]; then
             case "$branch" in
                 release-please--*) continue ;;
             esac
+            # If the remote tracking ref doesn't exist locally, the
+            # branch was already deleted on the remote (e.g. by
+            # `gh pr merge --delete-branch`). Skip the push.
+            if ! git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+                echo "already gone: origin/$branch"
+                continue
+            fi
             if git push origin --delete "$branch" 2>/dev/null; then
                 echo "deleted remote: origin/$branch"
             else
-                # May already be gone (race with `--delete-branch` on merge).
-                if git rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+                # Push failed; re-check via `ls-remote` (authoritative).
+                if git ls-remote --heads origin "$branch" 2>/dev/null | grep -q "$branch"; then
                     echo "::error::failed to delete remote: origin/$branch" >&2
                     FAIL=$((FAIL + 1))
                 else
-                    echo "already gone: origin/$branch"
+                    echo "already gone (race): origin/$branch"
                 fi
             fi
         done
