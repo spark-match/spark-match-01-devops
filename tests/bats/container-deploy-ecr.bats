@@ -172,3 +172,90 @@ input_type() {
   run grep -E "^[[:space:]]+INPUTS_SBOM:[[:space:]]+\\\${{[[:space:]]*inputs.sbom[[:space:]]*}}" "$WORKFLOW"
   [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# Cosign signing (PR-G3)
+# ---------------------------------------------------------------------------
+
+@test "container-deploy-ecr: declares cosign-sign input (boolean, default false)" {
+  run grep -E "^[[:space:]]+cosign-sign:" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  run grep -E -B1 -A4 "^[[:space:]]+cosign-sign:" "$WORKFLOW"
+  [[ "$output" == *"type: boolean"* ]]
+  [[ "$output" == *"default: false"* ]]
+}
+
+@test "container-deploy-ecr: cosign-sign description mentions keyless + Sigstore" {
+  # The description line directly follows the cosign-sign: key declaration.
+  run grep -E -A1 "^[[:space:]]+cosign-sign:" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"description: "* ]]
+  [[ "$output" == *"Sigstore"* ]]
+  [[ "$output" == *"keyless"* ]]
+}
+
+@test "container-deploy-ecr: cosign-installer SHA pinned to d7543c9 (v3.10.0)" {
+  run grep -E "sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  run grep -E "sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62[[:space:]]*#[[:space:]]*v3\.10\.0" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "container-deploy-ecr: cosign-installer ref is NOT floating (@vN or @main)" {
+  local offenders=()
+  while IFS= read -r line; do
+    if [[ "$line" == *sigstore/cosign-installer@* ]]; then
+      after_at="${line##*sigstore/cosign-installer@}"
+      sha_part="${after_at%% *}"
+      if [[ ! "$sha_part" =~ ^[0-9a-f]{40}$ ]]; then
+        offenders+=("$line")
+      fi
+    fi
+  done < "$WORKFLOW"
+  if [[ ${#offenders[@]} -gt 0 ]]; then
+    echo "# cosign-installer refs not SHA-pinned:"
+    printf '  %s\n' "${offenders[@]}"
+    return 1
+  fi
+}
+
+@test "container-deploy-ecr: cosign install step is gated on cosign-sign=true" {
+  # The Install cosign step has if: ${{ inputs.cosign-sign }}
+  run grep -cE "^[[:space:]]+if:[[:space:]]+\\\$\{\{[[:space:]]*inputs.cosign-sign[[:space:]]*\}\}" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  # Expect at least 2 occurrences (install + sign steps).
+  [ "$output" -ge 2 ]
+}
+
+@test "container-deploy-ecr: cosign sign step iterates over each pushed tag" {
+  run grep -E "cosign sign" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--yes"* ]]
+  # Verify the step iterates over INPUTS_IMAGE_TAGS (comma-separated).
+  run grep -B2 -A6 "cosign sign" "$WORKFLOW"
+  [[ "$output" == *"INPUTS_IMAGE_TAGS"* ]]
+  [[ "$output" == *"IFS=',' read -ra TAGS"* ]]
+}
+
+@test "container-deploy-ecr: cosign signing uses keyless (no COSIGN_KEY envvar)" {
+  # Keyless mode is implicit (no --key flag, no COSIGN_KEY envvar). Verify
+  # the signing step does NOT expose a key input.
+  if grep -E "^[[:space:]]+COSIGN_KEY:" "$WORKFLOW"; then
+    echo "# COSIGN_KEY should not be set in keyless mode"
+    return 1
+  fi
+  if grep -E "cosign sign.*--key" "$WORKFLOW"; then
+    echo "# cosign sign --key should not be used in keyless mode"
+    return 1
+  fi
+}
+
+@test "container-deploy-ecr: deploy summary has a Cosign sign row" {
+  run grep -E "^[[:space:]]+echo \"\\| Cosign sign \\|" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "container-deploy-ecr: deploy summary env exposes INPUTS_COSIGN_SIGN" {
+  run grep -E "^[[:space:]]+INPUTS_COSIGN_SIGN:[[:space:]]+\\\${{[[:space:]]*inputs.cosign-sign[[:space:]]*}}" "$WORKFLOW"
+  [ "$status" -eq 0 ]
+}
