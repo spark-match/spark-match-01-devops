@@ -226,11 +226,11 @@ Despues del push, ambos se restauran a su estado canonico (ventana de riesgo < 5
 
 El ruleset de GitHub acepta un campo `required_reviewers` para forzar reviews por team/individual via API (en lugar de via CODEOWNERS). Sin embargo, este campo **no esta disponible en el plan Free de la organizacion**: la API rechaza payloads con valores no vacios con HTTP 422. Por lo tanto, la funcionalidad equivalente se logra via `require_code_owner_review: true` + CODEOWNERS.
 
-Esto esta documentado en `_note` del manifest (`governance/repository-governance.json`) y en el commit de pilot. La unica manera de usar `required_reviewers` es upgrading a GitHub Team o Enterprise; mientras tanto, CODEOWNERS es la fuente de verdad.
+Esto esta documentado en `_notes` del manifest (`governance/repository-governance.json`) y en el commit de pilot. La unica manera de usar `required_reviewers` es upgrading a GitHub Team o Enterprise; mientras tanto, CODEOWNERS es la fuente de verdad.
 
-### Drift permanente esperado
+### Drift esperado (resuelto por canonical_diff)
 
-El reconciler reporta `drift` permanente en `required_reviewers` para todos los repos, porque el estado deseado (team configurado) no se puede aplicar via API. Esto **no es accionable** mientras el plan siga siendo Free; tratarlo como drift es ruido.
+El reconciler tenia una seccion previa "Drift permanente esperado" que documentaba `required_reviewers` como drift ruidoso. Esto **se resolvio** en v3 del schema + commit que extendio `canonical_diff()` para strip `required_reviewers` antes de comparar. Ahora todos los repos reportan `in-sync` pese a tener el field stale.
 
 ## 10. Tools
 
@@ -261,7 +261,7 @@ done
 
 ## 11. Referencias
 
-- **Manifest**: `governance/repository-governance.json` (schema v2).
+- **Manifest**: `governance/repository-governance.json` (schema v3).
 - **Reconciler**: `scripts/configure-repo-rulesets.sh`.
 - **Plan completo**: see `CHANGELOG.md` for the audit + migration timeline. (Original external workspace doc has been retired.)
 - **Pilot**: ruleset 18893014 sobre `spark-match-01-devops`.
