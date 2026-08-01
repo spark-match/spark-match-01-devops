@@ -249,14 +249,13 @@ build_desired_payload() {
               dismiss_stale_reviews_on_push: $d.dismissStaleReviews,
               require_last_push_approval: $d.requireLastPushApproval,
               required_review_thread_resolution: $d.requireConversationResolution,
-              required_reviewers: [
-                {
-                  reviewer_id: ($team_id | tonumber),
-                  reviewer_type: "Team",
-                  file_patterns: $r.filePatterns,
-                  minimum_approvals: $d.approvals
-                }
-              ],
+              # required_reviewers field is OMITTED entirely because:
+              #   - GitHub Free plan rejects non-empty values with 422.
+              #   - GitHub API PUT does field-level merge (omitting leaves stale values).
+              #   - canonical_diff() strips required_reviewers from current state before comparison,
+              #     so reconcile reports in-sync despite stale empty arrays in live.
+              # Team-based review is enforced via CODEOWNERS + require_code_owner_review=true.
+              # See governance/repository-governance.json _note field for rationale.
               allowed_merge_methods: $d.allowedMergeMethods
             }
           }
@@ -287,15 +286,18 @@ canonical_diff() {
   local desired="$2"
 
   # Canonicalizacion: orden estable, ignorar campos meta.
+  # Tambien ignoramos `required_reviewers` (stale empty array que la API no deja limpiar,
+  # ver comment en build_desired_payload).
   local cur_norm des_norm
   cur_norm=$(echo "$current" | jq -S '
-    del(.id, .node_id, .created_at, .updated_at, ._links, .source, .source_type, .url) |
+    del(.id, .node_id, .created_at, .updated_at, ._links, .source, .source_type, .url, .current_user_can_bypass) |
     .bypass_actors |= map(del(.actor_id)) |
     .conditions.ref_name.include |= sort |
     .conditions.ref_name.exclude |= sort |
     .rules |= sort_by(.type) |
     .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
-    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end) |
+    .rules |= map(if has("parameters") and (.parameters | has("required_reviewers")) then .parameters |= del(.required_reviewers) else . end)
   ')
   des_norm=$(echo "$desired" | jq -S '
     .bypass_actors |= map(del(.actor_id)) |
@@ -303,7 +305,8 @@ canonical_diff() {
     .conditions.ref_name.exclude |= sort |
     .rules |= sort_by(.type) |
     .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
-    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end) |
+    .rules |= map(if has("parameters") and (.parameters | has("required_reviewers")) then .parameters |= del(.required_reviewers) else . end)
   ')
 
   if [[ "$cur_norm" == "$des_norm" ]]; then

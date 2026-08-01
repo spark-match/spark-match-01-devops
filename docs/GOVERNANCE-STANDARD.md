@@ -26,7 +26,7 @@ Every `spark-match/*` repository has exactly one ruleset named `spark-match-defa
 | `rules[].non_fast_forward` | present | Force-push blocked |
 | `rules[].required_linear_history` | present | No merge commits reaching main |
 | `rules[].deletion` | present | Branch deletion blocked at the API level |
-| `rules[].required_status_checks` | per-repo | Status checks preserved from existing setup; not expanded by this standard |
+| `rules[].required_status_checks` | per-repo | Strict mode: when a repo declares status checks in the manifest, the reconciler enforces `strict_required_status_checks_policy: true` so the head branch must be up-to-date before merge. Individual checks are repo-specific (see manifest). |
 
 The full desired state for the three pilot repositories is encoded in `governance/repository-governance.json` (schema `spark-match.repository-governance/v2`).
 
@@ -205,6 +205,10 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 - **Headers "drift"**: los 8 repos migrados conservan el header que dice "branch protection" en lugar de "ruleset". Es un detalle cosmético del comentario; no afecta la funcionalidad. La migracion al header correcto se puede hacer en un PR de cleanup posterior.
 - **`spark-match-04-frontend`** (resuelto en migracion 2026-07-26): el CODEOWNERS ahora asigna `frontend-devs` explicitamente a `.github/`, `.vscode/`, `public/`, `src/`, archivos de config raiz, y double-owns README/CONTRIBUTING/LICENSE. Un canary PR anterior valido que `frontend-devs` + `product-owners` son solicitados correctamente.
 
+### Delta desde el snapshot 2026-07-26
+
+- **2026-08-01 (spark-match-02-infrastructure, strict mode)**: tras gap analysis post-PR #77/#78/#79 (todos bypasaron tflint via admin-bypass), se agregaron 3 required checks adicionales: `tflint / tflint (env=dev)`, `gitleaks / gitleaks (env=dev)`, `sonar-terraform / SonarCloud Terraform (dev)`. Tracked en `tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md`. Prerequisito: infra debe arreglar `.tflint.hcl` antes de mergear PRs futuros.
+
 ### Proceso de migracion aplicado (leccion aprendida)
 
 Los 7 repos con `* @team` catch-all fueron migrados a patron explicito via push directo a `main`. El push directo requiere que **ambos** flags esten deshabilitados temporalmente:
@@ -222,11 +226,11 @@ Despues del push, ambos se restauran a su estado canonico (ventana de riesgo < 5
 
 El ruleset de GitHub acepta un campo `required_reviewers` para forzar reviews por team/individual via API (en lugar de via CODEOWNERS). Sin embargo, este campo **no esta disponible en el plan Free de la organizacion**: la API rechaza payloads con valores no vacios con HTTP 422. Por lo tanto, la funcionalidad equivalente se logra via `require_code_owner_review: true` + CODEOWNERS.
 
-Esto esta documentado en `_note` del manifest (`governance/repository-governance.json`) y en el commit de pilot. La unica manera de usar `required_reviewers` es upgrading a GitHub Team o Enterprise; mientras tanto, CODEOWNERS es la fuente de verdad.
+Esto esta documentado en `_notes` del manifest (`governance/repository-governance.json`) y en el commit de pilot. La unica manera de usar `required_reviewers` es upgrading a GitHub Team o Enterprise; mientras tanto, CODEOWNERS es la fuente de verdad.
 
-### Drift permanente esperado
+### Drift esperado (resuelto por canonical_diff)
 
-El reconciler reporta `drift` permanente en `required_reviewers` para todos los repos, porque el estado deseado (team configurado) no se puede aplicar via API. Esto **no es accionable** mientras el plan siga siendo Free; tratarlo como drift es ruido.
+El reconciler tenia una seccion previa "Drift permanente esperado" que documentaba `required_reviewers` como drift ruidoso. Esto **se resolvio** en v3 del schema + commit que extendio `canonical_diff()` para strip `required_reviewers` antes de comparar. Ahora todos los repos reportan `in-sync` pese a tener el field stale.
 
 ## 10. Tools
 
@@ -257,7 +261,7 @@ done
 
 ## 11. Referencias
 
-- **Manifest**: `governance/repository-governance.json` (schema v2).
+- **Manifest**: `governance/repository-governance.json` (schema v3).
 - **Reconciler**: `scripts/configure-repo-rulesets.sh`.
 - **Plan completo**: see `CHANGELOG.md` for the audit + migration timeline. (Original external workspace doc has been retired.)
 - **Pilot**: ruleset 18893014 sobre `spark-match-01-devops`.
