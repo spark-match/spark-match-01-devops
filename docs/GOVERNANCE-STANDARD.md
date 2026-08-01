@@ -26,7 +26,7 @@ Every `spark-match/*` repository has exactly one ruleset named `spark-match-defa
 | `rules[].non_fast_forward` | present | Force-push blocked |
 | `rules[].required_linear_history` | present | No merge commits reaching main |
 | `rules[].deletion` | present | Branch deletion blocked at the API level |
-| `rules[].required_status_checks` | per-repo | Status checks preserved from existing setup; not expanded by this standard |
+| `rules[].required_status_checks` | per-repo | Strict mode: when a repo declares status checks in the manifest, the reconciler enforces `strict_required_status_checks_policy: true` so the head branch must be up-to-date before merge. Individual checks are repo-specific (see manifest). |
 
 The full desired state for the three pilot repositories is encoded in `governance/repository-governance.json` (schema `spark-match.repository-governance/v2`).
 
@@ -204,6 +204,10 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 
 - **Headers "drift"**: los 8 repos migrados conservan el header que dice "branch protection" en lugar de "ruleset". Es un detalle cosmético del comentario; no afecta la funcionalidad. La migracion al header correcto se puede hacer en un PR de cleanup posterior.
 - **`spark-match-04-frontend`** (resuelto en migracion 2026-07-26): el CODEOWNERS ahora asigna `frontend-devs` explicitamente a `.github/`, `.vscode/`, `public/`, `src/`, archivos de config raiz, y double-owns README/CONTRIBUTING/LICENSE. Un canary PR anterior valido que `frontend-devs` + `product-owners` son solicitados correctamente.
+
+### Delta desde el snapshot 2026-07-26
+
+- **2026-08-01 (spark-match-02-infrastructure, strict mode)**: tras gap analysis post-PR #77/#78/#79 (todos bypasaron tflint via admin-bypass), se agregaron 3 required checks adicionales: `tflint / tflint (env=dev)`, `gitleaks / gitleaks (env=dev)`, `sonar-terraform / SonarCloud Terraform (dev)`. Tracked en `tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md`. Prerequisito: infra debe arreglar `.tflint.hcl` antes de mergear PRs futuros.
 
 ### Proceso de migracion aplicado (leccion aprendida)
 
