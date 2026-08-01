@@ -1,7 +1,7 @@
 {
   "version": 2,
   "schema": "spark-match.repository-governance/v2",
-  "_note": "requireCodeOwnerReview=true: team reviewer requests are enforced via CODEOWNERS + this flag. The ruleset field required_reviewers is not available on the current GitHub plan.",
+  "_note": "requireCodeOwnerReview=true: team reviewer requests are enforced via CODEOWNERS + this flag. The ruleset field required_reviewers is not available on the current GitHub plan. 2026-08-01: added 3 strict required checks for spark-match-02-infrastructure (tflint, gitleaks, sonar-terraform) after gap analysis revealed 3 PRs (#77/#78/#79) had bypassed tflint via admin-bypass. Tracked in tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md.",
   "defaults": {
     "approvals": 1,
     "dismissStaleReviews": true,
@@ -40,7 +40,10 @@
       "filePatterns": ["**"],
       "statusChecks": [
         "Plan (dev) / Plan (dev)",
-        "Checkov"
+        "Checkov",
+        "tflint / tflint (env=dev)",
+        "gitleaks / gitleaks (env=dev)",
+        "sonar-terraform / SonarCloud Terraform (dev)"
       ]
     },
     "spark-match-00-knowledge-base": {
