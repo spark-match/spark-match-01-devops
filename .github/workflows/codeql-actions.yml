@@ -1,30 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-# =============================================================================
-# CodeQL - Static analysis for GitHub Actions YAML workflows
-# =============================================================================
-# Purpose:
-#   Standalone CodeQL workflow that scans THIS REPOSITORY'S OWN GitHub Actions
-#   YAML files under .github/workflows/ for security misconfigurations
-#   (untrusted input, script injection, expression injection, etc.).
-#
-# Scope:
-#   - language: actions (CodeQL query pack for GitHub Actions YAML)
-#   - NOT javascript/typescript: reusable-codeql.yml (the reusable workflow) is the
-#     entry point for app repos that need TS/JS analysis.
-#   - NOT bash: CodeQL does not support bash as a built-in language. Shell
-#     scripts under scripts/ are validated separately by shellcheck (in
-#     reusable-quality.yml).
-#
-# Triggers:
-#   - push to main             (defense in depth on every merge)
-#   - pull_request to main     (gate before merge)
-#   - weekly Monday 06:17 UTC  (low contention slot)
-#
-# Required: Code scanning alerts must be reviewed and triaged periodically.
-# =============================================================================
-
-name: CodeQL (actions)
+name: codeql-actions
 
 on:
   push:
@@ -32,43 +6,43 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '17 6 * * 1'
+    - cron: '0 8 * * *'
 
 permissions:
   actions: read
   contents: read
   security-events: write
 
-# Cancel in-progress runs for the same ref. CodeQL is idempotent and the
-# `init` action handles cancellation safely by short-circuiting.
 concurrency:
   group: codeql-actions-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
+    name: analyze-${{ matrix.language }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: actions
-            build-mode: none
+        language: [actions]
+        build-mode: [none]
     steps:
-      - name: Checkout repository
+      - name: checkout-repository
         uses: actions/checkout@v7
-
-      - name: Initialize CodeQL
+      - name: initialize-codeql
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended
           config-file: .github/codeql/codeql-config.yml
-
-      - name: Perform CodeQL Analysis
+      - name: perform-codeql-analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+      - name: fail-on-alerts
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/codeql-fail-on-alerts
+        with:
+          severity-threshold: warning

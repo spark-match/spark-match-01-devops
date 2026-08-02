@@ -1,4 +1,4 @@
-name: Action Lint
+name: actionlint
 
 on:
   workflow_call:
@@ -14,21 +14,21 @@ permissions:
 
 jobs:
   actionlint:
-    name: "Action Lint (${{ inputs.environment-name }})"
+    name: "actionlint-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Validate Inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
-      - name: Setup Action Lint
+      - name: setup-actionlint
         id: setup-actionlint
         uses: spark-match/spark-match-01-devops/.github/actions/setup-actionlint@main
         with:
           version: '1.7.12'
-      - name: Checkout Caller Repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
-      - name: Run Action Lint
+      - name: run-actionlint
         run: "${{ steps.setup-actionlint.outputs.executable }} -color"
