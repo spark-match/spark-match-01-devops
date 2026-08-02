@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.10](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.9...v0.1.10) (2026-08-02)
+
+
+### Features
+
+* **composite:** extract bats-runner from reusable-quality.yml ([#220](https://github.com/spark-match/spark-match-01-devops/issues/220)) ([e234adf](https://github.com/spark-match/spark-match-01-devops/commit/e234adf81c5798ab598afc7b79ccea3997ecdbe5))
+
 ## [0.1.9](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.8...v0.1.9) (2026-08-02)
 
 
