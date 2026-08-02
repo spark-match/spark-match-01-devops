@@ -1,33 +1,3 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-# =============================================================================
-# Reusable Workflow: yamllint - YAML file validation
-# =============================================================================
-# Atomic recipe (ecosystem layer). Validates non-workflow YAML files (SAM
-# templates, Terraform configs, Kubernetes manifests) against a caller-provided
-# `.yamllint.yml` config.
-#
-# yamllint auto-discovers `.yamllint.yml` from the working directory, so the
-# caller controls ignores / rule relaxations via their repo config. The
-# typical ignore set is:
-#   ignore: |
-#     .git/
-#     node_modules/
-#     coverage/
-#     dist/
-#     .terraform/
-#     .github/workflows/   # workflow YAML is checked by actionlint, not yamllint
-#
-# USAGE (in caller repo):
-#   jobs:
-#     yamllint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-yamllint.yml@main
-#       with:
-#         environment-name: dev
-#
-# Cross-owner safe: pure pip install + lint, no secrets forwarded.
-# =============================================================================
-
 name: yamllint
 
 on:
@@ -44,22 +14,18 @@ permissions:
 
 jobs:
   yamllint:
-    name: "yamllint (env=${{ inputs.environment-name }})"
+    name: "yamllint (${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
+      - name: Validate Inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
-      - name: Checkout caller repository
+      - name: Checkout Caller Repository
         uses: actions/checkout@v7
-
-      # yamllint 1.35.1 is the last v1 release before the 2.x rewrite. Pin for
-      # reproducible lint output across runner versions.
-      - name: Install yamllint (pinned 1.35.1)
+      - name: Install Yamllint
         run: pip install --quiet yamllint==1.35.1
-
-      - name: Run yamllint
+      - name: Run Yamllint
         run: yamllint .

@@ -10,7 +10,9 @@
 #     to upstream releases)
 #   - CycloneDX JSON format (not SPDX, not table)
 #   - SBOM anchored to the release tag's exact commit (ref: tag)
-#   - anchore/sbom-action SHA-pinned to fc46e51f (v0.17.7)
+#   - anchore/sbom-action pinned to v0.17.7 (floating minor; see
+#     tests/bats/no-sha-pinning.bats for the global guard against
+#     SHA-pinning)
 #   - anchore/sbom-action configured with `upload-release-assets: true`
 #     so the action itself uploads sbom.cdx.json to the GitHub Release
 #     (the previous flow used a follow-up `gh release upload --clobber`
@@ -31,6 +33,11 @@
 #     dropped the redundant `gh release upload` step. Updated this bats
 #     file (which had been broken since PR #188 due to filename mismatch
 #     and which checked for a removed step).
+#   - drop-sha-pinning (#210): removed the SHA-pin enforcement tests
+#     (anchore/sbom-action and actions/download-artifact) per the new
+#     policy in AGENTS.md (no SHA-pinning; use @vN or @main). The
+#     global guard against SHA-pinning is now in
+#     tests/bats/no-sha-pinning.bats.
 # =============================================================================
 
 WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
@@ -67,43 +74,9 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 }
 
 # ---------------------------------------------------------------------------
-# Anchore action pin
+# Anchore action pin (pinned to v0.17.7, see tests/bats/no-sha-pinning.bats
+# for the global guard)
 # ---------------------------------------------------------------------------
-
-@test "sbom: anchore/sbom-action is SHA-pinned (no @vN or @main) in uses:" {
-  # Only flag lines where anchore/sbom-action appears as an actual
-  # action `uses:` reference (indented under a step). Lines that
-  # mention the action in documentation/comments/summary are exempt.
-  local offenders=()
-  local line_num=0
-  while IFS= read -r line; do
-    line_num=$((line_num + 1))
-    if [[ "$line" == *anchore/sbom-action@* ]]; then
-      # Skip comments and lines inside run: blocks.
-      if [[ "$line" =~ ^[[:space:]]*# ]]; then continue; fi
-      # Action `uses:` references appear at the start of a step's uses key.
-      if [[ "$line" =~ uses:.*anchore/sbom-action@ ]]; then
-        after_at="${line##*anchore/sbom-action@}"
-        sha_part="${after_at%% *}"
-        if [[ ! "$sha_part" =~ ^[0-9a-f]{40}$ ]]; then
-          offenders+=("$line_num: $line")
-        fi
-      fi
-    fi
-  done < "$WORKFLOW"
-  if [[ ${#offenders[@]} -gt 0 ]]; then
-    echo "# anchore/sbom-action uses: refs not SHA-pinned:"
-    printf '  %s\n' "${offenders[@]}"
-    return 1
-  fi
-}
-
-@test "sbom: anchore/sbom-action SHA pin matches fc46e51f (v0.17.7)" {
-  run grep -E "anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb" "$WORKFLOW"
-  [ "$status" -eq 0 ]
-  run grep -E "anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb[[:space:]]*#[[:space:]]*v0\.17\.7" "$WORKFLOW"
-  [ "$status" -eq 0 ]
-}
 
 # ---------------------------------------------------------------------------
 # SBOM format
@@ -177,9 +150,8 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
   run grep -B1 -A5 "Download SBOM artifact" "$WORKFLOW"
   [ "$status" -eq 0 ]
   [[ "$output" == *"actions/download-artifact@"* ]]
-  # download-artifact must be SHA-pinned, not @vN.
-  run grep -E "actions/download-artifact@[0-9a-f]{40}" "$WORKFLOW"
-  [ "$status" -eq 0 ]
+  # download-artifact pinned to @v4 (floating major); the global guard
+  # against SHA-pinning is in tests/bats/no-sha-pinning.bats.
 }
 
 @test "sbom: Verify step parses JSON and asserts bomFormat=CycloneDX" {

@@ -73,7 +73,7 @@ jobs:
           # owner/org scope; installation has repository_selection=all
 
       - name: Run release-please
-        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
+        uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: .github/release-please-config.json

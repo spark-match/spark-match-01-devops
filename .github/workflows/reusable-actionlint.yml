@@ -1,30 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-# =============================================================================
-# Reusable Workflow: Actionlint - GitHub Actions syntax validation
-# =============================================================================
-# Atomic recipe (ecosystem layer). Validates the syntax of GitHub Actions
-# workflow YAML files in the caller's repository. No AWS, no Node.
-#
-# USAGE (in caller repo):
-#   jobs:
-#     actionlint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-actionlint.yml@main
-#       with:
-#         environment-name: dev   # informational only (job name + logs)
-#
-# Inputs:
-#   environment-name: Target GH Environment name for context only. NOTE: this
-#                     recipe does NOT reference the GH Environment as a gate
-#                     (no secrets are needed). The value is baked into the
-#                     job name and step logs so PR reviewers can see which
-#                     env the check ran against.
-#
-# Cross-owner safe: works for any caller (org or user-owned) since no secrets
-# are forwarded.
-# =============================================================================
-
-name: Actionlint
+name: Action Lint
 
 on:
   workflow_call:
@@ -40,12 +14,12 @@ permissions:
 
 jobs:
   actionlint:
-    name: "actionlint (env=${{ inputs.environment-name }})"
+    name: "Action Lint (${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
+      - name: Validate Inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
@@ -54,7 +28,7 @@ jobs:
         uses: spark-match/spark-match-01-devops/.github/actions/setup-actionlint@main
         with:
           version: '1.7.12'
-      - name: Checkout caller repository
+      - name: Checkout Caller Repository
         uses: actions/checkout@v7
-      - name: Run actionlint
+      - name: Run Action Lint
         run: "${{ steps.setup-actionlint.outputs.executable }} -color"
