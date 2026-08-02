@@ -2,18 +2,36 @@
 
 > Documento para agentes de IA (OpenCode, GitHub Copilot, Claude Code, etc.) que operan sobre este repositorio. Refleja las convenciones observadas en el repo y el flujo de trabajo vigente.
 
-## 1. Qué es este repo
+## 1. Propósito y estructura del repositorio
 
-Catálogo único de **CI/CD compartido para la organización `spark-match`**. Aloja:
+`spark-match-01-devops` es el **catálogo único** de CI/CD compartida para la organización `spark-match`. No contiene código de aplicación (no Node, Python, Terraform ni SAM propios): su superficie es exclusivamente infraestructura declarativa de pipelines (workflows reutilizables y composite actions) y de governance (ruleset del org + scripts de reconciliación).
 
-- **23 reusables** en `.github/workflows/` (consumidos por repos `spark-match/*` vía `uses:`).
-- **2 composite actions** en `.github/actions/` (primitivas atómicas: `validate-workflow-inputs`, `run-pytest-with-args`).
-- **2 scripts org-admin** en `scripts/` (`configure-repo-rulesets.sh` + `audit-codeowners-ruleset.sh`).
-- **Docs** en `docs/` (CACHE, GOVERNANCE-STANDARD, VERSIONING).
-- **113 tests bats** en `tests/bats/`.
-- **Governance declarativa** en `governance/` (manifest JSON + schema).
+### 1.1 Estructura
 
-Este repo **no contiene código de aplicación** (no Node, Python, Terraform, ni SAM propios). Es 100% infra-as-code de pipelines + governance.
+- `.github/workflows/`: reusable workflows (`workflow_call`). Prefijo `reusable-` = consumible; sin prefijo = CI interna de este repo.
+- `.github/actions/`: composite actions (primitivas atómicas). Consumidas por las reusables o por callers externos.
+- `.github/ISSUE_TEMPLATE/`: bug + feature + docs issue templates.
+- `.github/dependabot.yml`: bump PRs semanales para GH Actions.
+- `.github/CODEOWNERS`: paths explícitos, sin catch-all (`*`).
+- `.github/release-please-config.json`: CC → section mapping para el release PR.
+- `.github/PULL_REQUEST_TEMPLATE.md`: checklist 11-tipos de Conventional Commits.
+- `docs/`: convenciones de diseño (cache-key, governance standard, versioning).
+- `scripts/`: operaciones idempotentes que aplican governance al org via gh API.
+- `governance/`: desired state del org ruleset (manifest JSON + JSON Schema).
+- `tests/`: bats tests por subject. Helpers compartidos en `tests/bats/helpers/`.
+
+### 1.2 Naming conventions
+
+- **Workflows reusables**: prefijo `reusable-` obligatorio. Encapsula tecnología (terraform, node, sonar, etc.) + responsabilidad (plan, apply, build, test).
+- **Composite actions**: una carpeta por action bajo `.github/actions/<name>/`, con `action.yml` + opcional `*.sh` ejecutable.
+- **Scripts**: kebab-case, ejecutable, shebang `#!/usr/bin/env bash` + `set -euo pipefail`.
+- **Tests**: archivo bats por subject, bajo `tests/bats/<subject>.bats`.
+
+### 1.3 Modelo de consumo
+
+- **Reusables**: consumidos desde repos `spark-match/*` vía `uses: spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main`.
+- **Composite actions**: consumidas por las reusables (mismo repo, path `./.github/actions/<name>`) o por callers externos (`@main`).
+- **Governance**: aplicada al org via `scripts/configure-repo-rulesets.sh`. No se aplica manualmente vía la UI de GitHub.
 
 ## 2. Modelo de rama — `main` único
 
