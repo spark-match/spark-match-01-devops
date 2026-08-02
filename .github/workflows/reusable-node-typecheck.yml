@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {

@@ -2,7 +2,7 @@ name: Setup Action Lint
 description: 'Downloads the rhysd/actionlint binary at a pinned version and exposes the path via outputs.executable.'
 inputs:
   version:
-    description: 'actionlint semver to install (e.g. 1.7.12). Pinned to a tag, not main, for supply-chain safety.'
+    description: 'Actionlint semver to install (e.g. 1.7.12). Pinned to a tag, not main, for supply-chain safety.'
     type: string
     required: true
   install-dir:
@@ -17,7 +17,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install actionlint ${{ inputs.version }}
+    - name: Install Action Lint ${{ inputs.version }}
       id: install
       shell: bash
       env:

@@ -1,35 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-# =============================================================================
-# Reusable Workflow: Gitleaks - Secret scanning
-# =============================================================================
-# Atomic recipe (ecosystem layer). Detects accidentally-committed secrets in
-# the caller's git history.
-#
-# USAGE (in caller repo):
-#   jobs:
-#     gitleaks:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-gitleaks.yml@main
-#       with:
-#         environment-name: dev
-#
-# Pin: gitleaks/gitleaks-action@v3.
-#   v3 requires a license for organization-scoped repos. The license is
-#   stored as the org secret `GITLEAKS_LICENSE` and forwarded to the action
-#   via env. The earlier "stay on v1 due to upstream SHA-resolution bug"
-#   note is superseded: v3.0.0 (May 2026) rewrote the action in ESM with
-#   Node 24; verified no SHA-resolution regressions in the dep updates
-#   merged via PR #46.
-#
-# Inputs:
-#   environment-name: Informational. Used in job name + logs.
-#
-# Cross-owner safe: only uses the auto-provisioned GITHUB_TOKEN. No caller
-# secrets are forwarded. License is resolved by the runner from the org
-# secret `GITLEAKS_LICENSE`.
-# =============================================================================
-
-name: Gitleaks
+name: gitleaks
 
 on:
   workflow_call:
@@ -42,29 +11,28 @@ on:
     secrets:
       GITLEAKS_LICENSE:
         description: 'Gitleaks license key. Required for organization-scoped repos under gitleaks-action v3+. The caller must forward this secret explicitly because GitHub drops secrets inherit cross-owner.'
-        required: false
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   gitleaks:
-    name: "gitleaks (env=${{ inputs.environment-name }})"
+    name: "gitleaks (${{ inputs.environment-name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Validate inputs
-        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@d8b128c31046b475be607d6e04daa281590ac3cc  # main
+      - name: Validate Inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
-      - name: Checkout caller repository (full history)
+      - name: Checkout Caller Repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
