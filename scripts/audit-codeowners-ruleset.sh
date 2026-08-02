@@ -105,7 +105,7 @@ else
   echo "  info required_status_checks count: $CHECK_COUNT"
   echo "  info allowed_merge_methods: $ALLOWED_MERGES"
   echo "  info bypass_actors:"
-  echo "$BYPASS" | sed 's/^/    /'
+  echo "    ${BYPASS//$'\n'/$'\n    '}"
 fi
 
 exit $FAIL
