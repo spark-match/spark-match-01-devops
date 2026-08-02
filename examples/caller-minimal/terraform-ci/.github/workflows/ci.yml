@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Spark Match
 #
 # Minimal caller for the Terraform pipeline: validate -> tflint -> plan.
-# Add checkov (SCA) and apply/destroy as separate workflows per your release model.
+# Add apply/destroy as separate workflows per your release model.
 
 name: CI - Terraform
 

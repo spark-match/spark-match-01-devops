@@ -13,7 +13,7 @@ body:
     attributes:
       label: Proposed name
       description: Workflow / action / script name (kebab-case).
-      placeholder: e.g. `python-ci-cache-prime` or `validate-workflow-inputs/pattern-only`
+      placeholder: e.g. `terraform-fmt` or `validate-workflow-inputs/pattern-only`
     validations:
       required: true
 
@@ -26,8 +26,7 @@ body:
         - Composite action (`.github/actions/<name>/`)
         - Ecosystem workflow
         - Node workflow
-        - Python workflow
-        - Deploy workflow (Angular SPA / SAM / ECR / Terraform)
+        - Deploy workflow (Terraform)
         - Operational script
         - Other
     validations:

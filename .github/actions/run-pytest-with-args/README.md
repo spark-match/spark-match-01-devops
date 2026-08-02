@@ -5,8 +5,7 @@
 
 Composite action that wraps `uv run pytest` with safe argument splitting
 and a configurable working directory. Designed for any caller recipe that
-needs to run pytest in a pinned Python project (e.g. `python-ci.yml`,
-which uses this action in its `test:pytest` step).
+needs to run pytest in a pinned Python project.
 
 ## Inputs
 

@@ -40,7 +40,7 @@ See [`README.md`](README.md) § Architecture for the full picture and [`docs/VER
 ## Branch model
 
 - **Trunk-based, `main`-only.** All PRs target `main` directly.
-- Branch names: `<type>/<scope>-<short-desc>` in kebab-case (Conventional Commits scope). Examples: `feat/composite-action-add`, `fix/python-ci-cache-key`, `test/reconciler-bats`.
+- Branch names: `<type>/<scope>-<short-desc>` in kebab-case (Conventional Commits scope). Examples: `feat/composite-action-add`, `fix/quality-cache-key`, `test/reconciler-bats`.
 - Branch is deleted on merge (ruleset policy `delete_branch_on_merge=true`).
 - Direct pushes to `main` are blocked for everyone, including org admins. See [Admin bypass](#admin-bypass-rare) for the narrow escape hatch.
 

@@ -86,7 +86,7 @@ jobs:
           # Env-isolate every step output (URLs + numeric counters) so a
           # crafted value containing $(...) or backticks cannot be
           # evaluated by bash when GHA interpolates ${{ }} into the run
-          # block. Same env-isolate pattern as PR #183 (trivy.yml).
+          # block. Same env-isolate pattern as PR #183.
           RELEASES_CREATED: ${{ steps.release.outputs.releases_created || '0' }}
           PULL_REQUEST_URL: ${{ steps.release.outputs.pull_request_url || '(none)' }}
           UPLOAD_URL: ${{ steps.release.outputs.upload_url || '(none)' }}
