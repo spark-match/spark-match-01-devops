@@ -49,11 +49,8 @@ jobs:
           fetch-depth: 0   # full history required to lint every commit in the push/PR
 
       - name: Run commitlint
+        if: ${{ !startsWith(github.event.pull_request.head.ref, 'release-please--') }}
         uses: wagoid/commitlint-github-action@v6
         with:
-          # Default config-file name is commitlint.config.mjs; we pin explicitly
-          # to .commitlintrc.json for clarity (and so the action does not pick
-          # up a stray commitlint.config.* if one is added later).
           configFile: .commitlintrc.json
-          # Fail the run on any rule violation in any commit.
           failOnErrors: true
