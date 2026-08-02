@@ -1,0 +1,16 @@
+name: codeql-fail-on-alerts
+description: 'Parse CodeQL SARIF and fail the job if alerts >= severity threshold'
+inputs:
+  severity-threshold:
+    description: 'Minimum severity to fail on (error|warning|note)'
+    default: 'warning'
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: parse-sarif-and-fail
+      shell: bash
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
+        SEVERITY_THRESHOLD: ${{ inputs.severity-threshold }}
+      run: "$GITHUB_ACTION_PATH/action.sh"

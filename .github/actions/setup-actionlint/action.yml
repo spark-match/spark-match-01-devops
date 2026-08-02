@@ -1,4 +1,4 @@
-name: Setup Action Lint
+name: setup-actionlint
 description: 'Downloads the rhysd/actionlint binary at a pinned version and exposes the path via outputs.executable.'
 inputs:
   version:
@@ -17,7 +17,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install Action Lint ${{ inputs.version }}
+    - name: install-actionlint
       id: install
       shell: bash
       env:

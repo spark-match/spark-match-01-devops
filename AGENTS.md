@@ -4,20 +4,20 @@
 
 ## 1. Propósito y estructura del repositorio
 
-`spark-match-01-devops` es el **catálogo único** de CI/CD compartida para la organización `spark-match`. No contiene código de aplicación (no Node, Python, Terraform ni SAM propios): su superficie es exclusivamente infraestructura declarativa de pipelines (workflows reutilizables y composite actions) y de governance (ruleset del org + scripts de reconciliación).
+`spark-match-01-devops` es el **catálogo único** de CI/CD compartida para la organización `spark-match`. No contiene código de aplicación (no Node, Python, Terraform ni SAM propios): su superficie es exclusivamente infraestructura declarativa de pipelines (workflows reutilizables y composite actions) y de governance (ruleset de la organización + scripts de reconciliación).
 
 ### 1.1 Estructura
 
 - `.github/workflows/`: reusable workflows (`workflow_call`). Prefijo `reusable-` = consumible; sin prefijo = CI interna de este repo.
-- `.github/actions/`: composite actions (primitivas atómicas). Consumidas por las reusables o por callers externos.
+- `.github/actions/`: composite actions (primitivas atómicas). Consumidas por las reusables o por repos externos.
 - `.github/ISSUE_TEMPLATE/`: bug + feature + docs issue templates.
-- `.github/dependabot.yml`: bump PRs semanales para GH Actions.
+- `.github/dependabot.yml`: bump de pull requests semanales para GitHub Actions.
 - `.github/CODEOWNERS`: paths explícitos, sin catch-all (`*`).
-- `.github/release-please-config.json`: CC → section mapping para el release PR.
+- `.github/release-please-config.json`: Conventional Commits → section mapping para el release pull request.
 - `.github/PULL_REQUEST_TEMPLATE.md`: checklist 11-tipos de Conventional Commits.
 - `docs/`: convenciones de diseño (cache-key, governance standard, versioning).
-- `scripts/`: operaciones idempotentes que aplican governance al org via gh API.
-- `governance/`: desired state del org ruleset (manifest JSON + JSON Schema).
+- `scripts/`: operaciones idempotentes que aplican governance a la organización via la API de GitHub (gh).
+- `governance/`: desired state del ruleset de la organización (manifest JSON + JSON Schema).
 - `tests/`: bats tests por subject. Helpers compartidos en `tests/bats/helpers/`.
 
 ### 1.2 Naming conventions
@@ -30,12 +30,12 @@
 ### 1.3 Modelo de consumo
 
 - **Reusables**: consumidos desde repos `spark-match/*` vía `uses: spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main`.
-- **Composite actions**: consumidas por las reusables (mismo repo, path `./.github/actions/<name>`) o por callers externos (`@main`).
-- **Governance**: aplicada al org via `scripts/configure-repo-rulesets.sh`. No se aplica manualmente vía la UI de GitHub.
+- **Composite actions**: consumidas por las reusables (mismo repo, path `./.github/actions/<name>`) o por repos externos (`@main`).
+- **Governance**: aplicada a la organización via `scripts/configure-repo-rulesets.sh`. No se aplica manualmente vía la UI de GitHub.
 
 ## 2. Modelo de rama — `main` único
 
-- **Single-branch, single-purpose.** Todos los PRs van directo a `main`. No existe rama `dev` en este repo.
+- **Single-branch, single-purpose.** Todos los pull requests van directo a `main`. No existe rama `dev` en este repo.
 - **Branch directo desde `main`** con Conventional Commits scope:
   ```bash
   git checkout main
@@ -66,7 +66,7 @@ Scopes usados en este repo:
 |---|---|
 | `composite` | composite actions |
 | `workflows` | reusable workflows |
-| `ecosystem` / `node` / `python` / `deploy` | recipes por capa |
+| `ecosystem` / `node` / `python` / `deploy` | workflows por capa |
 | `governance` | manifest, schema, scripts de ruleset |
 | `scripts` | scripts bash |
 | `docs` | README, `docs/`, CONTRIBUTING |
@@ -79,7 +79,7 @@ Tipos: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`.
 
 ## 4. Pull Request workflow
 
-### 4.1 Push + crear PR
+### 4.1 Push + crear pull request
 
 ```bash
 git push -u origin <branch>
@@ -90,7 +90,7 @@ gh pr create \
   --body-file <body-file>
 ```
 
-### 4.2 Body del PR — plantilla sugerida
+### 4.2 Body del pull request — plantilla sugerida
 
 ```markdown
 ## Summary
@@ -112,29 +112,30 @@ gh pr create \
 
 ### 4.3 Checks requeridos — todos deben pasar
 
-8 checks corren en cada PR vía `.github/workflows/ci.yml`:
+9 checks corren en cada pull request vía `.github/workflows/ci.yml`:
 
 | Check | Qué valida |
 |---|---|
 | `actionlint` | sintaxis de Actions YAML |
 | `gitleaks` | secret scan |
 | `yamllint` | formato YAML no-workflow |
-| `quality / bats` | 113 bats tests |
+| `quality / bats` | tests bats en `tests/bats/` |
 | `quality / manifest schema` | `governance/repository-governance.json` contra schema |
 | `quality / shellcheck` | bash scripts en `scripts/` + `.github/actions/` |
-| `Analyze (actions)` (CodeQL) | vulnerabilidades en YAML de Actions |
-| `CodeQL` | sin language (reused workflow) |
+| `commitlint` | convención de commits en cada pull request |
+| `codeql-actions` | vulnerabilidades en YAML de Actions |
+| `codeql` | sin language (reused workflow) |
 
 Si un check falla, **arregla el código** antes de pedir review. No marques `Resolve conversation` ni `--admin` para saltar un check rojo.
 
-### 4.4 Merge — squash + admin bypass (autorizado por org owner)
+### 4.4 Merge — squash + admin bypass (autorizado por el dueño de la organización)
 
 CODEOWNERS reviewers suelen no estar disponibles. Cuando CI está verde:
 
 ```bash
 gh pr merge <num> --repo spark-match/spark-match-01-devops \
   --squash --admin --delete-branch \
-  --body "All 8 required checks green. [resumen del cambio]. Merged via admin bypass — owner approval only (CODEOWNERS reviewers unavailable)."
+  --body "All 9 required checks green. [resumen del cambio]. Merged via admin bypass — owner approval only (CODEOWNERS reviewers unavailable)."
 ```
 
 `--admin` se autoriza **solo** después de confirmar CI verde. No usar para skippear checks fallidos.
@@ -143,21 +144,25 @@ gh pr merge <num> --repo spark-match/spark-match-01-devops \
 
 ### 5.1 General
 
+- **Sin emojis decorativos**: no usar emojis como adorno visual en código, commits, mensajes de pull request ni documentación. Los símbolos usados como marcadores de bullets en la sección 10 son indicadores estructurales y están permitidos.
+- **Código en inglés**: variables, funciones, clases, archivos y demás identificadores del código fuente van en inglés. Los mensajes de commit (Conventional Commits) también.
+- **Comentarios y documentación en español**: los comentarios en código (cuando se permitan, ver regla "sin comentarios" más abajo) y los archivos de explicación como `AGENTS.md`, `VERSIONING.md`, `CONTRIBUTING.md`, `docs/` y secciones de README que documenten procesos se escriben en español.
+- **Cuidar caracteres especiales**: ñ, tildes (á, é, í, ó, ú, ü) y demás caracteres diacríticos deben estar correctamente codificados en UTF-8 para evitar mojibake en consola Windows PowerShell 5.1.
 - **NO agregar comentarios a menos que se pidan explícitamente.** El repo sigue la regla de "self-documenting code".
-- **Mimic existing patterns** antes de inventar nuevos. Si un recipe existente usa `permissions: contents: read`, el nuevo también.
-- **No introducir dependencias nuevas** sin justificación en el PR body.
+- **Mimic existing patterns** antes de inventar nuevos. Si un workflow existente usa `permissions: contents: read`, el nuevo también.
+- **No introducir dependencias nuevas** sin justificación en el pull request body.
 - **Pin por versiones o branches, NO por SHA**. Para third-party actions usar `@vN` (major flotante, e.g. `actions/checkout@v4`) cuando el action publica tags con prefijo `v`. Si el action NO publica tags con prefijo `v` (e.g. `ludeeus/action-shellcheck` solo tiene `2.0.0`), usar la versión exacta `@N.N.N` (e.g. `ludeeus/action-shellcheck@2.0.0`). Excepciones documentadas:
   - **Self-actions** (nuestras propias composite actions): siempre `@main`.
   - **Anchore/sbom-action**: pinneado a `@v0.17.7` (minor pinned) porque la línea 0.x tiene breaking changes entre minors.
-- La guardia contra SHA-pinning vive en `tests/bats/no-sha-pinning.bats` (3 casos: third-party, self, AGENTS.md policy text). Si el guard falla, el PR se bloquea.
+- La guardia contra SHA-pinning vive en `tests/bats/no-sha-pinning.bats` (3 casos: third-party, self, AGENTS.md policy text). Si el guard falla, el pull request se bloquea.
 
 ### 5.2 Workflows reusables
 
-- **Top-level only** en `.github/workflows/`. Subcarpetas rompen `uses: ./...` (limitación de GH Actions).
-- Cada recipe expone un input `environment-name` (incluso si es informativo).
+- **Top-level only** en `.github/workflows/`. Subcarpetas rompen `uses: ./...` (limitación de GitHub Actions).
+- Cada workflow expone un input `environment-name` (incluso si es informativo).
 - Inputs van en `workflow_call.inputs` con `description`, `type`, `required`, `default`.
-- Para recipes de deploy: gate vía GH Environment + secret `AWS_DEPLOY_ROLE_ARN` (o equivalente). El caller define el Environment.
-- **Cross-owner secrets**: pasar explícitamente vía bloque `secrets:` en el caller. GitHub bloquea `secrets: inherit` entre owners distintos.
+- Para workflows de deploy: gate vía GitHub Environment + secret `AWS_DEPLOY_ROLE_ARN` (o equivalente). El repo que invoca define el Environment.
+- **Cross-owner secrets**: pasar explícitamente vía bloque `secrets:` en el repo que invoca. GitHub bloquea `secrets: inherit` entre owners distintos.
 - **Env-isolate** cualquier `${{ inputs.* }}` usado dentro de `run:` (CodeQL guard contra code injection):
   ```yaml
   env:
@@ -192,7 +197,7 @@ gh pr merge <num> --repo spark-match/spark-match-01-devops \
 
 Este repo **NO usa catch-all `*`** porque GitHub acumula code owners de todas las reglas que matchean. Cada path está listado explícitamente en `.github/CODEOWNERS`.
 
-**Al agregar un path nuevo**: agregarlo al CODEOWNERS en el mismo PR. Si no, el PR queda con CODEOWNERS coverage incompleto.
+**Al agregar un path nuevo**: agregarlo al CODEOWNERS en el mismo pull request. Si no, el pull request queda con CODEOWNERS coverage incompleto.
 
 Paths actuales:
 
@@ -203,7 +208,7 @@ Paths actuales:
 
 ## 7. Governance — sincronizar con `governance/`
 
-El ruleset del org vive en `governance/repository-governance.json` (declarativo) + `scripts/configure-repo-rulesets.sh` (ejecutor) + `scripts/audit-codeowners-ruleset.sh` (drift detector).
+El ruleset de la organización vive en `governance/repository-governance.json` (declarativo) + `scripts/configure-repo-rulesets.sh` (ejecutor) + `scripts/audit-codeowners-ruleset.sh` (detector de divergencias).
 
 Al modificar paths bajo gobernanza:
 
@@ -213,21 +218,21 @@ Al modificar paths bajo gobernanza:
 ./scripts/configure-repo-rulesets.sh --dry-run --apply --repos spark-match-01-devops
 ```
 
-No aplicar el manifest manualmente vía la UI de GitHub — eso crea drift.
+No aplicar el manifest manualmente vía la UI de GitHub — eso crea divergencias.
 
 ## 8. Releases — release-please automático
 
-`.github/workflows/release-please.yml` corta un "release PR" en cada push a `main` basándose en conventional commits. Mergear el release PR crea el git tag + GitHub Release. La versión actual vive en `.release-please-manifest.json`.
+`.github/workflows/release-please.yml` corta un "release pull request" en cada push a `main` basándose en conventional commits. Mergear el release pull request crea el git tag + un release de GitHub. La versión actual vive en `.release-please-manifest.json`.
 
 **No bumpear versiones manualmente.** El flujo es:
-1. PR con conventional commit → merge a main
-2. release-please crea release PR con version bump + CHANGELOG
-3. Merge del release PR → tag + GH Release
+1. Pull request con conventional commit → merge a main
+2. release-please crea release pull request con version bump + CHANGELOG
+3. Merge del release pull request → tag + release de GitHub
 
 ## 9. Troubleshooting común
 
 ### `gitleaks` no instalado localmente
-El pre-commit hook `.githooks/pre-commit` skipea con warning. **CI sigue catching secrets** vía el job `gitleaks`. No bloquea el PR.
+El pre-commit hook `.githooks/pre-commit` skipea con warning. **CI sigue catching secrets** vía el job `gitleaks`. No bloquea el pull request.
 
 ### PowerShell vs bash
 Este dev environment corre PowerShell 5.1 pero los comandos Git + bash funcionan transparentemente. **Para invocar `gh api` con URLs que contienen `?`**, usar variable:
@@ -235,9 +240,9 @@ Este dev environment corre PowerShell 5.1 pero los comandos Git + bash funcionan
 $url = "/repos/owner/repo/contents?ref=main"
 gh api "$url"   # no: gh api "/repos/owner/repo/contents?ref=main"
 ```
-
 ### `gh pr checks` no muestra checks
-Si PR está recién creado, esperar 15-30s y reintentar. Para ver runs:
+
+Si el pull request está recién creado, esperar 15-30s y reintentar. Para ver runs:
 ```bash
 gh api "/repos/spark-match/spark-match-01-devops/actions/runs?event=pull_request&per_page=10"
 ```
@@ -245,33 +250,32 @@ gh api "/repos/spark-match/spark-match-01-devops/actions/runs?event=pull_request
 ### `--admin` rechazado en `gh pr merge`
 Verificar:
 1. `gh auth status` muestra scope `admin:org` o `repo` + cuenta `ahincho` activa.
-2. CI está realmente verde (todos los 8 checks `pass`, ninguno `pending`).
+2. CI está realmente verde (todos los 9 checks `pass`, ninguno `pending`).
 
 ## 10. Lo que NO debes hacer
 
-- ❌ Crear rama `dev` o feature branch de larga duración.
-- ❌ Commits con mensajes vagos (`update`, `fix stuff`, `wip`).
-- ❌ `--force` push a `main`.
-- ❌ `git push --force` a cualquier rama compartida.
-- ❌ Editar `.github/CODEOWNERS` sin agregar la entrada correspondiente en el mismo PR.
-- ❌ Saltarse checks rojos con `--admin`.
-- ❌ Agregar dependencias nuevas (`pip install`, `npm install`) sin justificación.
-- ❌ Usar `@main` o `@vN` en `uses:` de third-party actions. SHA-pinning siempre.
-- ❌ Mover reusables a subcarpetas de `.github/workflows/` (rompe `uses:`).
+- Crear rama `dev` o feature branch de larga duración.
+- Commits con mensajes vagos (`update`, `fix stuff`, `wip`).
+- `--force` push a `main`.
+- `git push --force` a cualquier rama compartida.
+- Editar `.github/CODEOWNERS` sin agregar la entrada correspondiente en el mismo pull request.
+- Saltarse checks rojos con `--admin` para aprobar un pull request con CI fallando.
+- Agregar dependencias nuevas (`pip install`, `npm install`) sin justificación.
+- Revertir el pin de las third-party actions a SHA de 40 chars. §5.1 introdujo `@vN`, `@N.N.N` o `@main` (PR #210); este bullet se mantiene solo si esa policy se revierte explícitamente.
+- Mover reusables a subcarpetas de `.github/workflows/` (rompe `uses:`).
 
 ## 11. Estado actual del catalog (referencia rápida)
 
-23 reusables distribuidos así (post-cleanup #201/#202/#203):
+19 reusables distribuidos así (post-cleanup #201/#202/#203 + #207 rename):
 
 | Capa | Cantidad | Reusables |
 |---|---:|---|
-| Ecosystem | 6 | `actionlint`, `gitleaks`, `terraform-validate`, `tflint`, `sonar-terraform`, `sonar-typescript`, `yamllint` |
+| Ecosystem | 9 | `actionlint`, `codeql`, `gitleaks`, `quality`, `terraform-validate`, `tflint`, `sonar-terraform`, `sonar-typescript`, `yamllint` |
 | Node | 4 | `eslint`, `node-build`, `node-test`, `node-typecheck` |
 | Deploy | 4 | `migrations-dry-run`, `terraform-apply`, `terraform-destroy` (emergency), `terraform-plan` |
 | Article | 2 | `latex-build`, `latex-release` |
-| Self-only | 5 | `ci`, `codeql`, `codeql-actions`, `quality`, `release-please`, `sbom` |
 
-(La suma de la tabla es 22; `terraform-destroy` está contado en Deploy.)
+5 workflows internos (no consumibles — son CI/CD de este repo): `ci`, `codeql-actions`, `commitlint`, `release-please`, `sbom`.
 
 Consumidores activos (verificado en `main` + `dev` de cada repo):
 - `spark-match-02-infrastructure`: terraform-{plan,apply}, tflint, gitleaks, sonar-terraform, terraform-validate
@@ -279,9 +283,18 @@ Consumidores activos (verificado en `main` + `dev` de cada repo):
 - `spark-match-04-frontend` (dev): actionlint, gitleaks, eslint, node-{test,typecheck,build}, sonar-typescript, yamllint
 - `spark-match-07-article`: latex-{build,release}
 
+Nota: los counts se desactualizan rápido. Para inventario en tiempo real:
+
+```bash
+ls .github/workflows/reusable-*.yml | wc -l
+ls .github/actions/*/action.yml
+ls scripts/*.sh
+ls tests/bats/*.bats
+```
+
 ## 12. Referencias operativas
 
-- [`README.md`](README.md) — overview + tabla de recipes
+- [`README.md`](README.md) — overview + tabla de workflows
 - [`docs/VERSIONING.md`](docs/VERSIONING.md) — pin-by-environment + per-repo consumer mapping
 - [`docs/GOVERNANCE-STANDARD.md`](docs/GOVERNANCE-STANDARD.md) — ruleset + CODEOWNERS rationale
 - [`docs/CACHE.md`](docs/CACHE.md) — convención de cache key v4
