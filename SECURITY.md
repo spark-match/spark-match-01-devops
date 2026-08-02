@@ -5,7 +5,7 @@
 This repository (`spark-match/spark-match-01-devops`) ships:
 
 - **Reusable GitHub Actions workflows** consumed by every other `spark-match/*` repository (lint, Terraform, SAM, deploy, etc.).
-- **Composite actions** (`validate-workflow-inputs`, `run-pytest-with-args`) used inside those workflows.
+- **Composite actions** (`validate-workflow-inputs`) used inside those workflows.
 - **Operational scripts** (`configure-repo-rulesets.sh`, `audit-codeowners-ruleset.sh`) that mutate and audit the org-wide ruleset via the GitHub REST API.
 - **Governance artifacts** (`governance/repository-governance.json`, `governance/repository-governance.schema.json`) that declare the desired state of branch protection across the org.
 

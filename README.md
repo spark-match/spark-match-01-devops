@@ -48,8 +48,7 @@ spark-match-01-devops/
 │   ├── dependabot.yml                   Weekly GitHub Actions bump PRs (Mon 06:00 UTC, 5 groups)
 │   │
 │   ├── actions/                         ─── composite actions (atomic primitives) ────
-│   │   ├── validate-workflow-inputs/        JSON-schema-driven input validation (REQUIRED / ENUM / PATTERN)
-│   │   └── run-pytest-with-args/            uv + pytest runner with arg assembly (PYTEST_TARGETS, EXTRA_FLAGS, PYTEST_ARGS)
+│   │   └── validate-workflow-inputs/        JSON-schema-driven input validation (REQUIRED / ENUM / PATTERN)
 │   │
 │   ├── ISSUE_TEMPLATE/                  form-based issue templates
 │   │   ├── config.yml                       issue chooser + sensitive-report warnings
@@ -115,10 +114,9 @@ spark-match-01-devops/
 ├── tests/                                 bats tests for bash scripts + composite actions
 │   ├── bats/
 │   │   ├── helpers/
-│   │   │   ├── common.bash                 stubs for uv / pytest + ACTION_DIR
+│   │   │   ├── common.bash                 stub utilities for composite-action tests + ACTION_DIR
 │   │   │   └── reconciler.bash             gh stub dispatching on URL + HTTP method
 │   │   ├── composite-validate.bats         24 tests for validate-workflow-inputs
-│   │   ├── composite-run-pytest.bats       9 tests for run-pytest-with-args
 │   │   ├── reconciler-prereqs.bats         10 tests for arg parsing + manifest + gh auth
 │   │   ├── reconciler-payload.bats         9 tests for build_desired_payload jq
 │   │   ├── reconciler-check.bats           11 tests for --check mode
@@ -170,38 +168,6 @@ steps:
         {"environment-name": "${{ inputs.environment-name }}", "shellcheck-severity": "${{ inputs.shellcheck-severity }}"}
       enums: |
         {"shellcheck-severity": ["warning", "error", "info", "style"]}
-```
-
-### `run-pytest-with-args`
-
-Thin wrapper around `uv run pytest` that assembles the CLI from caller-provided env vars. Used by every recipe that runs pytest (currently `quality.yml`'s pytest job, future contributors that need test execution).
-
-Inputs (all environment variables, because composite actions run in the caller's shell):
-
-| Env var | Required | Notes |
-|---|---|---|
-| `PYTEST_TARGETS` | yes | Space-separated path(s) passed as positional args. |
-| `EXTRA_FLAGS` | no | Prepended after `pytest`, before targets (e.g. `--tb=short -v`). |
-| `PYTEST_ARGS` | no | Appended after targets (e.g. `--cov=src --cov-report=xml:coverage.xml`). |
-| `WORKING_DIRECTORY` | yes | Where `cd` runs before invoking `uv`. |
-
-Behavior: `set -u`, `set -e`, `set -o pipefail`. Missing `PYTEST_TARGETS` or `WORKING_DIRECTORY` aborts with a non-zero exit. The final command shape is:
-
-```
-uv pytest ${EXTRA_FLAGS} ${PYTEST_TARGETS} ${PYTEST_ARGS}
-```
-
-Usage:
-
-```yaml
-steps:
-  - name: Run tests
-    uses: spark-match/spark-match-01-devops/.github/actions/run-pytest-with-args@main
-    env:
-      PYTEST_TARGETS: tests
-      EXTRA_FLAGS: --tb=short -v
-      PYTEST_ARGS: --cov=src
-      WORKING_DIRECTORY: ${{ inputs.working-directory }}
 ```
 
 ## Catalog
@@ -754,7 +720,7 @@ The repo ships with **bats tests** that run on every PR via `.github/workflows/q
 
 | Suite | Count | File | What it covers |
 |---|---|---|---|
-| bats — composite actions | 33 | `tests/bats/composite-validate.bats` (24) + `tests/bats/composite-run-pytest.bats` (9) | Input validation (REQUIRED / ENUM / PATTERN) and pytest arg assembly |
+| bats — composite actions | 24 | `tests/bats/composite-validate.bats` | Input validation (REQUIRED / ENUM / PATTERN) |
 | bats — reconciler | 52 | `tests/bats/reconciler-{prereqs,payload,check,apply,edge-cases}.bats` | Arg parsing, manifest validation, payload construction (jq), `--check` mode, `--apply` mode with PUT/POST/backup/dry-run, edge cases (team-id cache, CRLF, `--org` override) |
 | bats — release-please | 16 | `tests/bats/release-please-config.bats` | `.github/release-please-config.json` (PR title pattern, header/footer, changelog sections, schema validation, version pin) |
 | bats — workflow hygiene | 12 | `tests/bats/cleanup-batch-pr8.bats` | defaults.run.shell: bash on every workflow; terraform-destroy permissions; environment-name input alias; no `shell: bash` inside workflow_call.inputs |
