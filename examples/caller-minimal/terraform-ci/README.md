@@ -1,13 +1,12 @@
 # terraform-ci
 
-Demonstrates a minimal caller for the Terraform pipeline: `fmt` ->
-`validate` -> `tflint` -> `plan`. Drops `checkov` (kept for callers
-that want the extra coverage) and `apply`/`destroy` (kept for
+Demonstrates a minimal caller for the Terraform pipeline:
+`validate` -> `tflint` -> `plan`. Drops `apply`/`destroy` (kept for
 deploy-stage workflows).
 
 ## What this example covers
 
-- 4 reusables in a layered DAG: `fmt -> validate -> tflint -> plan`.
+- 3 reusables in a layered DAG: `validate -> tflint -> plan`.
 - `terraform-version: '1.10.0'` pinned (the catalog's default at the
   time of writing; bump per your project's Terraform requirement).
 - `working-directory: live/dev` — a common pattern for monorepos
@@ -26,8 +25,6 @@ deploy-stage workflows).
    file declares.
 3. **`backend-bucket`, `backend-key`, `tfvars-file`** for `terraform-plan.yml`.
 4. **`aws-region`** — defaults to `us-east-1`.
-5. **Add `checkov`** if you want SCA on Terraform code (set
-   `checkov-version` to pin).
 
 ## Required secrets
 
@@ -48,7 +45,6 @@ scoped to the recipe run, not the caller).
 
 ## Expected run time
 
-- `fmt`: ~5 s
 - `validate`: ~30-60 s (terraform init for each module)
 - `tflint`: ~10 s
 - `plan`: ~30-90 s depending on module count

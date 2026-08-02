@@ -155,9 +155,10 @@ jobs:
           # Env-isolate the step output (file paths from `find`) so a
           # crafted filename containing $(...) or backticks cannot be
           # evaluated by bash when GHA interpolates ${{ }} into the run
-          # block. Lower-severity than the trivy.yml case (discover
-          # output is repo-controlled, not caller-controlled), but the
-          # same env-isolate pattern from PR #183 applies here.
+          # block. Discover output is repo-controlled, not caller-
+          # controlled, so the risk is lower here than in caller-driven
+          # recipes, but the env-isolate pattern from PR #183 still
+          # applies for consistency.
           DISCOVER_FILES: ${{ steps.discover.outputs.files }}
         run: |
           set -euo pipefail

@@ -13,7 +13,7 @@ body:
     attributes:
       label: Affected recipe or script
       description: Workflow / composite action / script file path.
-      placeholder: e.g. `.github/workflows/python-ci.yml` or `scripts/configure-repo-rulesets.sh`
+      placeholder: e.g. `.github/workflows/quality.yml` or `scripts/configure-repo-rulesets.sh`
     validations:
       required: true
 
@@ -57,7 +57,7 @@ body:
       placeholder: |
         1. Caller workflow:
            ```yaml
-           uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
+           uses: spark-match/spark-match-01-devops/.github/workflows/quality.yml@main
            with:
              environment-name: dev
            ```
