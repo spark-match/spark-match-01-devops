@@ -1,48 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-# =============================================================================
-# release-please.yml - cut a release PR on every push to main
-# =============================================================================
-# Triggers: every push to main.
-# Behavior:
-#   - release-please-action reads the manifest at
-#     .release-please-manifest.json (current version) and the config at
-#     .github/release-please-config.json.
-#   - It computes the next version from the Conventional Commits since the
-#     last release tag and opens (or updates) a "release PR" targeting
-#     `main`. The release PR body lists the commits it would include.
-#   - Merging the release PR creates the git tag + GitHub Release. The
-#     release PR is opened in DRAFT mode by default; promote to ready
-#     before merge if you want review.
-#
-# Why this exists:
-#   - Single-branch, main-only repo; no SemVer tags today.
-#   - We want a chronological changelog and tag history for archival even
-#     though consumers pin @main. Tags cost nothing and make the catalog
-#     browsable by version.
-#
-# Permissions:
-#   - contents: write      push the release branch + tag
-#   - pull-requests: write create/update the release PR
-#
-# Authentication:
-#   - Uses spark-match-bot (GitHub App, app id 4426218) via
-#     actions/create-github-app-token@v2. The default GITHUB_TOKEN fails
-#     CODE_OWNER review because it's a bot identity and `github-actions`
-#     is not a valid CODEOWNERS owner; the App identity passes review
-#     because the ruleset has a bypass actor entry for the App
-#     (see PR #159 for the ruleset patch).
-#   - Required secrets: RELEASE_PLEASE_APP_ID, RELEASE_PLEASE_APP_PRIVATE_KEY.
-#
-# First run note:
-#   - On the FIRST push after this workflow is merged, release-please
-#     sees commits since v0.1.0 (which is the manifest value but no tag
-#     exists yet). It MAY open a release PR proposing 0.1.0 (no-op) or
-#     proposing 0.2.0 if any new feat/fix commits landed. Inspect the PR
-#     and close it if redundant; future pushes work normally.
-# =============================================================================
-
-name: Release Please
+name: release-please
 
 on:
   push:
@@ -52,8 +8,6 @@ permissions:
   contents: write
   pull-requests: write
 
-# Cancel in-progress runs for the same push. Safe for release-please
-# (each run is idempotent on the manifest + config).
 concurrency:
   group: release-please-${{ github.ref }}
   cancel-in-progress: true
@@ -64,29 +18,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Generate App installation token
+      - name: generate-app-installation-token
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-          # owner/org scope; installation has repository_selection=all
-
-      - name: Run release-please
+      - name: run release-please
         uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: .github/release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ steps.app-token.outputs.token }}
-
-      - name: Log result
+      - name: log-result
         if: always()
         env:
-          # Env-isolate every step output (URLs + numeric counters) so a
-          # crafted value containing $(...) or backticks cannot be
-          # evaluated by bash when GHA interpolates ${{ }} into the run
-          # block. Same env-isolate pattern as PR #183.
           RELEASES_CREATED: ${{ steps.release.outputs.releases_created || '0' }}
           PULL_REQUEST_URL: ${{ steps.release.outputs.pull_request_url || '(none)' }}
           UPLOAD_URL: ${{ steps.release.outputs.upload_url || '(none)' }}
