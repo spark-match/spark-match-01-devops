@@ -11,7 +11,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     tflint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-tflint.yml@main
 #       with:
 #         environment-name: dev
 #         terraform-version: 1.15.7     # defaults to 1.10.0

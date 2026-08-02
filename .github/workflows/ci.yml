@@ -20,9 +20,9 @@
 #         `docs/VERSIONING.md` § strategy).
 #
 # Each job calls the corresponding reusable workflow via a local path
-# (`./.github/workflows/<name>.yml`). When merged, the same recipes become
-# available to external repos via
-#   spark-match/spark-match-01-devops/.github/workflows/<name>.yml@main
+# (`./.github/workflows/reusable-<name>.yml`). When merged, the same recipes
+# become available to external repos via
+#   spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main
 #
 # Other layers (node/eslint, deploy/terraform-*) are NOT exercised here
 # since the devops repo itself has no Node project or Terraform module to
@@ -68,13 +68,13 @@ concurrency:
 jobs:
   actionlint:
     name: actionlint
-    uses: ./.github/workflows/actionlint.yml
+    uses: ./.github/workflows/reusable-actionlint.yml
     with:
       environment-name: ci
 
   gitleaks:
     name: gitleaks
-    uses: ./.github/workflows/gitleaks.yml
+    uses: ./.github/workflows/reusable-gitleaks.yml
     with:
       environment-name: ci
     secrets:
@@ -82,13 +82,13 @@ jobs:
 
   yamllint:
     name: yamllint
-    uses: ./.github/workflows/yamllint.yml
+    uses: ./.github/workflows/reusable-yamllint.yml
     with:
       environment-name: ci
 
   quality:
     name: quality
-    uses: ./.github/workflows/quality.yml
+    uses: ./.github/workflows/reusable-quality.yml
     with:
       environment-name: ci
       shellcheck-severity: warning

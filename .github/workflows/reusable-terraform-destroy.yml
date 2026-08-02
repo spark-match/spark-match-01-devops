@@ -20,11 +20,11 @@
 # Designed to be invoked per environment from a caller with N jobs.
 #
 # USAGE (in caller repo, single env, manual dispatch):
-#   # terraform-destroy.yml in caller:
+#   # reusable-terraform-destroy.yml in caller:
 #   on: workflow_dispatch
 #   jobs:
 #     destroy:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-destroy.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-destroy.yml@main
 #       with:
 #         environment: prod
 #         working-directory: live/prod

@@ -10,11 +10,11 @@
 #
 # Scope:
 #   - language: actions (CodeQL query pack for GitHub Actions YAML)
-#   - NOT javascript/typescript: codeql.yml (the reusable workflow) is the
+#   - NOT javascript/typescript: reusable-codeql.yml (the reusable workflow) is the
 #     entry point for app repos that need TS/JS analysis.
 #   - NOT bash: CodeQL does not support bash as a built-in language. Shell
 #     scripts under scripts/ are validated separately by shellcheck (in
-#     quality.yml).
+#     reusable-quality.yml).
 #
 # Triggers:
 #   - push to main             (defense in depth on every merge)

@@ -8,7 +8,7 @@ Pick the path that matches what you need:
 
 | You want to… | Do this |
 |---|---|
-| **Deploy a Terraform stack** | Call `terraform-plan.yml` / `terraform-apply.yml` / `terraform-destroy.yml` with OIDC + a GitHub Environment |
+| **Deploy a Terraform stack** | Call `reusable-terraform-plan.yml` / `reusable-terraform-apply.yml` / `reusable-terraform-destroy.yml` with OIDC + a GitHub Environment |
 | **Apply the org ruleset to a new repo** | Add an entry to `governance/repository-governance.json`, then `./scripts/configure-repo-rulesets.sh --apply --repos <name>` ([Governance](#governance)) |
 | **Add a new reusable workflow** | See [Contributing → adding a recipe](#adding-a-reusable-workflow-or-composite-action) |
 | **Run the tests locally before pushing** | See [Testing](#testing) |
@@ -20,9 +20,9 @@ The catalog has **six layers**, each defined by what it inspects or mutates:
 | Layer | Path | Caller secrets | Purpose |
 |---|---|---|---|
 | **composite actions** | `.github/actions/<name>/action.yml` | varies | Atomic, single-purpose primitives reusable across many recipes (input validators, runners) |
-| **ecosystem workflows** | `.github/workflows/<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, sonar-*, etc.) |
-| **node workflows** | `.github/workflows/<node>.yml` | none | npm-based quality gates (eslint, typecheck, test, build) |
-| **deploy workflows** | `.github/workflows/<deploy>.yml` | OIDC role per GH Environment | Production deploys (Terraform) |
+| **ecosystem workflows** | `.github/workflows/reusable-<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, sonar-*, etc.) |
+| **node workflows** | `.github/workflows/reusable-<node>.yml` | none | npm-based quality gates (eslint, typecheck, test, build) |
+| **deploy workflows** | `.github/workflows/reusable-<deploy>.yml` | OIDC role per GH Environment | Production deploys (Terraform) |
 | **governance** | `governance/` + `scripts/configure-repo-rulesets.sh` | `gh` admin scope | Declarative state for the org ruleset + idempotent reconciler |
 
 Every recipe (workflow and composite action) accepts an `environment-name` input. It is informational in ecosystem, node, python, and composite layers (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the OIDC role secret there).
@@ -33,7 +33,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 266 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/quality.yml`.
+- **`tests/`** — 266 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/reusable-quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -63,39 +63,43 @@ spark-match-01-devops/
 │   └── workflows/
 │       ├── ─── this repo's own CI/release ────────────────────────
 │       ├── ci.yml                           this repo's own CI (actionlint + gitleaks + yamllint + quality)
-│       ├── codeql.yml                       CodeQL on Actions YAML (push + weekly)
+│       ├── codeql-actions.yml               CodeQL on Actions YAML (push + weekly)
 │       ├── release-please.yml               release-please automation (cuts release PRs)
+│       ├── commitlint.yml                   commitlint check on every PR + push
+│       ├── sbom.yml                         CycloneDX SBOM attached to GH Release
 │       │
-│       │ ─── catalog recipes: composite-action inputs (not for direct use) ──
-│       ├── quality.yml                      reusable: shellcheck + manifest schema + bats + pytest
+│       │ ─── catalog recipes (reusables, called via uses: from consumer repos) ──
+│       │ ─── prefix `reusable-` flags the workflow_call entrypoint ─────────────
 │       │
 │       │ ─── catalog: ecosystem (read-only, no caller secrets) ──────────
-│       ├── actionlint.yml                   syntax check on Actions workflows
-│       ├── gitleaks.yml                     secret scan (needs GITLEAKS_LICENSE)
-│       ├── yamllint.yml                     YAML files (uses caller's .yamllint.yml)
-│       ├── terraform-validate.yml           per-module init+validate (no backend)
-│       ├── tflint.yml                       recursive tflint
-│       ├── sonar-terraform.yml              SonarCloud Terraform analysis
-│       ├── sonar-typescript.yml             SonarCloud TypeScript analysis
+│       ├── reusable-actionlint.yml          syntax check on Actions workflows
+│       ├── reusable-gitleaks.yml            secret scan (needs GITLEAKS_LICENSE)
+│       ├── reusable-yamllint.yml            YAML files (uses caller's .yamllint.yml)
+│       ├── reusable-terraform-validate.yml  per-module init+validate (no backend)
+│       ├── reusable-tflint.yml              recursive tflint
+│       ├── reusable-sonar-terraform.yml     SonarCloud Terraform analysis
+│       ├── reusable-sonar-typescript.yml    SonarCloud TypeScript analysis
+│       ├── reusable-quality.yml             shellcheck + manifest schema + bats
+│       ├── reusable-codeql.yml              CodeQL for JS/TS caller repos
 │       │
 │       │ ─── catalog: node (npm, no caller secrets) ───────────────────────
-│       ├── eslint.yml                       `npm run <lint-script>`
-│       ├── node-test.yml                    `npm run <test-script>` with cache
-│       ├── node-typecheck.yml               `npm run <typecheck-script>` with cache
-│       ├── node-build.yml                   `npm run <build-script>` with cache
+│       ├── reusable-eslint.yml              `npm run <lint-script>`
+│       ├── reusable-node-test.yml           `npm run <test-script>` with cache
+│       ├── reusable-node-typecheck.yml      `npm run <typecheck-script>` with cache
+│       ├── reusable-node-build.yml          `npm run <build-script>` with cache
 │       │
 │       │ ─── catalog: deploy (AWS OIDC, caller-scoped secrets) ──────────
-│       ├── migrations-dry-run.yml           migration dry-run against ephemeral Postgres (read-only)
-│       ├── terraform-plan.yml               `terraform plan` per env + sticky PR comment
-│       ├── terraform-apply.yml              `terraform apply`, optional drift-only mode
-│       ├── terraform-destroy.yml            `terraform apply -destroy`, double-gated by
+│       ├── reusable-migrations-dry-run.yml  migration dry-run against ephemeral Postgres (read-only)
+│       ├── reusable-terraform-plan.yml      `terraform plan` per env + sticky PR comment
+│       ├── reusable-terraform-apply.yml     `terraform apply`, optional drift-only mode
+│       ├── reusable-terraform-destroy.yml   `terraform apply -destroy`, double-gated by
 │       │                                   confirm-destroy-token (DESTROY-<ENV>) and
 │       │                                   optional GH Environment approval + post-destroy
 │       │                                   cleanup job (CLEANUP-<ENV>)
 │       │
 │       │ ─── catalog: article (LaTeX, kept for 07-article's toolchain) ────
-│       ├── latex-build.yml                  compile LaTeX -> PDF artifact
-│       └── latex-release.yml                bump patch + GitHub Release
+│       ├── reusable-latex-build.yml         compile LaTeX -> PDF artifact
+│       └── reusable-latex-release.yml       bump patch + GitHub Release
 │
 ├── docs/
 │   ├── CACHE.md                            canonical cache-key convention v4 + rate-limit guidance
@@ -104,7 +108,7 @@ spark-match-01-devops/
 │
 ├── governance/
 │   ├── repository-governance.json          desired state of org ruleset (schema v2)
-│   └── repository-governance.schema.json   Draft 2020-12 schema; validated by quality.yml
+│   └── repository-governance.schema.json   Draft 2020-12 schema; validated by reusable-quality.yml
 │
 ├── scripts/                                operational scripts (see scripts/README.md)
 │   ├── README.md                           catalog of scripts
@@ -144,7 +148,7 @@ Composite actions live under `.github/actions/<name>/`. Each one is an **atomic,
 
 ### `validate-workflow-inputs`
 
-JSON-Schema-driven validator that gates a workflow step on the validity of its inputs. Fails fast with `::error::` annotations so the workflow exits at the first invalid input rather than producing confusing downstream errors. Used by `quality.yml` to gate every `shellcheck-severity`, `schema-strict`, and similar enum input.
+JSON-Schema-driven validator that gates a workflow step on the validity of its inputs. Fails fast with `::error::` annotations so the workflow exits at the first invalid input rather than producing confusing downstream errors. Used by `reusable-quality.yml` to gate every `shellcheck-severity`, `schema-strict`, and similar enum input.
 
 Inputs:
 
@@ -178,13 +182,15 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 
 | Recipe | Purpose | Caller secrets |
 |---|---|---|
-| `actionlint.yml` | Validate GitHub Actions syntax | — |
-| `gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v3`) | `GITLEAKS_LICENSE` (required for org-scoped repos under v3) |
-| `yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
-| `terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
-| `tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
+| `reusable-actionlint.yml` | Validate GitHub Actions syntax | — |
+| `reusable-gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v3`) | `GITLEAKS_LICENSE` (required for org-scoped repos under v3) |
+| `reusable-yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
+| `reusable-terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
+| `reusable-tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
+| `reusable-quality.yml`           | shellcheck + manifest schema + bats | — |
+| `reusable-codeql.yml`            | CodeQL JS/TS caller-repo scan | — |
 
-#### `actionlint.yml`
+#### `reusable-actionlint.yml`
 
 Validates `.github/workflows/*.yml` in the caller. Downloads the actionlint binary pinned to `v1.7.7` (avoid tracking `main` for supply-chain safety).
 
@@ -199,12 +205,12 @@ Usage:
 ```yaml
 jobs:
   actionlint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/actionlint.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-actionlint.yml@main
     with:
       environment-name: ci
 ```
 
-#### `gitleaks.yml`
+#### `reusable-gitleaks.yml`
 
 Runs secret scanning against the full git history. Pinned to `gitleaks-action@v3`; for org-scoped repos callers MUST forward the `GITLEAKS_LICENSE` secret (free at gitleaks.io) because GitHub drops `secrets: inherit` across owner boundaries. The org-level Dependabot secret bucket holds `GITLEAKS_LICENSE` (visibility: all-repos) so Dependabot-triggered runs see it without per-repo setup.
 
@@ -219,12 +225,12 @@ Usage:
 ```yaml
 jobs:
   gitleaks:
-    uses: spark-match/spark-match-01-devops/.github/workflows/gitleaks.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-gitleaks.yml@main
     with:
       environment-name: ci
 ```
 
-#### `yamllint.yml`
+#### `reusable-yamllint.yml`
 
 Validates YAML files in the caller repo. yamllint auto-discovers `.yamllint.yml`, so config (ignores, rule relaxations) is the caller's responsibility. Typical ignore set:
 
@@ -251,12 +257,12 @@ Usage:
 ```yaml
 jobs:
   yamllint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-yamllint.yml@main
     with:
       environment-name: ci
 ```
 
-#### `terraform-validate.yml`
+#### `reusable-terraform-validate.yml`
 
 Discovers every Terraform module in the caller (by `.tf` files at any directory level, excluding `.terraform/` and `.git/`) and runs `terraform init -backend=false` + `terraform validate` for each. Because `-backend=false` skips the S3/DynamoDB backend, no AWS credentials are needed. Providers come from the registry, pinned by the committed `.terraform.lock.hcl`.
 
@@ -273,13 +279,13 @@ Usage:
 ```yaml
 jobs:
   terraform-validate:
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-validate.yml@main
     with:
       environment-name: dev
       terraform-version: 1.15.7
 ```
 
-#### `tflint.yml`
+#### `reusable-tflint.yml`
 
 Runs `tflint --recursive` against the caller's Terraform code. Caller must provide a `.tflint.hcl` at the repo root — TFLint reads it per-subdirectory and follows the plugin set declared there.
 
@@ -301,7 +307,7 @@ Usage:
 ```yaml
 jobs:
   tflint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-tflint.yml@main
     with:
       environment-name: dev
 ```
@@ -314,7 +320,7 @@ Internal workflow (not a reusable recipe — runs only on this catalog). Fires o
 
 This workflow is part of the SLSA Build Level 3 + supply-chain transparency posture (US Executive Order 14028, EU Cyber Resilience Act). For a repo with no real `package.json` / `requirements.txt` the SBOM is metadata-only, but it is still produced and attached.
 
-#### `sonar-terraform.yml`
+#### `reusable-sonar-terraform.yml`
 
 SonarCloud analysis for Terraform. Designed for projects where Terraform is the primary language (no Python/JS).
 
@@ -333,15 +339,15 @@ Inputs (highlights):
 
 Required secrets: `SONAR_TOKEN` (same-name convention). Caller must set it in the GitHub Environment.
 
-#### `sonar-typescript.yml`
+#### `reusable-sonar-typescript.yml`
 
 SonarCloud analysis for TypeScript. Used by `orion-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
 
-Same input shape as `sonar-terraform.yml` (without `exclude-patterns`) plus `tsconfig-path` (default `tsconfig.json`).
+Same input shape as `reusable-sonar-terraform.yml` (without `exclude-patterns`) plus `tsconfig-path` (default `tsconfig.json`).
 
 ### node
 
-#### `eslint.yml`
+#### `reusable-eslint.yml`
 
 Runs `npm run <lint-script>` for Node workspaces and caches `~/.npm` keyed on `os-node<node-version>-eslint<eslint-version>-package-lock.json`. Includes `eslint-version` so callers can roll forward to a new ESLint major without forking the recipe (cache key changes so no stale cache).
 
@@ -360,14 +366,14 @@ Usage:
 ```yaml
 jobs:
   eslint:
-    uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-eslint.yml@main
     with:
       environment-name: ci
       eslint-version: 10
       # lint-script defaults to "lint"
 ```
 
-#### `node-test.yml`
+#### `reusable-node-test.yml`
 
 Runs `npm run <test-script>` against a Node project's `tests/` directory with the canonical cache key (`<os>-node<nodeVersion>-<pkgManager>-<env>-<H>` per [`docs/CACHE.md`](docs/CACHE.md)). Supports an optional `pre-test-script` for callers that need a build/precompile step before tests (e.g. Angular's prebuild hook).
 
@@ -388,14 +394,14 @@ Usage:
 ```yaml
 jobs:
   node-test:
-    uses: spark-match/spark-match-01-devops/.github/workflows/node-test.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-node-test.yml@main
     with:
       environment-name: ci
       test-script: test
       pre-test-script: prebuild
 ```
 
-#### `node-typecheck.yml`
+#### `reusable-node-typecheck.yml`
 
 Runs `npm run <typecheck-script>` for Node projects (Angular, Vite, Next.js, plain TS). Uses the canonical cache key v4 (`<os>-node<nodeVersion>-<pkgmanager>-<env>-<H>` per [`docs/CACHE.md`](docs/CACHE.md)). Intended for projects that want strict type checking in CI but don't bundle the typecheck inside another job (Angular: `tsc --noEmit -p tsconfig.app.json`).
 
@@ -415,13 +421,13 @@ Usage:
 ```yaml
 jobs:
   typecheck:
-    uses: spark-match/spark-match-01-devops/.github/workflows/node-typecheck.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-node-typecheck.yml@main
     with:
       environment-name: ci
       # typecheck-script defaults to "typecheck"
 ```
 
-#### `node-build.yml`
+#### `reusable-node-build.yml`
 
 Runs `npm run <build-script>` for Node projects (Angular: `ng build`; Vite/React: `vite build`; Next.js: `next build`). Uses the canonical cache key v4. Supports an optional `pre-build-script` for monorepos or frameworks that need a precompile step (Angular prebuild hook, backend shared workspace, etc.).
 
@@ -443,7 +449,7 @@ Usage:
 jobs:
   build:
     needs: [eslint, typecheck, test]
-    uses: spark-match/spark-match-01-devops/.github/workflows/node-build.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-node-build.yml@main
     with:
       environment-name: ci
       # build-script defaults to "build"
@@ -452,7 +458,7 @@ jobs:
 
 ### deploy
 
-#### `terraform-plan.yml`
+#### `reusable-terraform-plan.yml`
 
 Runs `terraform plan` per environment. Posts a sticky comment on the PR with the plan summary, uploads the plan binary as an artifact, and respects a per-environment backend config. Designed to be called from a matrix `[dev, staging, prod, ...]` in the caller.
 
@@ -471,7 +477,7 @@ Key inputs (full list in the file header):
 
 Required secrets: `AWS_PLAN_ROLE_ARN` (passed explicitly; cross-owner inheritance blocked by GitHub).
 
-#### `terraform-apply.yml`
+#### `reusable-terraform-apply.yml`
 
 Runs `terraform apply` per environment with an optional GitHub Environment approval gate (`gh-environment` input or fallback to `environment`). Supports `drift-only` mode for scheduled drift detection without applying.
 
@@ -491,9 +497,9 @@ Key inputs:
 
 Required secrets: `AWS_APPLY_ROLE_ARN` (passed explicitly).
 
-#### `terraform-destroy.yml`
+#### `reusable-terraform-destroy.yml`
 
-Runs `terraform plan -destroy` then `terraform apply -destroy` per environment. Complementary to `terraform-apply.yml` — when you need to tear down an environment instead of build it up. Two independent gates prevent fat-finger mistakes:
+Runs `terraform plan -destroy` then `terraform apply -destroy` per environment. Complementary to `reusable-terraform-apply.yml` — when you need to tear down an environment instead of build it up. Two independent gates prevent fat-finger mistakes:
 
 1. **`confirm-destroy-token` input** — the job aborts unless this input equals exactly `DESTROY-<ENV>` (case-sensitive, all caps). The caller is responsible for collecting this from a human before invoking (typically via `workflow_dispatch` with the `confirm_destroy` field). Failure logs the expected token and the length of what was received (never the value).
 2. **`gh-environment` input** — optional approval gate via GitHub Environment. Falls back to `environment`. For non-prod envs that intentionally have no reviewers, set `auto-approve: true`.
@@ -508,7 +514,7 @@ Key inputs:
 |--------------|--------|---------|-------|
 | environment | string | `''` (basename of `working-directory`) | Display + concurrency. Also forms the suffix of the required confirm token (`DESTROY-<ENV>`). |
 | working-directory | string | `.` | |
-| aws-region | string | `us-east-1` | |
+| aws-region   | string | `us-east-1` | |
 | apply-role-arn-secret | string | `AWS_APPLY_ROLE_ARN` | The role needs admin-equivalent rights; destroy recreates resources. |
 | terraform-version | string | `1.10.0` | |
 | backend-bucket / backend-key / tfvars-file / var-files / target / extra-args | string | various | Standard passthrough. |
@@ -548,7 +554,7 @@ Caller-side example:
 ```yaml
 jobs:
   destroy:
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-destroy.yml@main
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-destroy.yml@main
     with:
       # ...destroy inputs as usual...
       enable-cleanup: true
@@ -585,7 +591,7 @@ terraform init -migrate-state -force-copy -input=false \
 
 After destroy you can `rm backend-override.hcl tfstate.tfstate.local*` and run the normal init to re-attach S3 if you only needed a partial destroy.
 
-#### `migrations-dry-run.yml`
+#### `reusable-migrations-dry-run.yml`
 
 Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `orion-backend` for every PR (Sprint 2 — see ADR-016).
 
@@ -607,13 +613,17 @@ Required secrets: none. Pure CLI check against a throwaway Postgres service cont
 
 ### Other files in `.github/workflows/`
 
-These three workflows are **not** part of the consumer-facing catalog; they only run on this repo itself:
+These workflows are **not** part of the consumer-facing catalog; they only run on this repo itself:
 
-- `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`actionlint`, `gitleaks`, `yamllint`, `quality`) against this repository so a broken recipe is caught here before consumers break. The node/deploy recipes (`eslint`, `node-test`, `terraform-plan`, `terraform-apply`, `terraform-destroy`) are NOT exercised here because this repo has no Node project or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
-- `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
+- `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`reusable-actionlint`, `reusable-gitleaks`, `reusable-yamllint`, `reusable-quality`) against this repository so a broken recipe is caught here before consumers break. The node/deploy recipes (`reusable-eslint`, `reusable-node-test`, `reusable-terraform-plan`, `reusable-terraform-apply`, `reusable-terraform-destroy`) are NOT exercised here because this repo has no Node project or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
+- `codeql-actions.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
+- `commitlint.yml` — commitlint check on every PR + push. Validates Conventional Commits 1.0.0 against `.commitlintrc.json`.
 - `release-please.yml` — release-please automation. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
+- `sbom.yml` — CycloneDX SBOM attached to GitHub Release. Runs on `release: { types: [published] }`.
 
-The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`sonar-terraform.yml`, `sonar-typescript.yml`), which target the SonarCloud org's Terraform/TypeScript projects; and to `migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
+All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
+
+The LaTeX reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`), which target the SonarCloud org's Terraform/TypeScript projects; and to `reusable-migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
 
 ## Versioning
 
@@ -627,7 +637,7 @@ See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 
 ## Cache key convention
 
-All node-consuming recipes (`eslint.yml`, `node-test.yml`, `node-typecheck.yml`, `node-build.yml`) use the canonical cache key:
+All node-consuming recipes (`reusable-eslint.yml`, `reusable-node-test.yml`, `reusable-node-typecheck.yml`, `reusable-node-build.yml`) use the canonical cache key:
 
 ```
 <os>-node-<nodeVersion>-<pkgmanager>-<env>[-<recipeTag>]-<H>
@@ -637,7 +647,7 @@ All node-consuming recipes (`eslint.yml`, `node-test.yml`, `node-typecheck.yml`,
 - `nodeVersion` (e.g. `24`).
 - `pkgmanager` (`npm` | `pnpm` | `yarn` | `bun`).
 - `env` lowercased (`dev` | `prod` | `ci`).
-- `recipeTag` recipe-specific (only `eslint.yml` uses it, for ESLint major isolation).
+- `recipeTag` recipe-specific (only `reusable-eslint.yml` uses it, for ESLint major isolation).
 - `<H>` is `sha256(<lockfile-name>)` of a single file (no glob).
 
 Compared to v3, this:
@@ -659,7 +669,7 @@ GitHub Actions cache has two limits to design around:
 
 Practical guidance for this catalog:
 
-- **Per-recipe keys, not per-workflow**. Each recipe that caches should have its own `cache-suffix` segment (today only `eslint.yml` uses `recipeTag`; consider adding it to other recipes when rolling a major tool version).
+- **Per-recipe keys, not per-workflow**. Each recipe that caches should have its own `cache-suffix` segment (today only `reusable-eslint.yml` uses `recipeTag`; consider adding it to other recipes when rolling a major tool version).
 - **Bump cache on tool upgrade, not on lockfile hash alone**. A `node-version` or `eslint-version` bump should produce a new key, not silently re-use the old blob with stale binaries.
 - **Watch the `<H>` segment**. `sha256(package-lock.json)` means any change to `package-lock.json` (even unrelated deps) invalidates the cache. That's intentional — we want the cache to mirror the exact deps in use — but be aware that a routine `npm i` that touches the lockfile invalidates everything.
 - **If a repo is approaching the 10 GB cap**, the most likely culprit is per-branch or per-PR cache keys leaking. The v4 convention deliberately keeps the key space small (no per-PR segment) to avoid this.
@@ -680,7 +690,7 @@ See [`scripts/README.md`](scripts/README.md) for per-script usage, full flag lis
 
 ## Governance
 
-The `spark-match` org uses **declarative governance**: the desired state lives in [`governance/repository-governance.json`](governance/repository-governance.json), validated against a JSON Schema in [`governance/repository-governance.schema.json`](governance/repository-governance.schema.json) (validated by `.github/workflows/quality.yml` on every PR). The reconciler (`scripts/configure-repo-rulesets.sh`) brings each repo's actual state in line with the manifest.
+The `spark-match` org uses **declarative governance**: the desired state lives in [`governance/repository-governance.json`](governance/repository-governance.json), validated against a JSON Schema in [`governance/repository-governance.schema.json`](governance/repository-governance.schema.json) (validated by `.github/workflows/reusable-quality.yml` on every PR). The reconciler (`scripts/configure-repo-rulesets.sh`) brings each repo's actual state in line with the manifest.
 
 The full narrative reference — including rationale, deviation log, and the 6-point compliance checklist — lives in [`docs/GOVERNANCE-STANDARD.md`](docs/GOVERNANCE-STANDARD.md).
 
@@ -716,7 +726,7 @@ done
 
 ## Testing
 
-The repo ships with **bats tests** that run on every PR via `.github/workflows/quality.yml` and can be executed locally before pushing:
+The repo ships with **bats tests** that run on every PR via `.github/workflows/reusable-quality.yml` and can be executed locally before pushing:
 
 | Suite | Count | File | What it covers |
 |---|---|---|---|
@@ -821,10 +831,10 @@ and weekly.
 
 | Tool | Scope | Trigger | Status | Where |
 |---|---|---|---|---|
-| **actionlint** | Actions YAML syntax | every PR + push | required check | `.github/workflows/actionlint.yml` |
-| **yamllint** | YAML style + parse | every PR + push | required check | `.github/workflows/yamllint.yml` |
-| **gitleaks** | secret scan over git history | every PR + push | required check (org-scoped) | `.github/workflows/gitleaks.yml` |
-| **CodeQL** | `actions/*` rules (code-injection, unpinned-tag, envvar-injection) | every PR + push + weekly | informational | `.github/workflows/codeql.yml` |
+| **actionlint** | Actions YAML syntax | every PR + push | required check | `.github/workflows/reusable-actionlint.yml` |
+| **yamllint** | YAML style + parse | every PR + push | required check | `.github/workflows/reusable-yamllint.yml` |
+| **gitleaks** | secret scan over git history | every PR + push | required check (org-scoped) | `.github/workflows/reusable-gitleaks.yml` |
+| **CodeQL** | `actions/*` rules (code-injection, unpinned-tag, envvar-injection) | every PR + push + weekly | informational | `.github/workflows/codeql-actions.yml` |
 | **Dependabot** | weekly bump PRs for GitHub Actions | Mon 06:00 UTC | enabled | `.github/dependabot.yml` |
 | **Dependabot security updates** | auto-PR for known-vulnerable dependencies | on alert | enabled | repo-level (set via `PATCH .../dependabot_security_updates`) |
 | **Secret scanning** | native GH secret detection | always | **disabled** (requires GHAS paid plan) | n/a |
@@ -853,7 +863,7 @@ features require **GitHub Advanced Security** (paid, per-user):
 These are configured off at the repo level (`security_and_analysis`
 shows `disabled`). We work around this with:
 
-1. **`gitleaks.yml`** runs on every PR + push, scanning the full
+1. **`reusable-gitleaks.yml`** runs on every PR + push, scanning the full
    git history. This catches the same set of secrets as native
    secret scanning plus custom patterns.
 2. **CODEOWNERS** + `require_code_owner_review: true` ensures a

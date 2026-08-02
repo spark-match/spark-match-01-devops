@@ -25,7 +25,7 @@ body:
     attributes:
       label: One-line summary
       description: What is this issue about, in 5-10 words?
-      placeholder: e.g. "node-build.yml fails on Angular prebuild hook"
+      placeholder: e.g. "reusable-node-build.yml fails on Angular prebuild hook"
     validations:
       required: true
   - type: dropdown
