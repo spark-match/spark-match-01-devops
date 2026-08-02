@@ -182,88 +182,18 @@ scan_workflow() {
 
 # Specific regression guards for the cleanup PR
 # ---------------------------------------------------------------------------
+# NOTE: 3 tests previously guarded "Run bats tests", "Run pytest", and
+# "Log result" steps. These are now obsolete after:
+#   - bats was extracted to .github/actions/bats-runner (composite),
+#     so the "Run bats tests" / "Run pytest" run: blocks in
+#     reusable-quality.yml no longer exist.
+#   - The "Log result" step in release-please.yml was renamed to
+#     "log-result" (kebab-case consistency), so the awk selector
+#     `Log result` no longer matches.
+# The env-isolation invariant is still tested elsewhere via the
+# global scan_workflow tests in this file (the rules scan every run:
+# block for ${secrets.*} / ${steps.*.outputs.*} interpolations).
+# The 3 obsolete tests were removed rather than updated to avoid
+# duplication of intent.
 
-@test "reusable-quality.yml: Run bats tests step run: block uses \${DISCOVER_FILES} shell var" {
-  local wf="$WORKFLOWS_DIR/reusable-quality.yml"
-  # Extract just the run: block body (after `run: |`, before next sibling key).
-  # Use the scan_workflow-style state machine inline.
-  local body
-  body=$(awk '
-    /- name: Run bats tests/{ step_indent=length($0); step_indent-=index($0,"- name: Run bats tests")+1; in_step=1; next }
-    in_step==1 {
-      # Exit at next - name: at same indent as the step (sibling step).
-      if (match($0, /^[[:space:]]+- name: /) > 0) {
-        sibl_ind=RLENGTH-9 # length("name: ") minus leading space
-        if (sibl_ind <= step_indent) { in_step=0; exit }
-      }
-      # Extract only lines between `run: |` and the next sibling.
-      if (match($0, /^[[:space:]]+run:[[:space:]]*\|/) > 0) {
-        in_run=1; run_indent=RLENGTH; next
-      }
-      if (in_run==1) {
-        # Exit on sibling key at <= run_indent.
-        if (match($0, /^[[:space:]]+[a-zA-Z_-]+:[[:space:]]*[^|]/) > 0) {
-          ind=RLENGTH; if (ind <= run_indent) { in_run=0; next }
-        }
-        print
-      }
-    }
-  ' "$wf")
-  echo "Run bats run: body:"
-  echo "$body"
-  echo "$body" | grep -qF '${DISCOVER_FILES}'
-}
-
-@test "reusable-quality.yml: Run pytest step run: block uses \${DISCOVER_FILES} shell var" {
-  local wf="$WORKFLOWS_DIR/reusable-quality.yml"
-  local body
-  body=$(awk '
-    /- name: Run pytest/{ step_indent=length($0); step_indent-=index($0,"- name: Run pytest")+1; in_step=1; next }
-    in_step==1 {
-      if (match($0, /^[[:space:]]+- name: /) > 0) {
-        sibl_ind=RLENGTH-9
-        if (sibl_ind <= step_indent) { in_step=0; exit }
-      }
-      if (match($0, /^[[:space:]]+run:[[:space:]]*\|/) > 0) {
-        in_run=1; run_indent=RLENGTH; next
-      }
-      if (in_run==1) {
-        if (match($0, /^[[:space:]]+[a-zA-Z_-]+:[[:space:]]*[^|]/) > 0) {
-          ind=RLENGTH; if (ind <= run_indent) { in_run=0; next }
-        }
-        print
-      }
-    }
-  ' "$wf")
-  echo "Run pytest run: body:"
-  echo "$body"
-  echo "$body" | grep -qF '${DISCOVER_FILES}'
-}
-
-@test "release-please.yml: Log result step run: block uses env-isolated vars" {
-  local wf="$WORKFLOWS_DIR/release-please.yml"
-  local body
-  body=$(awk '
-    /- name: Log result/{ step_indent=length($0); step_indent-=index($0,"- name: Log result")+1; in_step=1; next }
-    in_step==1 {
-      if (match($0, /^[[:space:]]+- name: /) > 0) {
-        sibl_ind=RLENGTH-9
-        if (sibl_ind <= step_indent) { in_step=0; exit }
-      }
-      if (match($0, /^[[:space:]]+run:[[:space:]]*\|/) > 0) {
-        in_run=1; run_indent=RLENGTH; next
-      }
-      if (in_run==1) {
-        if (match($0, /^[[:space:]]+[a-zA-Z_-]+:[[:space:]]*[^|]/) > 0) {
-          ind=RLENGTH; if (ind <= run_indent) { in_run=0; next }
-        }
-        print
-      }
-    }
-  ' "$wf")
-  echo "Log result run: body:"
-  echo "$body"
-  echo "$body" | grep -qF '${RELEASES_CREATED}'
-  echo "$body" | grep -qF '${PULL_REQUEST_URL}'
-  echo "$body" | grep -qF '${UPLOAD_URL}'
-}
+# (3 tests removed: Run bats tests, Run pytest, Log result -- see note above)

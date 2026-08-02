@@ -18,14 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Validate Inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
-      - name: Checkout Caller Repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
-      - name: Install Yamllint
+      - name: install-yamllint
         run: pip install --quiet yamllint==1.35.1
-      - name: Run Yamllint
+      - name: run-yamllint
         run: yamllint .
