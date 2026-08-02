@@ -135,8 +135,14 @@ CODEOWNERS reviewers suelen no estar disponibles. Cuando CI está verde:
 ```bash
 gh pr merge <num> --repo spark-match/spark-match-01-devops \
   --squash --admin --delete-branch \
-  --body "All 9 required checks green. [resumen del cambio]. Merged via admin bypass — owner approval only (CODEOWNERS reviewers unavailable)."
+  --body "All 9 checks green. [resumen]. Merged via admin bypass."
 ```
+
+El body del merge commit está limitado a 100 chars por línea (regla
+`body-max-line-length` heredada de `@commitlint/config-conventional`).
+Si el resumen excede ese límite, partirlo en varias líneas con
+`\n` o usar `--body-file` apuntando a un archivo con el texto
+pre-formateado.
 
 `--admin` se autoriza **solo** después de confirmar CI verde. No usar para skippear checks fallidos.
 
