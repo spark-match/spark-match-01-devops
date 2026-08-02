@@ -55,8 +55,8 @@ See [`README.md`](README.md) § Architecture for the full picture and [`docs/VER
 | `gh` | 2.40+ | `gh` CLI; required by the reconciler and CI |
 | `jq` | 1.6+ | manifest validation, fixture generation |
 | `bats` | 1.11.1 | bats tests under `tests/bats/` |
-| `pytest` | 9.1.1 | pytest tests under `tests/python/` |
-| `python` | 3.12 | runs `scripts/check_lambda_permission_source_arn.py` and the pytest suite |
+| `pytest` | 9.1.1 | (reserved) bats tests are the only Python-runnable suite today |
+| `python` | 3.12 | (reserved) no Python scripts in `scripts/` at the moment |
 | `uv` | latest | (optional) caller recipes; not needed to develop this repo |
 
 ### One-time install
@@ -105,27 +105,24 @@ git commit --no-verify
 
 ## Running tests
 
-The repo ships **266 bats tests + 18 pytest tests = 284 tests total**. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
+The repo ships **bats tests** for the bash scripts and reconciler. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
 
 ```bash
-# All tests (bats + pytest)
+# All bats tests
 bats tests/bats/
-python -m pytest tests/python/ -v
 
 # Just one suite
 bats tests/bats/reconciler-check.bats
-python -m pytest tests/python/test_lambda.py -v -k TestScanTemplate
 ```
 
-Expected runtime: bats < 1 s, pytest < 0.5 s. CI adds ~25 s per job (bats download + pip install).
+Expected runtime: bats < 1 s. CI adds ~25 s per job (bats download).
 
 ### Adding a new test
 
 - **For a new bash primitive** → add `tests/bats/<subject>.bats`. Reuse `tests/bats/helpers/common.bash` for `ACTION_DIR` and stub definitions.
 - **For a new bash script** → add `tests/bats/reconciler-<aspect>.bats` and reuse `tests/bats/helpers/reconciler.bash` for the `gh` stub.
-- **For a new Python script** → add `tests/python/test_<subject>.py` and reuse `tests/fixtures/<case>/template.yaml` patterns.
 
-CI auto-discovers `tests/bats/*.bats` and `tests/python/test_*.py`. No workflow changes needed.
+CI auto-discovers `tests/bats/*.bats`. No workflow changes needed.
 
 ## Style and conventions
 
@@ -151,8 +148,6 @@ CI auto-discovers `tests/bats/*.bats` and `tests/python/test_*.py`. No workflow 
 ### Python
 
 - stdlib-only for production scripts (no third-party deps; CI uses Python 3.12).
-- Tests use pytest with classes per concern (e.g. `TestScanTemplate`, `TestResolveScanPaths`, `TestCli`).
-- Fixtures live under `tests/fixtures/<case>/`.
 
 ### YAML / JSON
 
@@ -171,7 +166,7 @@ Conventional Commits 1.0.0. Required scopes:
 | `governance` | manifest, schema, reconciler script |
 | `docs` | README, docs/, this file |
 | `ci` | `.github/workflows/` (this repo's own CI) |
-| `quality` | bats/pytest/shellcheck/schema infra |
+| `quality` | bats/shellcheck/schema infra |
 | `reconciler` | reconciler script tests |
 | `scripts` | other operational scripts |
 
@@ -223,7 +218,7 @@ docs(readme): add Quick start and CACHE rate limits
 
    **Mandatory flags**: `--assignee ahincho` and at least one `--label` (per the conventional-commit type). See the opencode `gh-pr-create` skill for the full convention.
 
-7. **Wait for CI** (actionlint + gitleaks + yamllint + quality/bats + quality/pytest + quality/shellcheck + quality/manifest-schema + CodeQL). All checks must be green before merge.
+7. **Wait for CI** (actionlint + gitleaks + yamllint + quality/bats + quality/shellcheck + quality/manifest-schema + CodeQL). All checks must be green before merge.
 
 8. **Wait for CODE OWNERS review**. The ruleset requires `require_code_owner_review: true`. Self-approval is impossible — if you are the sole owner, ask another team member.
 
@@ -261,7 +256,7 @@ CODE OWNERS review applies even when `bypass_mode: "always"` if the author is it
 - Re-declare `permissions:` for whatever the recipe needs (`contents: read`, `id-token: write`, etc.).
 - For deploy recipes, declare secrets by explicit name and follow the same-name convention used by existing deploy recipes (`AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`).
 - Update `docs/VERSIONING.md` if the recipe introduces a new convention.
-- Add bats/pytest tests if you added logic.
+- Add bats tests if you added logic.
 
 ### Composite action
 

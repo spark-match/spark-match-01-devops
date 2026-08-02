@@ -12,8 +12,7 @@ gotchas that apply.
 |---|---|---|
 | [`python-ci/`](python-ci/) | python | `python-ci.yml` |
 | [`node-ci/`](node-ci/) | node + ecosystem | `eslint.yml` + `node-test.yml` + `node-build.yml` + `gitleaks.yml` |
-| [`terraform-ci/`](terraform-ci/) | ecosystem + deploy | `terraform-fmt.yml` + `terraform-validate.yml` + `tflint.yml` + `terraform-plan.yml` |
-| [`sam-deploy/`](sam-deploy/) | ecosystem + deploy | `cfn-nag.yml` + `lambda-permission-source-arn.yml` + `sam-deploy.yml` |
+| [`terraform-ci/`](terraform-ci/) | ecosystem + deploy | `terraform-validate.yml` + `tflint.yml` + `terraform-plan.yml` |
 
 ## How to use
 

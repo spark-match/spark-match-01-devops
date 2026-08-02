@@ -64,8 +64,7 @@
 # CI/CD reusables, templates, CODEOWNERS, ruleset, actions, PR/issue templates.
 /.github/                                    @spark-match/devops
 
-# Scripts auxiliares (configure-merge-methods.sh, configure-repo-rulesets.sh,
-# check_lambda_permission_source_arn.py).
+# Scripts auxiliares (configure-merge-methods.sh, configure-repo-rulesets.sh).
 /scripts/                                    @spark-match/devops
 
 # Docs (GOVERNANCE-STANDARD.md, VERSIONING.md, PYTHON-CI.md, CACHE.md).
@@ -80,8 +79,7 @@
 # (recetas demostradas, no governance).
 /examples/                                   @spark-match/devops
 
-# Test suite (tests/bats/*.bats, tests/python/*.py, tests/fixtures/*.yaml).
-# Cambios aqui son tecnicos.
+# Test suite (tests/bats/*.bats). Cambios aqui son tecnicos.
 /tests/                                      @spark-match/devops
 
 # =============================================================================

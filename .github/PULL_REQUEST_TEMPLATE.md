@@ -44,7 +44,7 @@ mirrors the structure the maintainers expect; do not delete sections.
 ## How to test
 
 <!-- Describe the local steps to reproduce the change and verify it works.
-     Reference the suite in tests/bats/ or tests/python/ if applicable. -->
+     Reference the suite in tests/bats/ if applicable. -->
 
 1. {{ step 1 }}
 2. {{ step 2 }}
@@ -55,10 +55,9 @@ mirrors the structure the maintainers expect; do not delete sections.
 <!-- Mandatory items; uncheck any that do not apply and explain in a comment. -->
 
 - [ ] I ran `bats tests/bats/` locally and all tests pass.
-- [ ] I ran `python -m pytest tests/python/ -v` locally and all tests pass.
 - [ ] I ran `shellcheck scripts/*.sh .github/actions/*/action.sh` with no warnings.
 - [ ] I ran `actionlint .github/workflows/*.yml` with no errors.
-- [ ] If I changed a recipe, I added or updated tests in `tests/bats/` or `tests/python/`.
+- [ ] If I changed a recipe, I added or updated tests in `tests/bats/`.
 - [ ] If I added a new top-level path, I noted it in the PR body for the CODEOWNERS follow-up.
 - [ ] I followed the branch-naming convention (`<type>/<scope>-<short-desc>`).
 - [ ] My commit subject follows Conventional Commits 1.0.0.
