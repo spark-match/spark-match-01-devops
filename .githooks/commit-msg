@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# .githooks/commit-msg - validate Conventional Commits format
+# =============================================================================
+# Runs on `git commit` BEFORE the commit object is created. Catches
+# non-conforming commit messages at write-time (cheapest point) instead
+# of waiting for the CI workflow to fail and have to amend.
+#
+# Installation (run once per clone):
+#
+#   git config core.hooksPath .githooks
+#
+# After that, every `git commit` runs this hook. To skip for a specific
+# commit (rare; usually wrong):
+#
+#   git commit --no-verify
+#
+# This hook is a LIGHTWEIGHT mirror of the CI-side commitlint check.
+# The canonical rules live in .commitlintrc.json + .github/workflows/
+# commitlint.yml. This script duplicates the minimum shape validation
+# via POSIX grep regex to keep the local environment zero-dependency
+# (no Node, no npm install required).
+#
+# Validated fields:
+#   - <type>(<scope>): <subject> shape OR <type>: <subject> shape
+#   - <type> is in the Conventional Commits allowlist
+#   - <scope> is in the org's allowlist (when present)
+#   - <subject> is lowercase, no trailing '.', length <= 100
+#
+# Reference: AGENTS.md § 3 + .commitlintrc.json
+# =============================================================================
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Allow merge commits, fixups, and reverts to pass through unchanged.
+# `git commit --amend` produces a message ending in `# Please enter...` while
+# the user edits; only validate finalized messages.
+FIRST_LINE=$(printf '%s\n' "$COMMIT_MSG" | head -n 1)
+if [[ "$FIRST_LINE" =~ ^Merge\  ]] \
+   || [[ "$FIRST_LINE" =~ ^Revert\ \" ]] \
+   || [[ "$FIRST_LINE" =~ ^fixup!\  ]] \
+   || [[ "$FIRST_LINE" =~ ^squash!\  ]] \
+   || [[ "$FIRST_LINE" =~ ^amend!\  ]]; then
+  exit 0
+fi
+
+err() {
+  echo "::error::$1" >&2
+  echo "" >&2
+  echo "Expected Conventional Commits format. Examples that pass:" >&2
+  echo "  feat(workflows): add cosign-keyless signing recipe" >&2
+  echo "  fix(quality): handle empty commit-message file" >&2
+  echo "  chore(scripts): retire dormant bootstrap tool" >&2
+  echo "  docs: clarify cache-key v4 in CACHE.md" >&2
+  echo "" >&2
+  echo "Full rules: AGENTS.md § 3 + .commitlintrc.json" >&2
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Header shape: <type>[(<scope>)]: <subject>
+# - Type: required, must be in the allowlist
+# - Scope: optional, must be in the allowlist when present, lowercase
+# - Subject: required, lowercase ASCII, no trailing '.', length <= 100
+# ---------------------------------------------------------------------------
+
+HEADER_REGEX='^([a-z]+)(\(([a-z]+)\))?: (.+)$'
+if [[ ! "$FIRST_LINE" =~ $HEADER_REGEX ]]; then
+  err "header does not match <type>[<scope>]: <subject> shape: '$FIRST_LINE'"
+fi
+
+TYPE="${BASH_REMATCH[1]}"
+SCOPE="${BASH_REMATCH[3]}"   # empty when no (scope)
+SUBJECT="${BASH_REMATCH[4]}"
+
+# Type allowlist (mirrors .commitlintrc.json, kept in sync manually — see test).
+case "$TYPE" in
+  feat|fix|chore|docs|refactor|test|build|ci|perf|revert) : ;;
+  *) err "type '$TYPE' not in allowlist (feat|fix|chore|docs|refactor|test|build|ci|perf|revert)";;
+esac
+
+# Scope allowlist (mirrors .commitlintrc.json, kept in sync manually — see test).
+# When scope is empty, the rule is "always-or-nothing" (commitlint side); here
+# we just don't fire if no scope was given.
+if [[ -n "$SCOPE" ]]; then
+  case "$SCOPE" in
+    composite|workflows|ecosystem|node|deploy|governance|scripts|docs|ci|quality|reconciler|repo) : ;;
+    *) err "scope '$SCOPE' not in allowlist (composite|workflows|ecosystem|node|deploy|governance|scripts|docs|ci|quality|reconciler|repo)";;
+  esac
+fi
+
+# Subject rules.
+if (( ${#SUBJECT} > 100 )); then
+  err "subject is ${#SUBJECT} chars; max 100"
+fi
+if [[ "$SUBJECT" =~ \.$ ]]; then
+  err "subject must not end with '.'"
+fi
+if [[ "$SUBJECT" =~ [A-Z] ]]; then
+  err "subject must be lowercase"
+fi
+
+exit 0
