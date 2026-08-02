@@ -37,7 +37,7 @@
 #
 # Cross-owner safe: uses default GITHUB_TOKEN; no caller secrets.
 #
-# Pin: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb
+# Pin: anchore/sbom-action@v0.17.7
 #   = v0.17.7. anchore/sbom-action is a maintained, widely-used SBOM
 #   generator that supports SPDX + CycloneDX. The CycloneDX native
 #   GitHub Action (CycloneDX/cyclonedx-action) was deprecated in 2024;
@@ -88,7 +88,7 @@ jobs:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb  # v0.17.7
+        uses: anchore/sbom-action@v0.17.7
         with:
           format: cyclonedx-json
           artifact-name: sbom.cdx.json
@@ -102,7 +102,7 @@ jobs:
         # anchore/sbom-action uploads the SBOM as a workflow artifact but
         # does NOT place it in the working directory by default. Pull it
         # back to cwd so the verify step can validate the JSON shape.
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        uses: actions/download-artifact@v4
         with:
           name: sbom.cdx.json
           path: ${{ runner.temp }}/sbom-download
@@ -140,5 +140,5 @@ jobs:
             echo "| Tag | \`${{ github.event.release.tag_name || inputs.tag || '(none)' }}\` |"
             echo "| Format | \`cyclonedx-json\` |"
             echo "| Artifact | \`sbom.cdx.json\` |"
-            echo "| Generator | \`anchore/sbom-action@fc46e51f (v0.17.7)\` |"
+            echo "| Generator | \`anchore/sbom-action@v0.17.7\` |"
           } >> "$GITHUB_STEP_SUMMARY"

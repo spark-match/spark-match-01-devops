@@ -128,7 +128,10 @@ gh pr merge <num> --repo spark-match/spark-match-01-devops \
 - **NO agregar comentarios a menos que se pidan explícitamente.** El repo sigue la regla de "self-documenting code".
 - **Mimic existing patterns** antes de inventar nuevos. Si un recipe existente usa `permissions: contents: read`, el nuevo también.
 - **No introducir dependencias nuevas** sin justificación en el PR body.
-- **Pin by SHA** para third-party actions (`uses: aquasecurity/trivy-action@ed142fd... # v0.36.0`). Nunca `@main` ni `@vN` floante.
+- **Pin por versiones o branches, NO por SHA**. Para third-party actions usar `@vN` (major flotante, e.g. `actions/checkout@v4`) cuando el action publica tags con prefijo `v`. Si el action NO publica tags con prefijo `v` (e.g. `ludeeus/action-shellcheck` solo tiene `2.0.0`), usar la versión exacta `@N.N.N` (e.g. `ludeeus/action-shellcheck@2.0.0`). Excepciones documentadas:
+  - **Self-actions** (nuestras propias composite actions): siempre `@main`.
+  - **Anchore/sbom-action**: pinneado a `@v0.17.7` (minor pinned) porque la línea 0.x tiene breaking changes entre minors.
+- La guardia contra SHA-pinning vive en `tests/bats/no-sha-pinning.bats` (3 casos: third-party, self, AGENTS.md policy text). Si el guard falla, el PR se bloquea.
 
 ### 5.2 Workflows reusables
 
