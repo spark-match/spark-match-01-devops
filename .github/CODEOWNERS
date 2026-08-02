@@ -30,7 +30,7 @@
 #   - PR #131: .github/release-please-config.json, .github/workflows/release-please.yml,
 #              .release-please-manifest.json, CHANGELOG.md (nuevos)
 #   - PR #132: LICENSE (ya estaba)
-#   - PR #133: examples/ (nuevo, agregado aqui)
+#   - PR #204: examples/ removed (was added in #133)
 
 # =============================================================================
 # Documentos de governance en raiz
@@ -67,17 +67,13 @@
 # Scripts auxiliares (configure-merge-methods.sh, configure-repo-rulesets.sh).
 /scripts/                                    @spark-match/devops
 
-# Docs (GOVERNANCE-STANDARD.md, VERSIONING.md, PYTHON-CI.md, CACHE.md).
+# Docs (GOVERNANCE-STANDARD.md, VERSIONING.md, CACHE.md).
 # Mixto: contenido tecnico + governance. Doble ownership intencional.
 /docs/                                      @spark-match/devops @spark-match/product-owners
 
 # Governance manifest (repository-governance.json + schema). Cambios aqui
 # afectan el estado desired de TODOS los repos del org.
 /governance/                                @spark-match/devops
-
-# Caller examples (examples/caller-minimal/*). Cambios aqui son tecnicos
-# (recetas demostradas, no governance).
-/examples/                                   @spark-match/devops
 
 # Test suite (tests/bats/*.bats). Cambios aqui son tecnicos.
 /tests/                                      @spark-match/devops
