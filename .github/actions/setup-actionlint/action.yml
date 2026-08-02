@@ -1,0 +1,26 @@
+name: Setup Action Lint
+description: 'Downloads the rhysd/actionlint binary at a pinned version and exposes the path via outputs.executable.'
+inputs:
+  version:
+    description: 'actionlint semver to install (e.g. 1.7.12). Pinned to a tag, not main, for supply-chain safety.'
+    type: string
+    required: true
+  install-dir:
+    description: 'Directory to install the binary into. Defaults to a per-job temp dir.'
+    type: string
+    required: false
+    default: '${{ runner.temp }}/actionlint-bin'
+outputs:
+  executable:
+    description: 'Absolute path to the installed actionlint executable.'
+    value: ${{ steps.install.outputs.executable }}
+runs:
+  using: composite
+  steps:
+    - name: Install actionlint ${{ inputs.version }}
+      id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_INSTALL_DIR: ${{ inputs.install-dir }}
+      run: "$GITHUB_ACTION_PATH/install.sh"

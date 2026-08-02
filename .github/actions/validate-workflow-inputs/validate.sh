@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
 set -euo pipefail
 
 ERRORS=()
 
-# Resolve a value as a string for downstream checks.
-# NOTE: jq's `//` is the "alternative" operator and fires on BOTH null and
-# false. Boolean false / numeric 0 are valid values that callers may pass
-# intentionally, so we must distinguish "missing or null" from "present
-# and falsy". The expression below returns "" ONLY when the key is absent
-# or the value is JSON null; boolean false and numeric 0 round-trip as
-# their string forms ("false" and "0").
+# Resolve a value as a string for downstream checks
 resolve_value() {
   local k="$1"
   echo "$VALUES" | jq -r --arg k "$k" \
