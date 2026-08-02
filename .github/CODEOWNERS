@@ -78,6 +78,19 @@
 # Test suite (tests/bats/*.bats). Cambios aqui son tecnicos.
 /tests/                                      @spark-match/devops
 
+# AGENTS.md es la guia de AI agents + convenciones del repo. Governance doc
+# (ambos equipos deben aprobar cambios que afecten el flujo de contribucion).
+/AGENTS.md                                  @spark-match/devops @spark-match/product-owners
+
+# Git hooks locales (.githooks/pre-commit, commit-msg). Cambios tecnicos.
+/.githooks/                                 @spark-match/devops
+
+# commitlint config (reglas de Conventional Commits). Cambios tecnicos.
+/.commitlintrc.json                         @spark-match/devops
+
+# gitleaks config (reglas de secret scan). Cambios tecnicos sensibles.
+/.gitleaks.toml                             @spark-match/devops
+
 # =============================================================================
 # Configuracion tecnica - DevOps gobierna
 # =============================================================================

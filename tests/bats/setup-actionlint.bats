@@ -58,7 +58,7 @@ setup() {
 }
 
 @test "install.sh: fails with empty install-dir and ::error:: annotation" {
-  INPUT_VERSION="1.7.12"
+  export INPUT_VERSION="1.7.12"
   unset INPUT_INSTALL_DIR
   run bash "$INSTALL_SH"
   [ "$status" -eq 1 ]

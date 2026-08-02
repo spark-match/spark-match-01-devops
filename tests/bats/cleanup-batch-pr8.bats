@@ -6,8 +6,8 @@
 # =============================================================================
 # Locks down:
 #   - defaults.run.shell: bash on every workflow that has a defaults: block
-#   - terraform-destroy.yml has pull-requests: write permission
-#   - terraform-* workflows accept environment-name as alias of environment
+#   - reusable-terraform-destroy.yml has pull-requests: write permission
+#   - reusable-terraform-* workflows accept environment-name as alias of environment
 #   - reconciler.bash no longer tries to load bats-support / bats-assert
 #   - NO workflow has 'shell: bash' inside a workflow_call.inputs block
 #     (regression guard against the PR-174 mistake)
@@ -89,7 +89,7 @@ WORKFLOWS_DIR="$BATS_TEST_DIRNAME/../../.github/workflows"
   fi
 }
 
-@test "terraform-destroy.yml declares pull-requests: write permission" {
+@test "reusable-terraform-destroy.yml declares pull-requests: write permission" {
   # marocchino/sticky-pull-request-comment@v3 (used twice in the workflow)
   # requires pull-requests: write at the job or workflow level.
   local block
@@ -97,60 +97,60 @@ WORKFLOWS_DIR="$BATS_TEST_DIRNAME/../../.github/workflows"
     /^permissions:/ { in_block=1; next }
     in_block && /^[a-z]/ { in_block=0 }
     in_block { print }
-  ' "$WORKFLOWS_DIR/terraform-destroy.yml")
+  ' "$WORKFLOWS_DIR/reusable-terraform-destroy.yml")
   echo "# permissions block: $block"
   echo "$block" | grep -q "pull-requests:[[:space:]]*write"
 }
 
-@test "terraform-destroy.yml uses sticky-pull-request-comment at least once" {
-  grep -q "marocchino/sticky-pull-request-comment" "$WORKFLOWS_DIR/terraform-destroy.yml"
+@test "reusable-terraform-destroy.yml uses sticky-pull-request-comment at least once" {
+  grep -q "marocchino/sticky-pull-request-comment" "$WORKFLOWS_DIR/reusable-terraform-destroy.yml"
 }
 
-@test "terraform-apply.yml declares environment-name input" {
-  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/terraform-apply.yml"
+@test "reusable-terraform-apply.yml declares environment-name input" {
+  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/reusable-terraform-apply.yml"
 }
 
-@test "terraform-destroy.yml declares environment-name input" {
-  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/terraform-destroy.yml"
+@test "reusable-terraform-destroy.yml declares environment-name input" {
+  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/reusable-terraform-destroy.yml"
 }
 
-@test "terraform-plan.yml declares environment-name input" {
-  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/terraform-plan.yml"
+@test "reusable-terraform-plan.yml declares environment-name input" {
+  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/reusable-terraform-plan.yml"
 }
 
-@test "terraform-apply.yml environment input description mentions 'Deprecated alias'" {
+@test "reusable-terraform-apply.yml environment input description mentions 'Deprecated alias'" {
   local desc
   desc=$(awk '
     /^      environment:/ { in_block=1; next }
     in_block && /^      [a-z]/ { exit }
     in_block { print }
-  ' "$WORKFLOWS_DIR/terraform-apply.yml")
+  ' "$WORKFLOWS_DIR/reusable-terraform-apply.yml")
   echo "# desc: $desc"
   [[ "$desc" == *"Deprecated alias"* ]]
 }
 
-@test "terraform-destroy.yml environment input description mentions 'Deprecated alias'" {
+@test "reusable-terraform-destroy.yml environment input description mentions 'Deprecated alias'" {
   local desc
   desc=$(awk '
     /^      environment:/ { in_block=1; next }
     in_block && /^      [a-z]/ { exit }
     in_block { print }
-  ' "$WORKFLOWS_DIR/terraform-destroy.yml")
+  ' "$WORKFLOWS_DIR/reusable-terraform-destroy.yml")
   [[ "$desc" == *"Deprecated alias"* ]]
 }
 
-@test "terraform-plan.yml environment input description mentions 'Deprecated alias'" {
+@test "reusable-terraform-plan.yml environment input description mentions 'Deprecated alias'" {
   local desc
   desc=$(awk '
     /^      environment:/ { in_block=1; next }
     in_block && /^      [a-z]/ { exit }
     in_block { print }
-  ' "$WORKFLOWS_DIR/terraform-plan.yml")
+  ' "$WORKFLOWS_DIR/reusable-terraform-plan.yml")
   [[ "$desc" == *"Deprecated alias"* ]]
 }
 
-@test "terraform-* workflows prefer environment-name over environment" {
-  for wf in terraform-apply.yml terraform-destroy.yml terraform-plan.yml; do
+@test "reusable-terraform-* workflows prefer environment-name over environment" {
+  for wf in reusable-terraform-apply.yml reusable-terraform-destroy.yml reusable-terraform-plan.yml; do
     grep -q 'inputs.environment-name || inputs.environment || inputs.working-directory' "$WORKFLOWS_DIR/$wf" \
       || { echo "# $wf missing the precedence chain"; return 1; }
   done
