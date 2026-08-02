@@ -97,7 +97,7 @@ The catalog repo (`spark-match-01-devops`) is the canonical example of a fully-m
 | Path | Owner(s) | Why |
 |---|---|---|
 | `/README.md`, `/LICENSE`, `/SECURITY.md`, `/CONTRIBUTING.md`, `/CODE_OF_CONDUCT.md`, `/CHANGELOG.md`, `/docs/` | `@devops` + `@product-owners` | Governance / community docs. Double-owned because they encode policy decisions, not just technical content. |
-| `/.github/`, `/scripts/`, `/governance/`, `/examples/`, `/tests/`, `/.yamllint.yml`, `/.gitignore`, `/.shellcheckrc`, `/.release-please-manifest.json` | `@devops` | Technical artifacts. Single-owned because no policy decisions in them. |
+| `/.github/`, `/scripts/`, `/governance/`, `/tests/`, `/.yamllint.yml`, `/.gitignore`, `/.shellcheckrc`, `/.release-please-manifest.json` | `@devops` | Technical artifacts. Single-owned because no policy decisions in them. |
 
 The header comment in the file lists the PRs that introduced each new path so future maintainers can audit why a path exists.
 

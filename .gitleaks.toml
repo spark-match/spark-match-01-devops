@@ -28,16 +28,13 @@ useDefault = true
 # Allowlists: paths / patterns that should NEVER be flagged.
 # -----------------------------------------------------------------------------
 [allowlist]
-description = "Allow docs, examples, and known-fake strings"
+description = "Allow docs and known-fake strings"
 paths = [
   # CHANGELOG.md contains historical references to PRs that are not
   # secrets but gitleaks entropy rules occasionally flag.
   '''CHANGELOG\.md''',
   # Documentation that documents secret formats (not actual secrets).
   '''docs/.*''',
-  # Example payloads shown in workflow comments. These are illustrative,
-  # not real.
-  '''examples/.*\.md$''',
   # Allowlist the gitleaks config itself (contains regex syntax with
   # entropy-bearing escape sequences).
   '''\.gitleaks\.toml$''',
