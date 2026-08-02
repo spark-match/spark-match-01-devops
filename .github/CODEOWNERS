@@ -64,7 +64,7 @@
 # CI/CD reusables, templates, CODEOWNERS, ruleset, actions, PR/issue templates.
 /.github/                                    @spark-match/devops
 
-# Scripts auxiliares (configure-merge-methods.sh, configure-repo-rulesets.sh).
+# Scripts auxiliares (configure-repo-rulesets.sh).
 /scripts/                                    @spark-match/devops
 
 # Docs (GOVERNANCE-STANDARD.md, VERSIONING.md, CACHE.md).

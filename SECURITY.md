@@ -6,7 +6,7 @@ This repository (`spark-match/spark-match-01-devops`) ships:
 
 - **Reusable GitHub Actions workflows** consumed by every other `spark-match/*` repository (lint, Terraform, SAM, deploy, etc.).
 - **Composite actions** (`validate-workflow-inputs`, `run-pytest-with-args`) used inside those workflows.
-- **Operational scripts** (`configure-repo-rulesets.sh`, `configure-merge-methods.sh`) that mutate the org-wide ruleset and merge policy via the GitHub REST API.
+- **Operational scripts** (`configure-repo-rulesets.sh`, `audit-codeowners-ruleset.sh`) that mutate and audit the org-wide ruleset via the GitHub REST API.
 - **Governance artifacts** (`governance/repository-governance.json`, `governance/repository-governance.schema.json`) that declare the desired state of branch protection across the org.
 
 A vulnerability in any of these can compromise every `spark-match/*` repository (CI bypass, secret exfiltration, ruleset mutation, etc.). Treat security issues here with the same urgency as a vulnerability in a consumer repo.

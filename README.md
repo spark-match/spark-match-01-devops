@@ -110,7 +110,6 @@ spark-match-01-devops/
 ├── scripts/                                operational scripts (see scripts/README.md)
 │   ├── README.md                           catalog of scripts
 │   ├── audit-codeowners-ruleset.sh             🔍 audits ruleset for CODE_OWNERS enforcement
-│   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
 ├── tests/                                 bats tests for bash scripts + composite actions
@@ -120,7 +119,6 @@ spark-match-01-devops/
 │   │   │   └── reconciler.bash             gh stub dispatching on URL + HTTP method
 │   │   ├── composite-validate.bats         24 tests for validate-workflow-inputs
 │   │   ├── composite-run-pytest.bats       9 tests for run-pytest-with-args
-│   │   ├── merge-methods.bats              11 tests for configure-merge-methods.sh
 │   │   ├── reconciler-prereqs.bats         10 tests for arg parsing + manifest + gh auth
 │   │   ├── reconciler-payload.bats         9 tests for build_desired_payload jq
 │   │   ├── reconciler-check.bats           11 tests for --check mode
@@ -709,7 +707,7 @@ The `scripts/` directory holds **2 idempotent bash bootstrappers**. Scripts requ
 
 | Script | Type | Purpose | Required by a workflow? |
 |---|---|---|---|
-| [`configure-merge-methods.sh`](scripts/configure-merge-methods.sh) | Bash | Applies squash-only merge policy across every repo in the org (`delete_branch_on_merge=true`, `squash_merge_commit_title=PR_TITLE`, `squash_merge_commit_message=PR_BODY`). | No |
+| [`audit-codeowners-ruleset.sh`](scripts/audit-codeowners-ruleset.sh) | Bash | Audits the ruleset for a given repo against the expected CODE_OWNERS enforcement contract: `require_code_owner_review: true`, `required_approving_review_count >= 1`, `strict_required_status_checks_policy: true`, and a `bypass_actors` inventory. Used to detect drift after the ruleset is edited via the GitHub UI (no YAML schema field for it). | No (manual + CI-friendly) |
 | [`configure-repo-rulesets.sh`](scripts/configure-repo-rulesets.sh) | Bash | Declarative reconciler. Reads `governance/repository-governance.json` and reconciles each repo's ruleset to the desired state. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`. Backs up the current ruleset before any `PUT` and never uses `DELETE` unless `--prune-unexpected` is passed. | No |
 
 See [`scripts/README.md`](scripts/README.md) for per-script usage, full flag list, and the convention for adding new entries.
@@ -757,7 +755,6 @@ The repo ships with **bats tests** that run on every PR via `.github/workflows/q
 | Suite | Count | File | What it covers |
 |---|---|---|---|
 | bats — composite actions | 33 | `tests/bats/composite-validate.bats` (24) + `tests/bats/composite-run-pytest.bats` (9) | Input validation (REQUIRED / ENUM / PATTERN) and pytest arg assembly |
-| bats — merge-methods | 11 | `tests/bats/merge-methods.bats` | `configure-merge-methods.sh`: -F booleans, gh failure propagation, --help exit 0 |
 | bats — reconciler | 52 | `tests/bats/reconciler-{prereqs,payload,check,apply,edge-cases}.bats` | Arg parsing, manifest validation, payload construction (jq), `--check` mode, `--apply` mode with PUT/POST/backup/dry-run, edge cases (team-id cache, CRLF, `--org` override) |
 | bats — release-please | 16 | `tests/bats/release-please-config.bats` | `.github/release-please-config.json` (PR title pattern, header/footer, changelog sections, schema validation, version pin) |
 | bats — workflow hygiene | 12 | `tests/bats/cleanup-batch-pr8.bats` | defaults.run.shell: bash on every workflow; terraform-destroy permissions; environment-name input alias; no `shell: bash` inside workflow_call.inputs |
