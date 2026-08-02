@@ -141,7 +141,7 @@ updates:
         # the more-specific groups above.
 
 # =============================================================================
-# KNOWN LIMITATION: gitleaks.yml depends on the repo secret `GITLEAKS_LICENSE`,
+# KNOWN LIMITATION: reusable-gitleaks.yml depends on the repo secret `GITLEAKS_LICENSE`,
 # but GitHub does NOT forward repo-level secrets to Dependabot contexts (by
 # design - secrets have a tighter blast radius). As a result, every
 # Dependabot-triggered PR fails the gitleaks check with:

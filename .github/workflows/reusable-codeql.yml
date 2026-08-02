@@ -30,7 +30,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     codeql:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/codeql.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-codeql.yml@main
 #       with:
 #         languages: 'javascript,actions'
 #         queries-pack: 'security-extended'

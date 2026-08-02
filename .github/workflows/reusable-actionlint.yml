@@ -9,7 +9,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     actionlint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/actionlint.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-actionlint.yml@main
 #       with:
 #         environment-name: dev   # informational only (job name + logs)
 #

@@ -79,7 +79,7 @@ See the `## Security` section in [README.md](README.md#security) for the full to
 - **Gitleaks custom config**: `.gitleaks.toml` at repo root with custom AWS rules (`aws-account-id`, `aws-role-arn`, `aws-sts-session-token`) and allowlists for `docs/` and `CHANGELOG.md`.
 - **Pre-commit secret scan**: `.githooks/pre-commit` (gitleaks). Enable per clone via `git config core.hooksPath .githooks`. Catches secrets at commit time before they reach CI.
 
-The repo's Free-plan posture is documented inline so future maintainers know why `gitleaks.yml` exists in the catalog and how to upgrade if/when `spark-match` moves to a paid plan.
+The repo's Free-plan posture is documented inline so future maintainers know why `reusable-gitleaks.yml` exists in the catalog and how to upgrade if/when `spark-match` moves to a paid plan.
 
 ### Enabling native GitHub secret scanning (admin task, no code change)
 
