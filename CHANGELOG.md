@@ -20,6 +20,23 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.8](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.7...v0.1.8) (2026-08-02)
+
+
+### Bug Fixes
+
+* **ci:** skip commitlint for release-please branches ([#214](https://github.com/spark-match/spark-match-01-devops/issues/214)) ([befbb4b](https://github.com/spark-match/spark-match-01-devops/commit/befbb4b58f130c68ce2f04f38c1750a599103e6c))
+
+
+### Documentation
+
+* **docs:** redesign agents-md section 1 - purpose and structure ([#213](https://github.com/spark-match/spark-match-01-devops/issues/213)) ([d2c5795](https://github.com/spark-match/spark-match-01-devops/commit/d2c5795c87cdf2b76a0d04dcb95ab72affac94fd))
+
+
+### CI/CD
+
+* **ci:** add codeql config to exclude unpinned-3rd-party-action query ([#211](https://github.com/spark-match/spark-match-01-devops/issues/211)) ([f3f78c5](https://github.com/spark-match/spark-match-01-devops/commit/f3f78c5e5aefc177eaad73b0abdc4d6adf54e74c))
+
 ## [0.1.7](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.6...v0.1.7) (2026-07-30)
 
 
