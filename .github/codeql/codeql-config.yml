@@ -1,0 +1,16 @@
+name: spark-match-01-devops CodeQL config
+
+# Per AGENTS.md §5.1 (policy introduced in PR #210), third-party actions
+# are pinned to floating major tags (@vN, e.g. actions/checkout@v4) or to
+# exact versions (@N.N.N, e.g. ludeeus/action-shellcheck@2.0.0), not to
+# 40-char commit SHAs. CodeQL's `actions/unpinned-3rd-party-action` query
+# flags every non-SHA reference, so we exclude it here to implement the
+# policy decision documented in AGENTS.md and the PR #210 body.
+#
+# New third-party action references added later are still scanned for
+# OTHER rules (expression injection, script injection, untrusted input,
+# etc.) — only this specific rule is suppressed.
+query-filters:
+  - exclude:
+      id: js/actions/unpinned-3rd-party-action
+      reason: "AGENTS.md §5.1 + PR #210 drop-sha-pinning policy"
