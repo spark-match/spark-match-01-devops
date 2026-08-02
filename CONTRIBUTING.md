@@ -157,27 +157,77 @@ CI auto-discovers `tests/bats/*.bats`. No workflow changes needed.
 
 ### Commit messages
 
-Conventional Commits 1.0.0. Required scopes:
+Conventional Commits 1.0.0, enforced by **`commitlint`** in two layers:
+
+1. **CI-side** (canonical): `.github/workflows/commitlint.yml` runs
+   `wagoidhq/commitlint-github-action@v5` on every PR. Reads
+   `.commitlintrc.json` and fails the check if any commit message
+   violates the rules. Uses its own Node runtime — no local install
+   required.
+2. **Local-side** (fast feedback): `.githooks/commit-msg` is a pure-bash
+   duplicate of the CI rules. Catches mistakes **before** push via the
+   standard `core.hooksPath` mechanism.
+
+Both share the same type + scope allowlists; the bats suite
+`tests/bats/commitlint-config.bats` guards against drift between the
+two.
+
+#### Allowed types
+
+`feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `revert`
+
+#### Allowed scopes
 
 | Scope | Used for |
 |---|---|
 | `composite` | composite actions |
-| `ecosystem`, `node`, `python`, `deploy` | reusable workflows by layer |
+| `workflows` | reusable workflows (top-level file) |
+| `ecosystem` / `node` / `deploy` | reusable workflows by layer |
 | `governance` | manifest, schema, reconciler script |
-| `docs` | README, docs/, this file |
+| `scripts` | operational scripts |
+| `docs` | README, `docs/`, this file |
 | `ci` | `.github/workflows/` (this repo's own CI) |
 | `quality` | bats/shellcheck/schema infra |
 | `reconciler` | reconciler script tests |
-| `scripts` | other operational scripts |
+| `repo` | structural repo changes (no catalog) |
 
-Examples:
+Scope is optional — `docs: clarify cache-key v4` is valid.
+
+#### Other rules
+
+- Subject must be lowercase.
+- Subject must NOT end with `.`.
+- Header (full first line) must be `<= 100` characters.
+- The first line must match `<type>[(<scope>)]: <subject>`.
+
+#### Examples that pass
 
 ```
 feat(composite): add regex validator action
 fix(deploy): pin terraform to 1.10.x for compatibility
 test(reconciler): add bats suite for configure-repo-rulesets.sh
 docs(readme): add Quick start and CACHE rate limits
+docs: clarify cache-key v4
 ```
+
+#### Local hook activation
+
+```bash
+git config core.hooksPath .githooks    # once per clone
+```
+
+After this, every `git commit` runs `.githooks/commit-msg` before the
+commit object is created. To bypass for a specific commit (rare; usually wrong):
+
+```bash
+git commit --no-verify
+```
+
+#### Skipping the rule temporarily
+
+If the CI check legitimately needs a waiver (e.g. squash-merged PR
+with rewrites), use `--no-verify` on **amend** commits OR rewrite the
+message in the merge form. Never merge a PR with red commitlint.
 
 ## Pull request workflow
 
@@ -218,7 +268,7 @@ docs(readme): add Quick start and CACHE rate limits
 
    **Mandatory flags**: `--assignee ahincho` and at least one `--label` (per the conventional-commit type). See the opencode `gh-pr-create` skill for the full convention.
 
-7. **Wait for CI** (actionlint + gitleaks + yamllint + quality/bats + quality/shellcheck + quality/manifest-schema + CodeQL). All checks must be green before merge.
+7. **Wait for CI** (actionlint + commitlint + gitleaks + yamllint + quality/bats + quality/shellcheck + quality/manifest-schema + CodeQL). All checks must be green before merge.
 
 8. **Wait for CODE OWNERS review**. The ruleset requires `require_code_owner_review: true`. Self-approval is impossible — if you are the sole owner, ask another team member.
 
