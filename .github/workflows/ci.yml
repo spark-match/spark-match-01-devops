@@ -24,10 +24,9 @@
 # available to external repos via
 #   spark-match/spark-match-01-devops/.github/workflows/<name>.yml@main
 #
-# Other layers (node/eslint, deploy/container-deploy-ecr, deploy/terraform-*,
-# python/python-ci, etc.) are NOT exercised here since the devops repo
-# itself has no Node project, Python package, or Terraform module to lint. They
-# are validated directly by the consumer repos.
+# Other layers (node/eslint, deploy/terraform-*) are NOT exercised here
+# since the devops repo itself has no Node project or Terraform module to
+# lint. They are validated directly by the consumer repos.
 # =============================================================================
 
 name: CI - Lint & Security

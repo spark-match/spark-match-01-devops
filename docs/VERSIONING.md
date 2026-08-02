@@ -57,12 +57,8 @@ Estructura actual bajo `.github/workflows/`:
 +-- yamllint.yml                 # Atomic (ecosystem): YAML files
 +-- terraform-validate.yml       # Atomic (ecosystem): terraform init -backend=false + validate
 +-- tflint.yml                   # Atomic (ecosystem): tflint --recursive
-+-- checkov.yml                  # Atomic (ecosystem): checkov SCA
-+-- trivy.yml                    # Atomic (ecosystem): Trivy fs/image/config scan (SHA-pinned v0.36.0)
 +-- sbom-release.yml             # Internal: CycloneDX SBOM attached to GitHub Release on release:published (anchore/sbom-action v0.17.7)
 +-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
-+-- python-ci.yml                # Atomic (python): uv + ruff + mypy + pytest (or-cog-agent, otros proyectos Python uv-based)
-+-- container-deploy-ecr.yml     # Atomic (deploy): docker buildx + ECR push (or-cog-agent, otros proyectos container-based)
 +-- migrations-dry-run.yml       # Atomic (ecosystem): node-pg-migrate --dry-run contra Postgres service container
 +-- latex-build.yml              # Atomic (article-side): latexmk → PDF
 +-- latex-release.yml            # Atomic (article-side): release of compiled PDF
@@ -78,57 +74,23 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
 
 ### Reglas del catalogo
 
-- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `actionlint.yml` + `python-ci.yml` sin tomar `yamllint.yml` o `eslint.yml`.
+- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `actionlint.yml` + `eslint.yml` sin tomar `yamllint.yml`.
 - **Secrets solo en recipes de deploy.** Las recipes de ecosystem y node no reciben secrets (checks de codigo estatico puro).
 - **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (ahincho/orion-backend -> spark-match).
 - **Pin de herramientas externas.** actionlint v1.7.7, yamllint 1.35.1, eslint version parametrizable via input, terraform version parametrizable via input, sam-cli version parametrizable via input.
-
-### Cache semantics (per-environment + per-Python-version)
-
-A partir del recipe `python-ci.yml` v3.1, las dependencias gestionadas por
-`uv` se cachean en GH Actions con una clave **compuesta**:
-
-```
-cache-key = setup-uv-ubuntu-latest-<cache-suffix>-<hash(pyproject+uv.lock)>
-```
-
-donde `<cache-suffix>` se deriva por defecto de
-`environment-name` + `python-versions`. Esto garantiza tres
-aislamientos:
-
-| Dimension | Mecanismo | Razon |
-|---|---|---|
-| **per-ambiente** | `cache-suffix` incluye `environment-name` | `ci`, `dev`, `prod` no comparten cache aunque lockfiles colisionen (e.g. `--group bedrock` vs `--group market`) |
-| **per-Python-version** | (a) `cache-suffix` incluye `python-versions` + (b) cada matrix leg es un job GH Actions separado | un caller que valida `python-versions: '"3.11","3.12"'` no envenena la cache de un pin `3.12`-only |
-| **per-proyecto** | `cache-dependency-glob` hashea `pyproject.toml` + `uv.lock` | monorepos con multiples `working-directory` no comparten |
-
-**Override:** un caller puede pasar `cache-suffix` explicitamente
-(e.g. `'${{ inputs.environment-name }}-${{ inputs.python-versions }}-${{ github.run_id }}'`)
-si quiere purga cache en cada run (raro; casi siempre no se necesita).
-
-**Backward compatibility:** recipes con un solo `python-version` y un
-solo `environment-name` ven `cache-suffix` igual al hash anterior. Los
-callers existentes no requieren cambios.
-
-> Ver tambien: `docs/PYTHON-CI.md` § 4 ("Cache key formula") para la
-> referencia canonica del recipe `python-ci.yml`, y `docs/CACHE.md` § 1
-> para la convencion cross-ecosystem (node, terraform, etc.).
 
 ### Como prueba de cambios
 
 1. `ci.yml` corre los 3 ecosystem recipes (actionlint, gitleaks, yamllint)
    sobre este repo en cada PR. Detecta regresiones de lint/secret/yaml-format
-   en el catalog mismo, pero **no** ejecuta los reusables de `python/`,
-   `node/` ni `deploy/` — este repo no tiene proyecto Node, SAM, Python ni
-   Terraform donde correrlos.
+   en el catalog mismo, pero **no** ejecuta los reusables de `node/` ni
+   `deploy/` — este repo no tiene proyecto Node ni Terraform donde correrlos.
 2. Cada recipe se valida cuando un caller repo la invoca desde su propio
    PR contra `main`. Mapeo canonico (todos los callers usan `@main`):
-   - `python-ci.yml`: `orion-cognitive-agent` (caller canonico de produccion)
    - `eslint.yml`, `node-test.yml`: `orion-frontend`
-   - `container-deploy-ecr.yml`: `orion-cognitive-agent`
    - `terraform-plan.yml`, `terraform-apply.yml`, y los ecosystem
      recipes de Terraform (`terraform-validate`,
-     `tflint`, `checkov`): `orion-infrastructure`
+     `tflint`): `orion-infrastructure`
    - `latex-build.yml`, `latex-release.yml`: `spark-match-07-article`
    - `actionlint.yml`, `gitleaks.yml`, `yamllint.yml`:
      `ci.yml` local (ver punto 1)

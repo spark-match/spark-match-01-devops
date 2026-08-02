@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Spark Match
 # =============================================================================
 # workflow-env-isolation.bats - repo-wide regression guards against the
-# code-injection anti-pattern that PR-G2 (trivy.yml) and this cleanup PR
+# code-injection anti-pattern that PR-G2 and this cleanup PR
 # (quality.yml + release-please.yml) closed.
 #
 # Rule: NO `run:` block in any workflow may interpolate ${{ inputs.* }},

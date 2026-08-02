@@ -37,12 +37,11 @@ body:
         - Composite action
         - Ecosystem workflow (actionlint, gitleaks, yamllint, etc.)
         - Node workflow (eslint, node-test, node-build, etc.)
-        - Python workflow (python-ci)
-        - Deploy workflow (Angular SPA, SAM, ECR, Terraform)
+        - Deploy workflow (Terraform)
         - Operational script (configure-repo-rulesets.sh, etc.)
         - Governance artifact (manifest, schema, CODEOWNERS)
         - Documentation (README, docs/, CONTRIBUTING, etc.)
-        - Tests (bats / pytest infra)
+        - Tests (bats infra)
         - Other / not sure
     validations:
       required: true

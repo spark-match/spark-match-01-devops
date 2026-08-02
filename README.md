@@ -8,8 +8,7 @@ Pick the path that matches what you need:
 
 | You want to… | Do this |
 |---|---|
-| **Run your Python project's QA pipeline** | Call `python-ci.yml` ([Catalog → python](#python)) |
-| **Deploy an SPA / ECR image / Terraform** | Call one of the [deploy recipes](#deploy) with OIDC + a GitHub Environment |
+| **Deploy a Terraform stack** | Call `terraform-plan.yml` / `terraform-apply.yml` / `terraform-destroy.yml` with OIDC + a GitHub Environment |
 | **Apply the org ruleset to a new repo** | Add an entry to `governance/repository-governance.json`, then `./scripts/configure-repo-rulesets.sh --apply --repos <name>` ([Governance](#governance)) |
 | **Add a new reusable workflow** | See [Contributing → adding a recipe](#adding-a-reusable-workflow-or-composite-action) |
 | **Run the tests locally before pushing** | See [Testing](#testing) |
@@ -23,8 +22,7 @@ The catalog has **six layers**, each defined by what it inspects or mutates:
 | **composite actions** | `.github/actions/<name>/action.yml` | varies | Atomic, single-purpose primitives reusable across many recipes (input validators, runners) |
 | **ecosystem workflows** | `.github/workflows/<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, sonar-*, etc.) |
 | **node workflows** | `.github/workflows/<node>.yml` | none | npm-based quality gates (eslint, typecheck, test, build) |
-| **python workflows** | `.github/workflows/<python>.yml` | none | uv + ruff + mypy + pytest + bandit + pip-audit |
-| **deploy workflows** | `.github/workflows/<deploy>.yml` | OIDC role per GH Environment | Production deploys (ECR, Terraform) |
+| **deploy workflows** | `.github/workflows/<deploy>.yml` | OIDC role per GH Environment | Production deploys (Terraform) |
 | **governance** | `governance/` + `scripts/configure-repo-rulesets.sh` | `gh` admin scope | Declarative state for the org ruleset + idempotent reconciler |
 
 Every recipe (workflow and composite action) accepts an `environment-name` input. It is informational in ecosystem, node, python, and composite layers (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the OIDC role secret there).
@@ -78,7 +76,6 @@ spark-match-01-devops/
 │       ├── yamllint.yml                     YAML files (uses caller's .yamllint.yml)
 │       ├── terraform-validate.yml           per-module init+validate (no backend)
 │       ├── tflint.yml                       recursive tflint
-│       ├── checkov.yml                      static analysis on Terraform
 │       ├── sonar-terraform.yml              SonarCloud Terraform analysis
 │       ├── sonar-typescript.yml             SonarCloud TypeScript analysis
 │       │
@@ -88,11 +85,7 @@ spark-match-01-devops/
 │       ├── node-typecheck.yml               `npm run <typecheck-script>` with cache
 │       ├── node-build.yml                   `npm run <build-script>` with cache
 │       │
-│       │ ─── catalog: python (uv, no caller secrets) ─────────────────────
-│       ├── python-ci.yml                    uv + ruff + mypy + pytest + bandit + pip-audit
-│       │
 │       │ ─── catalog: deploy (AWS OIDC, caller-scoped secrets) ──────────
-│       ├── container-deploy-ecr.yml         Dockerfile -> ECR (linux/arm64 default)
 │       ├── migrations-dry-run.yml           migration dry-run against ephemeral Postgres (read-only)
 │       ├── terraform-plan.yml               `terraform plan` per env + sticky PR comment
 │       ├── terraform-apply.yml              `terraform apply`, optional drift-only mode
@@ -108,14 +101,12 @@ spark-match-01-devops/
 ├── docs/
 │   ├── CACHE.md                            canonical cache-key convention v4 + rate-limit guidance
 │   ├── GOVERNANCE-STANDARD.md              org-wide ruleset + CODEOWNERS standard
-│   ├── PYTHON-CI.md                        spec for python-ci.yml (19 inputs + design notes)
 │   └── VERSIONING.md                       pin-by-environment rules and conventions
 │
 ├── examples/
 │   ├── README.md                           index + scope ("when to use" + "out of scope")
 │   └── caller-minimal/                     minimal-but-realistic caller workflows
 │       ├── README.md                       index + 6 cross-cutting conventions
-│       ├── python-ci/                      uses python-ci.yml
 │       ├── node-ci/                         uses gitleaks + eslint + node-test + node-build
 │       └── terraform-ci/                    uses terraform-validate + tflint + plan
 │
@@ -235,7 +226,6 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | `yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
 | `terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
 | `tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
-| `checkov.yml`           | Static analysis with checkov (pinned 3.2.415), terraform framework, hard-fail | — |
 
 #### `actionlint.yml`
 
@@ -357,74 +347,6 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/tflint.yml@main
     with:
       environment-name: dev
-```
-
-#### `checkov.yml`
-
-Runs `checkov --directory . --framework terraform --compact` against the caller's Terraform code. Hard-fail mode: callers justify each skip inline with `# checkov:skip=CKV_AWS_XX:reason` next to the offending resource. Pinned to checkov `3.2.415` for reproducible output (discipline established in `orion-infrastructure`).
-
-Discipline:
-
-- Findings must be fixed in the resource, OR
-- Findings must be skipped inline with a written justification.
-
-Inputs:
-
-| Input        | Type   | Default | Notes                                                |
-|--------------|--------|---------|------------------------------------------------------|
-| environment-name | string | `dev` | Informational only. |
-| checkov-version | string | `3.2.415` | X.Y.Z format. Pin for reproducible lint output. |
-| working-directory | string | `.` | Checkov scan root. |
-
-Usage:
-
-```yaml
-jobs:
-  checkov:
-    uses: spark-match/spark-match-01-devops/.github/workflows/checkov.yml@main
-    with:
-      environment-name: dev
-```
-
-#### `trivy.yml`
-
-Runs [Aqua Trivy](https://github.com/aquasecurity/trivy) against the caller's repo. Three scan modes: `fs` (filesystem — Dockerfile misconfig, lockfile CVEs, IaC misconfig, secrets), `image` (container image — OS pkg vulns, library vulns), and `config` (IaC config scan). Defaults to `severity: CRITICAL` so the workflow fails only on the most severe findings; callers can tighten with `severity: CRITICAL,HIGH`. `aquasecurity/trivy-action` SHA-pinned to `ed142fd` (v0.36.0).
-
-Inputs:
-
-| Input | Type | Default | Notes |
-|---|---|---|---|
-| `scan-type` | string | `fs` | `fs`, `image`, or `config`. |
-| `scan-ref` | string | `.` | Path to scan when `scan-type` is `fs` or `config`. |
-| `image-ref` | string | `''` | Container image ref when `scan-type=image` (e.g. `my-org/my-app:${{ github.sha }}` or a full ECR URI). |
-| `severity` | string | `CRITICAL` | Comma-separated list. Trivy fails when issues at or above these levels are found. |
-| `format` | string | `table` | `table` for humans or `sarif` to upload to GitHub Security tab. |
-| `exit-code` | string | `1` | Trivy exit code on findings. |
-| `ignore-unfixed` | boolean | `true` | Skip vulns without an upstream fix. |
-| `timeout` | string | `5m0s` | Scan timeout. |
-| `scanners` | string | `vuln,secret,misconfig` | Comma-separated scanner list. |
-
-Usage (filesystem scan):
-
-```yaml
-jobs:
-  trivy:
-    uses: spark-match/spark-match-01-devops/.github/workflows/trivy.yml@main
-    with:
-      scan-type: fs
-```
-
-Usage (image scan against a pushed ECR image):
-
-```yaml
-jobs:
-  trivy:
-    uses: spark-match/spark-match-01-devops/.github/workflows/trivy.yml@main
-    with:
-      scan-type: image
-      image-ref: ${{ steps.deploy.outputs.registry }}/my-repo:${{ github.sha }}
-      severity: CRITICAL,HIGH
-      format: sarif
 ```
 
 #### `sbom-release.yml`
@@ -571,113 +493,7 @@ jobs:
       # pre-build-script optional (Angular: 'prebuild')
 ```
 
-### python
-
-#### `python-ci.yml`
-
-Runs a Python project's QA pipeline using `uv` for dependency management, then `ruff` + `mypy` + `pytest` for static analysis + tests, plus optional `bandit` (security lint) and `pip-audit` (dependency vulnerability scan). Designed for projects that pin Python in `.python-version` and lock via `uv.lock`. The recipe is GENERIC: it does not assume a specific project layout beyond `pyproject.toml` + `uv.lock` in `working-directory`.
-
-Each step is gated by an entry in the CSV `commands` input, so callers can opt into any subset (e.g. skip `mypy` on a legacy codebase, or skip `coverage:upload` if the project doesn't generate coverage). Defaults run the full QA set + upload coverage as an artifact.
-
-The recipe has **19 inputs**; the table below covers the inputs most callers actually override. For the full input catalog (sync flags, cache key, timeout, etc.) see [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 3.
-
-Inputs:
-
-| Input        | Type   | Default | Notes |
-|--------------|--------|---------|-------|
-| environment-name | string | — (required) | Used as job name + optional GH Environment gate. |
-| working-directory | string | `.` | Where `pyproject.toml` + `uv.lock` live. |
-| runs-on | string | `ubuntu-latest` | Caller can pin to a larger runner (`ubuntu-4cpu-8gb-ephemeral`) for heavy matrix. |
-| commands | string | `lint:ruff-format,lint:ruff-check,typecheck:mypy,test:pytest,coverage:upload` | CSV; valid steps: `lint:ruff-format`, `lint:ruff-check`, `lint:bandit`, `lock:check`, `typecheck:mypy`, `test:pytest`, `coverage:upload`, `security:pip-audit`, `none` (manual-mode only). |
-| sync-mode | string | `full` | Dependency installation scope. One of: `full` (all groups; default), `runtime-only` (skip `--group` to install only the `[project]` deps), `lint-only` (install only the `lint` group; useful for fast lint loops without runtime deps). See [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 3.4 (Sprint C). |
-| dependency-groups | string | `dev` | Passed to `uv sync --group` (space-separated, only when `sync-mode=full`). Use `dev bedrock` to also enable a `bedrock` group. |
-| lock-check | bool | `false` | When `true`, verifies `uv.lock` is coherent with `pyproject.toml` before running tools. |
-| frozen | bool | `false` | When `true`, prevents `uv sync` from regenerating `uv.lock` (caller is expected to have already promoted the lockfile). |
-| ruff-targets | string | `src tests` | CSV of paths for `ruff format/check`. |
-| mypy-targets | string | `src` | CSV of paths for `mypy`. |
-| pytest-targets | string | `tests` | Path for `pytest`. |
-| pytest-args | string | `''` | Extra args appended to `pytest`. |
-| coverage-output | string | `coverage.xml` | Artifact path uploaded (when `coverage:upload` is in `commands`). |
-| coverage-threshold | number | `''` | Min coverage % to gate on; CI fails below this threshold. Empty = no threshold. |
-| permissions-write | bool | `false` | When `true`, the job grants `pull-requests: write` so the sticky PR coverage comment step can post. The default `false` is strictly read-only. |
-| cache-suffix | string | `''` | Extra segment appended to the `actions/cache` key; useful when callers need to bust the cache on a parameter change. |
-| setup-uv-version | string | `latest` | uv version pinned via `astral-sh/setup-uv@v7`. |
-| timeout-minutes | number | `20` | Job-level timeout. |
-| fail-fast | bool | `false` | Set `true` on the matrix to abort on first failure. |
-
-Required secrets: none (ecosystem-style, no AWS). The sticky coverage comment step requires `permissions: pull-requests: write` on the caller if `permissions-write` is not passed.
-
-Usage (typical orion-cognitive-agent layout — both `dev` and `bedrock` groups, with security scan):
-
-```yaml
-jobs:
-  python-ci:
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
-    with:
-      environment-name: ci
-      working-directory: '.'
-      dependency-groups: 'dev bedrock'
-      commands: lint:ruff-format,lint:ruff-check,lint:bandit,lock:check,typecheck:mypy,test:pytest,coverage:upload,security:pip-audit
-```
-
-Usage (single-version matrix, fast lint-only loop):
-
-```yaml
-jobs:
-  python-ci:
-    uses: spark-match/spark-match-01-devops/.github/workflows/python-ci.yml@main
-    with:
-      environment-name: ci
-      sync-mode: lint-only
-      commands: lint:ruff-format,lint:ruff-check
-      dependency-groups: lint
-```
-
-For multi-version matrix (when the cross-owner GHA bug is resolved upstream), pass `python-versions: '"3.11","3.12"'`. Today the recipe hardcodes `python-version: ["3.12"]` on the matrix; see [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8.1.
-
 ### deploy
-
-#### `container-deploy-ecr.yml`
-
-Builds a Dockerfile via `docker buildx` and pushes the resulting image to an existing Amazon ECR repository. The caller is responsible for provisioning the ECR repository via Terraform (no `ecr create-repository` here) and for holding the deploy-role OIDC trust policy. Designed for `orion-cognitive-agent` today, but reusable for any project that pushes a container image to a pre-existing ECR repository. Default platform is `linux/arm64` (Bedrock AgentCore contract); override with `amd64` if needed.
-
-The recipe does NOT create the ECR repository. It expects the caller to pass a `ecr-repository` name that already exists with proper ECR pull/push policies.
-
-Inputs:
-
-| Input        | Type   | Default | Notes |
-|--------------|--------|---------|-------|
-| environment-name | string | — (required) | GH Environment gate + job name + concurrency key. |
-| aws-region | string | `us-east-1` | ECR repository region. |
-| ecr-repository | string | — (required) | ECR repository name (no registry prefix). Must match `^[a-z0-9][a-z0-9_-]{0,254}$`. |
-| dockerfile-path | string | `Dockerfile` | Path to the Dockerfile relative to repo root. |
-| context-path | string | `.` | Build context relative to repo root. |
-| platforms | string | `linux/arm64` | Comma-separated `docker buildx` platforms. Use `linux/amd64` for x86_64 deploys. |
-| image-tags-input | string | `latest,__GITHUB_SHA_SHORT__` | Comma-separated tag list; `__GITHUB_SHA_SHORT__` expands to the first 7 chars of `${{ github.sha }}`. |
-| cache-scope | string | `container-dev` | GHA cache key segment (`cache-from type=gha,scope=<scope>`). Lets multiple recipes coexist on the same runner without cross-contamination. |
-| provenance | boolean | `true` | `provenance:` flag for `docker build-push-action`. Default `true` so every image carries a SLSA Build Level 3 provenance attestation. Override to `false` only for ad-hoc dev builds where attestation cost outweighs audit value. |
-| sbom | boolean | `true` | `sbom:` flag for `docker build-push-action`. Default `true`; emits an SPDX SBOM attestation alongside the provenance. Override to `false` only for ad-hoc dev builds. |
-| cosign-sign | boolean | `false` | After build-push, sign every pushed tag with Sigstore cosign keyless via GitHub OIDC + Fulcio. Opt-in because production secrets must not be re-tagged with a new signature on every build. Requires `id-token: write` (already declared at workflow level). |
-| extra-buildx-args | string | `''` | Raw extra args passed through. Rarely needed. |
-
-Required secrets (caller-side, scoped to the GitHub Environment):
-
-- `AWS_DEPLOY_ROLE_ARN` — IAM role with trust policy for `token.actions.githubusercontent.com`, `sub` restricted to `repo:<owner>/<caller>:ref:refs/heads/main`, and permissions for `ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, and `sts:GetCallerIdentity`. The `module.iam_orion_agent_core_deploy` Terraform module in `orion-infrastructure` produces exactly this shape.
-
-Usage (typical orion-cognitive-agent):
-
-```yaml
-jobs:
-  deploy-dev:
-    uses: spark-match/spark-match-01-devops/.github/workflows/container-deploy-ecr.yml@main
-    with:
-      environment-name: dev
-      ecr-repository: orion-agent-core-dev
-    secrets:
-      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-```
-
-The caller workflow must also declare `id-token: write` at the workflow or job level (GitHub mints the OIDC JWT from the caller's permissions context).
 
 #### `terraform-plan.yml`
 
@@ -836,7 +652,7 @@ Required secrets: none. Pure CLI check against a throwaway Postgres service cont
 
 These three workflows are **not** part of the consumer-facing catalog; they only run on this repo itself:
 
-- `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`actionlint`, `gitleaks`, `yamllint`, `quality`) against this repository so a broken recipe is caught here before consumers break. The python/node/deploy recipes (`python-ci`, `eslint`, `node-test`, `container-deploy-ecr`, `terraform-plan`, `terraform-apply`, `terraform-destroy`) are NOT exercised here because this repo has no Node project, Python package, or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
+- `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`actionlint`, `gitleaks`, `yamllint`, `quality`) against this repository so a broken recipe is caught here before consumers break. The node/deploy recipes (`eslint`, `node-test`, `terraform-plan`, `terraform-apply`, `terraform-destroy`) are NOT exercised here because this repo has no Node project or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
 - `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
 - `release-please.yml` — release-please automation. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
 
@@ -850,7 +666,7 @@ See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 - No SemVer in the short term. Breaking changes are communicated by PR + release notes; consumer repos update their pin as part of their normal cadence.
 - All deploy recipes use the **same secret-name convention** (e.g. `AWS_DEPLOY_ROLE_ARN`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN`) so cross-owner callers can pass them explicitly and bypass the `secrets: inherit` block GitHub applies between different owners.
 - The org uses a **single-branch model** (`main`-only) since 2026-Q3. There is no `dev` branch and no promotion step. See [Contributing → Workflow](#workflow) for the PR-driven flow.
-- Current catalog: cache-key convention **v4** is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog and [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8 for the `python-ci.yml` recipe-specific history.
+- Current catalog: cache-key convention **v4** is the most recent explicit version bump. Since v4 the catalog has grown additively via Sprints A/B/C/D — see [`docs/VERSIONING.md`](docs/VERSIONING.md) for the changelog.
 
 ## Cache key convention
 
