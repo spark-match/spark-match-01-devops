@@ -24,99 +24,56 @@ permissions:
 
 jobs:
   shellcheck:
-    name: "shellcheck (${{ inputs.environment-name }})"
+    name: "shellcheck-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Validate Inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}", "shellcheck-severity": "${{ inputs.shellcheck-severity }}"}
           enums: |
             {"shellcheck-severity": ["warning", "error", "info", "style"]}
-      - name: Checkout Caller Repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
-      - name: Run Shellcheck
+      - name: run-shellcheck
         uses: ludeeus/action-shellcheck@2.0.0
         with:
           additional_files: "scripts .github/actions tests/bats/helpers"
           severity: ${{ inputs.shellcheck-severity }}
           ignore_paths: 'tests/bats'
-
   manifest-schema:
-    name: "manifest schema (${{ inputs.environment-name }})"
+    name: "manifest-schema-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Validate Inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}", "schema-strict": "${{ inputs.schema-strict }}"}
           enums: |
             {}
-      - name: Checkout Caller Repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
-      - name: Set Up Python
+      - name: setup-python
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-      - name: Install Check JSON Schema
+      - name: install-check-json-schema
         run: pip install --quiet check-jsonschema==0.30.0
-      - name: Validate Manifest Schema
+      - name: validate-manifest-schema
         run: |
           check-jsonschema \
             --schemafile governance/repository-governance.schema.json \
             governance/repository-governance.json
   bats:
-    name: "bats (${{ inputs.environment-name }})"
+    name: "bats-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: false
     steps:
-      - name: Checkout Caller Repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
-      - name: Set Up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.14'
-      - name: Install Bats
-        run: |
-          set -euo pipefail
-          BATS_VERSION="1.11.1"
-          TMP_DIR="$(mktemp -d)"
-          curl -fsSL "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" \
-            -o "${TMP_DIR}/bats.tar.gz"
-          tar -xzf "${TMP_DIR}/bats.tar.gz" -C "${TMP_DIR}"
-          sudo "${TMP_DIR}/bats-core-${BATS_VERSION}/install.sh" /usr/local
-          bats --version
-      - name: Discover Bats Files
-        id: discover
-        run: |
-          set -euo pipefail
-          mapfile -t BATS_FILES < <(find tests/bats -maxdepth 1 -type f -name '*.bats' | sort)
-          echo "bats_count=${#BATS_FILES[@]}"
-          if [ "${#BATS_FILES[@]}" -gt 0 ]; then
-            echo "files<<EOF"
-            printf '%s\n' "${BATS_FILES[@]}"
-            echo "EOF"
-          else
-            echo "files=" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Run Bats Tests
-        if: steps.discover.outputs.bats_count > 0
-        env:
-          DISCOVER_FILES: ${{ steps.discover.outputs.files }}
-        run: |
-          set -euo pipefail
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            echo "::group::$f"
-            bats "$f"
-            echo "::endgroup::"
-          done <<< "${DISCOVER_FILES}"
-      - name: Skip Notice
-        if: steps.discover.outputs.bats_count == 0
-        run: |
-          echo "::notice::No .bats files in tests/bats/. Job lands in PR #3 (composite actions) and PR #4 (reconciler)."
+      - name: run-bats-tests
+        uses: ./.github/actions/bats-runner

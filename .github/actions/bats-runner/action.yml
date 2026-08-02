@@ -1,0 +1,48 @@
+name: bats-runner
+description: 'Install bats-core, discover *.bats files, and run each one with grouped output'
+inputs:
+  bats-version:
+    description: 'bats-core semver to install (e.g. 1.11.1)'
+    default: '1.11.1'
+    required: false
+  bats-dir:
+    description: 'Directory containing *.bats files (recursive depth 1)'
+    default: 'tests/bats'
+    required: false
+outputs:
+  count:
+    description: 'Number of *.bats files discovered'
+    value: ${{ steps.discover.outputs.count }}
+  files:
+    description: 'Newline-separated list of discovered bats files'
+    value: ${{ steps.discover.outputs.files }}
+runs:
+  using: composite
+  steps:
+    - name: install-bats
+      shell: bash
+      env:
+        BATS_VERSION: ${{ inputs.bats-version }}
+      run: "$GITHUB_ACTION_PATH/install.sh"
+
+    - name: discover-bats-files
+      id: discover
+      shell: bash
+      env:
+        BATS_DIR: ${{ inputs.bats-dir }}
+      run: "$GITHUB_ACTION_PATH/discover.sh"
+
+    - name: run-bats-tests
+      if: steps.discover.outputs.count > 0
+      shell: bash
+      env:
+        DISCOVER_FILES: ${{ steps.discover.outputs.files }}
+      run: "$GITHUB_ACTION_PATH/run.sh"
+
+    - name: skip-notice
+      if: steps.discover.outputs.count == 0
+      shell: bash
+      env:
+        BATS_DIR: ${{ inputs.bats-dir }}
+      run: |
+        echo "::notice::No .bats files in ${BATS_DIR}. Job lands in PR #3 (composite actions) and PR #4 (reconciler)."

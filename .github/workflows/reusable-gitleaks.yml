@@ -18,20 +18,20 @@ permissions:
 
 jobs:
   gitleaks:
-    name: "gitleaks (${{ inputs.environment-name }})"
+    name: "gitleaks-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Validate Inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}"}
-      - name: Checkout Caller Repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Run Gitleaks
+      - name: run-gitleaks
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

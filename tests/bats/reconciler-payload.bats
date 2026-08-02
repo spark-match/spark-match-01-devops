@@ -67,12 +67,18 @@ teardown() {
   [[ "$(echo "$pr" | jq -c '.parameters.allowed_merge_methods')" == '["squash"]' ]]
 }
 
-@test "payload: required_reviewers[0] uses tonumber(team_id) as reviewer_id" {
+@test "payload: required_reviewers is omitted (intentional; see PR #200)" {
+  # As of PR #200 (commit 1f1a03c), the required_reviewers field is intentionally
+  # OMITTED from build_desired_payload. Reasons:
+  #   - GitHub Free plan rejects non-empty values with 422.
+  #   - GitHub API PUT does field-level merge (omitting leaves stale values
+  #     in live rulesets, which canonical_diff strips before comparison).
+  #   - Team-based review is enforced via CODEOWNERS + require_code_owner_review.
+  # See the comment block in build_desired_payload() in
+  # scripts/configure-repo-rulesets.sh for the full rationale.
   payload=$(build_desired_payload "spark-match-foo" "12345")
-  reviewer_id=$(echo "$payload" | jq -r '.rules[0].parameters.required_reviewers[0].reviewer_id')
-  [[ "$reviewer_id" == "12345" ]]
-  [[ "$(echo "$payload" | jq -r '.rules[0].parameters.required_reviewers[0].reviewer_type')" == "Team" ]]
-  [[ "$(echo "$payload" | jq -c '.rules[0].parameters.required_reviewers[0].file_patterns')" == '["**"]' ]]
+  reviewer_id=$(echo "$payload" | jq -r '.rules[0].parameters.required_reviewers[0].reviewer_id // "absent"')
+  [[ "$reviewer_id" == "absent" ]]
 }
 
 # -----------------------------------------------------------------------------

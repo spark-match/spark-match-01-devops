@@ -137,10 +137,10 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
 
 @test "commitlint-config: hook rejects a non-allowlisted scope" {
   run bash -c '
-    echo -e "chore(not-a-real-scope): subject" | "'"$HOOK"'" /dev/stdin
+    echo -e "chore(garbage): subject" | "'"$HOOK"'" /dev/stdin
   '
   [ "$status" -ne 0 ]
-  [[ "$output" == *"scope 'not-a-real-scope' not in allowlist"* ]]
+  [[ "$output" == *"scope 'garbage' not in allowlist"* ]]
 }
 
 @test "commitlint-config: hook accepts type without scope (e.g. 'docs: subject')" {
