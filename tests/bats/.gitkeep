@@ -12,13 +12,6 @@
 #       reconciler-teams.bats       # PR #4: team slug resolution
 #       reconciler-backup.bats      # PR #4: backup + restore round-trip
 #       reconciler-edges.bats       # PR #4: edge cases (missing team, bad manifest)
-#     python/
-#       test_lambda_permission_source_arn.py   # PR #2
-#     fixtures/
-#       manifest-valid.json
-#       manifest-missing-team.json
-#       sam-template-valid.yaml
-#       sam-template-missing-sourcearn.yaml
 #
 # Runner: bats-core 1.10+ via bats-core/bats-action
 # Mocking: stub functions in `tests/bats/helpers/` (created per-PR)

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: Quality - shellcheck, manifest schema, bats, pytest
+# Reusable Workflow: Quality - shellcheck, manifest schema, bats
 # =============================================================================
 # Atomic recipe (ecosystem layer). Runs the static and dynamic quality gates
 # for this catalog repo:
@@ -10,10 +10,9 @@
 #   2. JSON Schema validation of governance/repository-governance.json against
 #      governance/repository-governance.schema.json (via check-jsonschema)
 #   3. bats-core on tests/bats/*.bats (lands in PR #3, PR #4)
-#   4. pytest on tests/python/*.py (lands in PR #2)
 #
-# Steps 3 and 4 are no-ops until the corresponding tests exist; the runner
-# gracefully skips empty directories.
+# Step 3 is a no-op until the corresponding tests exist; the runner
+# gracefully skips an empty `tests/bats/` directory.
 #
 # USAGE (in caller repo):
 #   jobs:
@@ -99,9 +98,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install pytest
-        run: pip install --quiet pytest==9.1.1
-
       - name: Install check-jsonschema
         run: pip install --quiet check-jsonschema==0.30.0
 
@@ -176,53 +172,3 @@ jobs:
         if: steps.discover.outputs.bats_count == 0
         run: |
           echo "::notice::No .bats files in tests/bats/. Job lands in PR #3 (composite actions) and PR #4 (reconciler)."
-
-  pytest:
-    name: "pytest (env=${{ inputs.environment-name }})"
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # This job starts empty (PR #1 infra) and gains test_*.py files in PR #2.
-    continue-on-error: false
-    steps:
-      - name: Checkout caller repository
-        uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Install pytest
-        run: pip install --quiet pytest==9.1.1
-
-      - name: Discover pytest files
-        id: discover
-        run: |
-          set -euo pipefail
-          mapfile -t PYTEST_FILES < <(find tests/python -maxdepth 1 -type f -name 'test_*.py' | sort)
-          echo "pytest_count=${#PYTEST_FILES[@]}"
-          if [ "${#PYTEST_FILES[@]}" -gt 0 ]; then
-            echo "files<<EOF"
-            printf '%s\n' "${PYTEST_FILES[@]}"
-            echo "EOF"
-          fi
-
-      - name: Run pytest
-        if: steps.discover.outputs.pytest_count > 0
-        env:
-          # Env-isolate the step output. See Run bats tests above for
-          # the rationale.
-          DISCOVER_FILES: ${{ steps.discover.outputs.files }}
-        run: |
-          set -euo pipefail
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            echo "::group::$f"
-            python -m pytest "$f" -v
-            echo "::endgroup::"
-          done <<< "${DISCOVER_FILES}"
-
-      - name: Skip notice
-        if: steps.discover.outputs.pytest_count == 0
-        run: |
-          echo "::notice::No test_*.py files in tests/python/. Job lands in PR #2."

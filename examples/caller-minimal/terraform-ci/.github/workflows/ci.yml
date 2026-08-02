@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 #
-# Minimal caller for the Terraform pipeline: fmt -> validate -> tflint -> plan.
+# Minimal caller for the Terraform pipeline: validate -> tflint -> plan.
 # Add checkov (SCA) and apply/destroy as separate workflows per your release model.
 
 name: CI - Terraform
@@ -22,17 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  terraform-fmt:
-    name: terraform-fmt (env=ci)
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@main
-    with:
-      environment-name: ci
-      terraform-version: '1.10.0'
-      # working-directory defaults to '.'
-
   terraform-validate:
     name: terraform-validate (env=ci)
-    needs: [terraform-fmt]
     uses: spark-match/spark-match-01-devops/.github/workflows/terraform-validate.yml@main
     with:
       environment-name: ci

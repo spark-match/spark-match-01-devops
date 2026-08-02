@@ -76,7 +76,7 @@ See the `## Security` section in [README.md](README.md#security) for the full to
 - **CodeQL**: runs on PR + push + weekly; 502 alerts fixed across Sprints A/B/C (none open)
 - **Dependabot security updates**: enabled (auto-PR for vulnerable deps)
 - **Native GitHub secret scanning**: **disabled** (requires GitHub Advanced Security paid plan)
-- **Gitleaks custom config**: `.gitleaks.toml` at repo root with custom AWS rules (`aws-account-id`, `aws-role-arn`, `aws-sts-session-token`) and allowlists for `tests/fixtures/`, `docs/`, `examples/*.md`, and `CHANGELOG.md`.
+- **Gitleaks custom config**: `.gitleaks.toml` at repo root with custom AWS rules (`aws-account-id`, `aws-role-arn`, `aws-sts-session-token`) and allowlists for `docs/`, `examples/*.md`, and `CHANGELOG.md`.
 - **Pre-commit secret scan**: `.githooks/pre-commit` (gitleaks). Enable per clone via `git config core.hooksPath .githooks`. Catches secrets at commit time before they reach CI.
 
 The repo's Free-plan posture is documented inline so future maintainers know why `gitleaks.yml` exists in the catalog and how to upgrade if/when `spark-match` moves to a paid plan.

@@ -142,7 +142,7 @@ jobs:
           --health-retries 5
     # defaults.run.working-directory applies to every step in the job.
     # The Validate inputs step overrides with '.' so the pre-check works
-    # before checkout (matches the angular-spa-deploy.yml pattern).
+    # before checkout.
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
