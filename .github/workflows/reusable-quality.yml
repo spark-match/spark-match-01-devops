@@ -17,7 +17,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     quality:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/quality.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-quality.yml@main
 #       with:
 #         environment-name: dev
 #

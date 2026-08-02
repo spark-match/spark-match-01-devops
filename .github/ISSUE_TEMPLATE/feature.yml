@@ -54,7 +54,7 @@ body:
         - Pinned to `hadolint/hadolint@v2.x` (latest at the time)
         - Hard-fail mode (`severity: error`)
 
-        Behavior mirrors `yamllint.yml`.
+        Behavior mirrors `reusable-yamllint.yml`.
     validations:
       required: true
 

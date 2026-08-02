@@ -7,8 +7,8 @@
 Una sola rama `main` es la fuente canónica de todos los reusables. Los callers
 siempre referencian `@main`:
 
-- Caller deploy a **dev** → `uses: .../terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
-- Caller deploy a **prod** → `uses: .../terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
+- Caller deploy a **dev** → `uses: .../reusable-terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
+- Caller deploy a **prod** → `uses: .../reusable-terraform-apply.yml@main` (mismo reusable, ambiente seleccionado via `environment-name`)
 
 La distincion dev/prod vive en:
 
@@ -48,25 +48,29 @@ Estructura actual bajo `.github/workflows/`:
 
 ```
 .github/workflows/
-+-- ci.yml                       # Self-test: PR-triggered wrapper que llama los atomic reusables
-+-- codeql.yml                   # Reusable: CodeQL matrix (lenguaje 'actions', weekly + push + PR)
-+-- terraform-plan.yml           # Reusable: tf plan (N-env, OIDC, sf-sticky-comments)
-+-- terraform-apply.yml          # Reusable: tf apply con approval gate (N-env, OIDC)
-+-- actionlint.yml               # Atomic (ecosystem): GH Actions syntax validation
-+-- gitleaks.yml                 # Atomic (ecosystem): secret scanning (gitleaks v1 pin)
-+-- yamllint.yml                 # Atomic (ecosystem): YAML files
-+-- terraform-validate.yml       # Atomic (ecosystem): terraform init -backend=false + validate
-+-- tflint.yml                   # Atomic (ecosystem): tflint --recursive
-+-- sbom-release.yml             # Internal: CycloneDX SBOM attached to GitHub Release on release:published (anchore/sbom-action v0.17.7)
-+-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
-+-- migrations-dry-run.yml       # Atomic (ecosystem): node-pg-migrate --dry-run contra Postgres service container
-+-- latex-build.yml              # Atomic (article-side): latexmk → PDF
-+-- latex-release.yml            # Atomic (article-side): release of compiled PDF
++-- ci.yml                            # Self-test: PR-triggered wrapper que llama los atomic reusables
++-- codeql-actions.yml                # Self-test: CodeQL matrix (lenguaje 'actions', weekly + push + PR)
++-- release-please.yml                # Self-test: release automation
++-- commitlint.yml                    # Self-test: conventional commits enforcement
++-- sbom.yml                          # Self-test: CycloneDX SBOM attached to GitHub Release on release:published
++-- reusable-codeql.yml               # Reusable: CodeQL JS/TS caller analysis
++-- reusable-quality.yml              # Reusable: shellcheck + manifest schema + bats
++-- reusable-terraform-plan.yml       # Reusable: tf plan (N-env, OIDC, sf-sticky-comments)
++-- reusable-terraform-apply.yml      # Reusable: tf apply con approval gate (N-env, OIDC)
++-- reusable-actionlint.yml           # Atomic (ecosystem): GH Actions syntax validation
++-- reusable-gitleaks.yml             # Atomic (ecosystem): secret scanning (gitleaks v1 pin)
++-- reusable-yamllint.yml             # Atomic (ecosystem): YAML files
++-- reusable-terraform-validate.yml   # Atomic (ecosystem): terraform init -backend=false + validate
++-- reusable-tflint.yml               # Atomic (ecosystem): tflint --recursive
++-- reusable-eslint.yml               # Atomic (node): npm run <lint-script>, eslint-version parametrizable
++-- reusable-migrations-dry-run.yml   # Atomic (ecosystem): node-pg-migrate --dry-run contra Postgres service container
++-- reusable-latex-build.yml          # Atomic (article-side): latexmk → PDF
++-- reusable-latex-release.yml        # Atomic (article-side): release of compiled PDF
 ```
 
 ### Por que no usamos subcarpetas (limitacion de GH Actions)
 
-GitHub Actions requiere que los reusable workflows esten en **top-level** de `.github/workflows/`. La referencia `uses: ./path/to/subfolder/file.yml` falla con `invalid value workflow reference: workflows must be defined at the top level of the .github/workflows/ directory`. Por eso todos los reusables viven al mismo nivel que `ci.yml`, `codeql.yml`, etc. El layer (ecosystem / node / deploy) se codifica en el **documento VERSIONING (este archivo)** + etiquetas en el nombre del job (`actionlint (env=...)`).
+GitHub Actions requiere que los reusable workflows esten en **top-level** de `.github/workflows/`. La referencia `uses: ./path/to/subfolder/file.yml` falla con `invalid value workflow reference: workflows must be defined at the top level of the .github/workflows/ directory`. Por eso todos los reusables viven al mismo nivel que `ci.yml`, `codeql-actions.yml`, etc. El layer (ecosystem / node / deploy) se codifica en **prefijo `reusable-` + agrupacion alfabetica** del nombre del archivo + este documento VERSIONING + etiquetas en el nombre del job (`actionlint (env=...)`).
 
 ### Convencion de inputs
 
@@ -74,25 +78,26 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
 
 ### Reglas del catalogo
 
-- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `actionlint.yml` + `eslint.yml` sin tomar `yamllint.yml`.
+- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `reusable-actionlint.yml` + `reusable-eslint.yml` sin tomar `reusable-yamllint.yml`.
 - **Secrets solo en recipes de deploy.** Las recipes de ecosystem y node no reciben secrets (checks de codigo estatico puro).
 - **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (ahincho/orion-backend -> spark-match).
 - **Pin de herramientas externas.** actionlint v1.7.7, yamllint 1.35.1, eslint version parametrizable via input, terraform version parametrizable via input, sam-cli version parametrizable via input.
+- **Prefijo `reusable-`** obligatorio en archivos con `workflow_call`. Sin prefijo = CI/CD interno de este repo, no llamable desde consumers.
 
 ### Como prueba de cambios
 
-1. `ci.yml` corre los 3 ecosystem recipes (actionlint, gitleaks, yamllint)
+1. `ci.yml` corre los 3 ecosystem recipes (reusable-actionlint, reusable-gitleaks, reusable-yamllint)
    sobre este repo en cada PR. Detecta regresiones de lint/secret/yaml-format
    en el catalog mismo, pero **no** ejecuta los reusables de `node/` ni
    `deploy/` — este repo no tiene proyecto Node ni Terraform donde correrlos.
 2. Cada recipe se valida cuando un caller repo la invoca desde su propio
    PR contra `main`. Mapeo canonico (todos los callers usan `@main`):
-   - `eslint.yml`, `node-test.yml`: `orion-frontend`
-   - `terraform-plan.yml`, `terraform-apply.yml`, y los ecosystem
-     recipes de Terraform (`terraform-validate`,
-     `tflint`): `orion-infrastructure`
-   - `latex-build.yml`, `latex-release.yml`: `spark-match-07-article`
-   - `actionlint.yml`, `gitleaks.yml`, `yamllint.yml`:
+   - `reusable-eslint.yml`, `reusable-node-test.yml`: `orion-frontend`
+   - `reusable-terraform-plan.yml`, `reusable-terraform-apply.yml`, y los ecosystem
+     recipes de Terraform (`reusable-terraform-validate.yml`,
+     `reusable-tflint.yml`): `orion-infrastructure`
+   - `reusable-latex-build.yml`, `reusable-latex-release.yml`: `spark-match-07-article`
+   - `reusable-actionlint.yml`, `reusable-gitleaks.yml`, `reusable-yamllint.yml`:
      `ci.yml` local (ver punto 1)
 3. Si la PR cambia un input o agrega un paso al recipe, el reviewer exige
    smoke test explicito del caller correspondiente antes de aprobar el

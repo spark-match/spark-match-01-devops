@@ -21,7 +21,7 @@ Every cache key targeting npm / pnpm / yarn / bun dependencies follows:
 | `recipeTag`    | recipe-specific (e.g. `eslint10`)    | `eslint10`     |
 | `H`            | `sha256(lockfile)` (single file)     | `42f24408b…`  |
 
-`recipeTag` is optional. Today only `eslint.yml` uses it (to invalidate the
+`recipeTag` is optional. Today only `reusable-eslint.yml` uses it (to invalidate the
 cache when ESLint major is bumped without affecting other recipes in the
 same env). All other recipes omit it.
 
@@ -153,6 +153,6 @@ restore-keys: |
   linux-node24-npm-ci-
 ```
 
-Switching to the new `node-test.yml` reusable workflow makes this exact
+Switching to the new `reusable-node-test.yml` reusable workflow makes this exact
 same key dynamic from the recipe, so future node-version bumps
 automatically re-key.

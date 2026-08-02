@@ -4,7 +4,7 @@
 # =============================================================================
 # workflow-env-isolation.bats - repo-wide regression guards against the
 # code-injection anti-pattern that PR-G2 and this cleanup PR
-# (quality.yml + release-please.yml) closed.
+# (reusable-quality.yml + release-please.yml) closed.
 #
 # Rule: NO `run:` block in any workflow may interpolate ${{ inputs.* }},
 # ${{ steps.*.outputs.* }}, or ${{ secrets.* }} directly. Every such
@@ -183,8 +183,8 @@ scan_workflow() {
 # Specific regression guards for the cleanup PR
 # ---------------------------------------------------------------------------
 
-@test "quality.yml: Run bats tests step run: block uses \${DISCOVER_FILES} shell var" {
-  local wf="$WORKFLOWS_DIR/quality.yml"
+@test "reusable-quality.yml: Run bats tests step run: block uses \${DISCOVER_FILES} shell var" {
+  local wf="$WORKFLOWS_DIR/reusable-quality.yml"
   # Extract just the run: block body (after `run: |`, before next sibling key).
   # Use the scan_workflow-style state machine inline.
   local body
@@ -214,8 +214,8 @@ scan_workflow() {
   echo "$body" | grep -qF '${DISCOVER_FILES}'
 }
 
-@test "quality.yml: Run pytest step run: block uses \${DISCOVER_FILES} shell var" {
-  local wf="$WORKFLOWS_DIR/quality.yml"
+@test "reusable-quality.yml: Run pytest step run: block uses \${DISCOVER_FILES} shell var" {
+  local wf="$WORKFLOWS_DIR/reusable-quality.yml"
   local body
   body=$(awk '
     /- name: Run pytest/{ step_indent=length($0); step_indent-=index($0,"- name: Run pytest")+1; in_step=1; next }

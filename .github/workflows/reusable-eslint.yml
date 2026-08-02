@@ -10,7 +10,7 @@
 # USAGE (in caller repo):
 #   jobs:
 #     eslint:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/eslint.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-eslint.yml@main
 #       with:
 #         environment-name: dev
 #         eslint-version: 10    # major version (cache key)

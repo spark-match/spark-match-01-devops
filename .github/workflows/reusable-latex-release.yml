@@ -13,7 +13,7 @@
 #   jobs:
 #     release:
 #       if: github.event.pull_request.merged == true
-#       uses: spark-match/spark-match-01-devops/.github/workflows/latex-release.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-latex-release.yml@main
 #       with:
 #         root-file: main.tex
 #         release-name-prefix: Spark Match Paper

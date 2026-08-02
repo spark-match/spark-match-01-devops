@@ -105,7 +105,7 @@ git commit --no-verify
 
 ## Running tests
 
-The repo ships **bats tests** for the bash scripts and reconciler. The full suite runs in CI on every PR via `.github/workflows/quality.yml`. Run it locally before pushing:
+The repo ships **bats tests** for the bash scripts and reconciler. The full suite runs in CI on every PR via `.github/workflows/reusable-quality.yml`. Run it locally before pushing:
 
 ```bash
 # All bats tests

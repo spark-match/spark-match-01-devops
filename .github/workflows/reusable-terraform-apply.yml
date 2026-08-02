@@ -11,7 +11,7 @@
 # USAGE (in caller repo, single env):
 #   jobs:
 #     apply-prod:
-#       uses: spark-match/spark-match-01-devops/.github/workflows/terraform-apply.yml@main
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-apply.yml@main
 #       with:
 #         environment: prod
 #         working-directory: live/prod
@@ -198,7 +198,7 @@ jobs:
 
       - name: Configure AWS credentials (OIDC, apply role)
         # Cross-owner secret forwarding — see the same comment in
-        # terraform-plan.yml. The caller passes
+        # reusable-terraform-plan.yml. The caller passes
         #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
         # explicitly (required by workflow_call on this reusable).
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c  # v6
