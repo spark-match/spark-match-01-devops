@@ -11,8 +11,8 @@
 #     so we get the upstream rules + our customizations.
 #   - Custom AWS rules exist: aws-account-id, aws-role-arn,
 #     aws-sts-session-token.
-#   - Allowlists cover docs + examples + CHANGELOG so the gitleaks CI
-#     job doesn't fail on every PR because of literal "AKIA..." strings.
+#   - Allowlists cover docs + CHANGELOG so the gitleaks CI job
+#     doesn't fail on every PR because of literal "AKIA..." strings.
 #   - Stopwords include "example", "test", "fake", "placeholder" so
 #     documentation strings are not flagged.
 #   - .githooks/pre-commit exists, is executable, and points at
@@ -50,7 +50,7 @@ CONTRIBUTING_MD="$BATS_TEST_DIRNAME/../../CONTRIBUTING.md"
 }
 
 # ---------------------------------------------------------------------------
-# Allowlists (so gitleaks doesn't flag docs/examples)
+# Allowlists (so gitleaks doesn't flag docs)
 # ---------------------------------------------------------------------------
 
 @test "secret-scan: allowlists docs/ (documentation strings)" {
@@ -60,11 +60,6 @@ CONTRIBUTING_MD="$BATS_TEST_DIRNAME/../../CONTRIBUTING.md"
 
 @test "secret-scan: allowlists CHANGELOG.md (historical references)" {
   run grep -E "CHANGELOG" "$GITLEAKS_CONFIG"
-  [ "$status" -eq 0 ]
-}
-
-@test "secret-scan: allowlists examples/*.md (illustrative ARNs)" {
-  run grep -E "examples/" "$GITLEAKS_CONFIG"
   [ "$status" -eq 0 ]
 }
 

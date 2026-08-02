@@ -39,7 +39,7 @@ on:
       # Workflow files, composite actions, CODEOWNERS, dependabot config.
       - '.github/**'
       # Workflow-adjacent YAML/JSON anywhere in the tree (e.g.
-      # governance/repository-governance.json, examples/*/workflow.yml).
+      # governance/repository-governance.json).
       - '**.yml'
       - '**.yaml'
       - '**.md'

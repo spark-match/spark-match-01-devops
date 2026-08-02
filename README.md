@@ -103,13 +103,6 @@ spark-match-01-devops/
 │   ├── GOVERNANCE-STANDARD.md              org-wide ruleset + CODEOWNERS standard
 │   └── VERSIONING.md                       pin-by-environment rules and conventions
 │
-├── examples/
-│   ├── README.md                           index + scope ("when to use" + "out of scope")
-│   └── caller-minimal/                     minimal-but-realistic caller workflows
-│       ├── README.md                       index + 6 cross-cutting conventions
-│       ├── node-ci/                         uses gitleaks + eslint + node-test + node-build
-│       └── terraform-ci/                    uses terraform-validate + tflint + plan
-│
 ├── governance/
 │   ├── repository-governance.json          desired state of org ruleset (schema v2)
 │   └── repository-governance.schema.json   Draft 2020-12 schema; validated by quality.yml
