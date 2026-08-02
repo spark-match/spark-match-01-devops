@@ -1,77 +1,36 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-# =============================================================================
-# CI - Lint & Security for spark-match-01-devops
-# =============================================================================
-# Trigger:
-#   - pull_request: opened, synchronized or reopened targeting 'main',
-#                   gated by the path filter (lint only what changed).
-#   - push: any direct push to 'main' (including admin-bypass force
-#           pushes), no path filter. Guarantees the ruleset's
-#           strict_required_status_checks_policy is satisfied at every commit
-#           on the protected branch. Runs in parallel with any active PR run;
-#           concurrency: cancel-in-progress: true keeps the active one.
-#
-# Action: Run the atomic ecosystem recipes (actionlint, gitleaks, yamllint)
-#         against this repository so a broken recipe is caught here before
-#         consumers (orion-backend, orion-infrastructure, orion-cognitive-
-#         agent, etc.) get a bad reference. Python/node/deploy recipes are
-#         validated directly by caller repos on their own PRs (see
-#         `docs/VERSIONING.md` § strategy).
-#
-# Each job calls the corresponding reusable workflow via a local path
-# (`./.github/workflows/reusable-<name>.yml`). When merged, the same recipes
-# become available to external repos via
-#   spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main
-#
-# Other layers (node/eslint, deploy/terraform-*) are NOT exercised here
-# since the devops repo itself has no Node project or Terraform module to
-# lint. They are validated directly by the consumer repos.
-# =============================================================================
-
-name: CI - Lint & Security
+name: Continuous Integration (CI)
 
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
     paths:
-      # Workflow files, composite actions, CODEOWNERS, dependabot config.
       - '.github/**'
-      # Workflow-adjacent YAML/JSON anywhere in the tree (e.g.
-      # governance/repository-governance.json).
       - '**.yml'
       - '**.yaml'
       - '**.md'
-      # Bash + Python scripts under scripts/ — must run shellcheck.
       - 'scripts/**'
-      # bats + pytest suites — must run the test jobs.
       - 'tests/**'
-      # Governance manifest + schema — must run shellcheck + jq
-      # validation (consumed by configure-repo-rulesets.sh).
       - 'governance/**'
-      # .shellcheckrc is not a .yml — explicit entry so that a tweak
-      # to the shellcheck configuration re-runs the shellcheck job.
       - '.shellcheckrc'
   push:
-    branches: [main]            # no paths filter — strict mode requires checks on every commit
+    branches: [main]
 
 permissions:
   contents: read
 
-# Cancel in-progress runs for the same PR + branch. Saves runner minutes on
-# rapid pushes. The cancel-in-progress: true is safe for lint jobs (idempotent).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Job 1: Action Lint
   actionlint:
     name: actionlint
     uses: ./.github/workflows/reusable-actionlint.yml
     with:
       environment-name: ci
-
+  # Job 2: Git Leaks (Secret Scanning)
   gitleaks:
     name: gitleaks
     uses: ./.github/workflows/reusable-gitleaks.yml
@@ -79,13 +38,13 @@ jobs:
       environment-name: ci
     secrets:
       GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-
+  # Job 3: YAML Lint
   yamllint:
     name: yamllint
     uses: ./.github/workflows/reusable-yamllint.yml
     with:
       environment-name: ci
-
+  # Job 4: Quality
   quality:
     name: quality
     uses: ./.github/workflows/reusable-quality.yml
