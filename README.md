@@ -100,12 +100,7 @@ spark-match-01-devops/
 │       ├── angular-spa-deploy.yml           SPA -> S3 + CloudFront invalidation
 │       ├── sam-deploy.yml                   sam build + sam deploy
 │       ├── container-deploy-ecr.yml         Dockerfile -> ECR (linux/arm64 default)
-│       ├── aws-lambda-invoke.yml            generic OIDC Lambda invoke (JSON payload, status check)
-│       ├── migrations.yml                   OIDC Lambda migration invoke (typed payload contract)
-│       ├── migrations-dry-run.yml           migration dry-run (read-only) variant of migrations.yml
-│       ├── seed-users-advisors.yml          seed `advisors` group via OIDC Lambda
-│       ├── seed-users-agents.yml            seed `agents` group via OIDC Lambda
-│       ├── seed-users-supervisors.yml       seed `supervisors` group via OIDC Lambda
+│       ├── migrations-dry-run.yml           migration dry-run against ephemeral Postgres (read-only)
 │       ├── terraform-plan.yml               `terraform plan` per env + sticky PR comment
 │       ├── terraform-apply.yml              `terraform apply`, optional drift-only mode
 │       ├── terraform-destroy.yml            `terraform apply -destroy`, double-gated by
@@ -994,55 +989,25 @@ terraform init -migrate-state -force-copy -input=false \
 
 After destroy you can `rm backend-override.hcl tfstate.tfstate.local*` and run the normal init to re-attach S3 if you only needed a partial destroy.
 
-#### `aws-lambda-invoke.yml`
+#### `migrations-dry-run.yml`
 
-Generic OIDC Lambda invoke + status check. Wraps `aws lambda invoke --cli-read-timeout`, parses the `StatusCode` (HTTP-equivalent) and `FunctionError` fields, and fails the workflow on any non-200 or thrown error. The Lambda contract is documented inline (JSON payload, async invocation vs request-response, FunctionError semantics).
+Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `orion-backend` for every PR (Sprint 2 — see ADR-016).
 
 Inputs (highlights):
 
 | Input | Type | Default | Notes |
 |---|---|---|---|
-| `environment-name` | string | `dev` | Becomes the GH Environment gate. |
-| `aws-region` | string | `us-east-1` | Region of the target Lambda. |
-| `function-name` | string | — (required) | Lambda name or ARN. |
-| `payload` | string | `{}` | JSON payload string. |
-| `invocation-type` | string | `RequestResponse` | One of `RequestResponse` / `Event` / `DryRun`. |
-| `qualifier` | string | (empty) | Lambda version or alias; empty = `$LATEST`. |
-| `working-directory` | string | `.` | Where the payload file (if any) lives. |
+| `environment-name` | string | `dev` | Informational; used in job name + logs. |
+| `postgres-version` | string | `17` | Postgres major version for the service container. |
+| `migrations-dir` | string | `migrations` | Path to the `*.sql` directory (relative to `working-directory`). |
+| `migrations-table` | string | `orion_migrations` | node-pg-migrate tracking table. |
+| `migrations-schema` | string | `public` | Schema holding the tracking table. |
+| `npm-script` | string | `migrate:up` | npm script that applies the migrations. Must use node-pg-migrate. |
+| `node-version` | string | `24` | Node.js version for the runner. |
+| `working-directory` | string | `.` | Where `npm ci` runs. |
+| `timeout-minutes` | number | `10` | Job-level timeout. |
 
-Required secrets: `AWS_DEPLOY_ROLE_ARN` (same-name convention). Caller must set it in the GH Environment.
-
-#### `migrations.yml` + `migrations-dry-run.yml`
-
-OIDC Lambda invoke specialized for the `orion-identity-migrate-<env>` family of migration Lambdas. `migrations.yml` invokes with `InvocationType=RequestResponse` (waits for completion); `migrations-dry-run.yml` invokes with `InvocationType=DryRun` (read-only sanity check that the Lambda contract is honored without applying any changes).
-
-Why split into two recipes: orion-backend's CD calls the migration Lambda inline after SAM deploy, but only on push to main. When ops needs to apply migrations out-of-band (a hotfix in the middle of the night, or a status check before approving a prod deploy), there's no first-class trigger — `migrations.yml` + `migrations-dry-run.yml` fill that gap.
-
-Inputs (highlights; both files share the same schema):
-
-| Input | Type | Notes |
-|---|---|---|
-| `environment-name` | string | Becomes the GH Environment gate. |
-| `function-name` | string | Lambda name or ARN. |
-| `payload-file` | string | Path to a JSON payload file (relative to `working-directory`). Empty = use `{}`. |
-
-Required secrets: `AWS_DEPLOY_ROLE_ARN`.
-
-#### `seed-users-advisors.yml` / `seed-users-agents.yml` / `seed-users-supervisors.yml`
-
-Three sibling recipes that invoke the `orion-seed-users-<env>` Lambda with payload `{"group": "advisors" | "agents" | "supervisors"}` to seed the corresponding role users in `identity.users`. The Lambda returns `{created, skipped, errors}`; the recipes parse that shape and print a one-line summary.
-
-Why three recipes instead of one parameterized by `group`: each recipe owns its own job display name, step labels, summary parser, and concurrency group, so seeding advisors does not block seeding supervisors or agents. The shared OIDC + invoke bits are copy-pasted because YAML does not support cross-file includes and nested reusables add non-trivial debugging cost for marginal DRY benefit at this size.
-
-Inputs (shared):
-
-| Input | Type | Notes |
-|---|---|---|
-| `environment-name` | string | Becomes the GH Environment gate. |
-| `aws-region` | string | `us-east-1` |
-| `function-name` | string | Lambda name (default: `orion-seed-users-<env>`). |
-
-Required secrets: `AWS_DEPLOY_ROLE_ARN`.
+Required secrets: none. Pure CLI check against a throwaway Postgres service container — no AWS, no caller secrets.
 
 ### Other files in `.github/workflows/`
 
@@ -1052,7 +1017,7 @@ These three workflows are **not** part of the consumer-facing catalog; they only
 - `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
 - `release-please.yml` — release-please automation. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
 
-The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`sonar-python.yml`, `sonar-terraform.yml`, `sonar-typescript.yml`), which target the SonarCloud org's Python/Terraform/TypeScript projects; and to the migration + seed-users recipes (`migrations.yml`, `migrations-dry-run.yml`, `seed-users-*.yml`) + `aws-lambda-invoke.yml`, which target `orion-backend` / `orion-identity` deployments specifically.
+The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`sonar-python.yml`, `sonar-terraform.yml`, `sonar-typescript.yml`), which target the SonarCloud org's Python/Terraform/TypeScript projects; and to `migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
 
 ## Versioning
 
