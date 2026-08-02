@@ -1,6 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Spark Match
-name: Validate workflow inputs
+name: Validate Workflow Inputs
 description: 'Validates required inputs, enum values, and regex patterns. Fails with ::error:: on violations.'
 inputs:
   values:
@@ -25,7 +23,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Run validation
+    - name: Run Validation
       shell: bash
       env:
         VALUES: ${{ inputs.values }}
