@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.9](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.8...v0.1.9) (2026-08-02)
+
+
+### Bug Fixes
+
+* **ci:** commitlint commit-depth=2 + short merge body template ([#216](https://github.com/spark-match/spark-match-01-devops/issues/216)) ([03c9ba9](https://github.com/spark-match/spark-match-01-devops/commit/03c9ba93ed4ce6d7b7fc326bf197ff78d4cd1e41))
+
 ## [0.1.8](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.7...v0.1.8) (2026-08-02)
 
 
