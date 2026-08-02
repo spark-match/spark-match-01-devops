@@ -8,12 +8,11 @@ Pick the path that matches what you need:
 
 | You want to… | Do this |
 |---|---|
-| **Lint your SAM templates for missing `Lambda::Permission.SourceArn`** | Call `lambda-permission-source-arn.yml` from your caller workflow (see [Catalog](#catalog)) |
 | **Run your Python project's QA pipeline** | Call `python-ci.yml` ([Catalog → python](#python)) |
-| **Deploy a SPA / SAM stack / ECR image / Terraform** | Call one of the [deploy recipes](#deploy) with OIDC + a GitHub Environment |
+| **Deploy an SPA / ECR image / Terraform** | Call one of the [deploy recipes](#deploy) with OIDC + a GitHub Environment |
 | **Apply the org ruleset to a new repo** | Add an entry to `governance/repository-governance.json`, then `./scripts/configure-repo-rulesets.sh --apply --repos <name>` ([Governance](#governance)) |
 | **Add a new reusable workflow** | See [Contributing → adding a recipe](#adding-a-reusable-workflow-or-composite-action) |
-| **Run the 139 tests locally before pushing** | See [Testing](#testing) |
+| **Run the tests locally before pushing** | See [Testing](#testing) |
 
 ## Architecture
 
@@ -22,10 +21,10 @@ The catalog has **six layers**, each defined by what it inspects or mutates:
 | Layer | Path | Caller secrets | Purpose |
 |---|---|---|---|
 | **composite actions** | `.github/actions/<name>/action.yml` | varies | Atomic, single-purpose primitives reusable across many recipes (input validators, runners) |
-| **ecosystem workflows** | `.github/workflows/<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, cfn-nag, etc.) |
+| **ecosystem workflows** | `.github/workflows/<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, sonar-*, etc.) |
 | **node workflows** | `.github/workflows/<node>.yml` | none | npm-based quality gates (eslint, typecheck, test, build) |
 | **python workflows** | `.github/workflows/<python>.yml` | none | uv + ruff + mypy + pytest + bandit + pip-audit |
-| **deploy workflows** | `.github/workflows/<deploy>.yml` | OIDC role per GH Environment | Production deploys (Angular SPA, SAM, ECR, Terraform) |
+| **deploy workflows** | `.github/workflows/<deploy>.yml` | OIDC role per GH Environment | Production deploys (ECR, Terraform) |
 | **governance** | `governance/` + `scripts/configure-repo-rulesets.sh` | `gh` admin scope | Declarative state for the org ruleset + idempotent reconciler |
 
 Every recipe (workflow and composite action) accepts an `environment-name` input. It is informational in ecosystem, node, python, and composite layers (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the OIDC role secret there).
@@ -77,13 +76,9 @@ spark-match-01-devops/
 │       ├── actionlint.yml                   syntax check on Actions workflows
 │       ├── gitleaks.yml                     secret scan (needs GITLEAKS_LICENSE)
 │       ├── yamllint.yml                     YAML files (uses caller's .yamllint.yml)
-│       ├── terraform-fmt.yml                `terraform fmt -check -recursive`
 │       ├── terraform-validate.yml           per-module init+validate (no backend)
 │       ├── tflint.yml                       recursive tflint
 │       ├── checkov.yml                      static analysis on Terraform
-│       ├── cfn-nag.yml                      cfn_nag_scan on SAM templates
-│       ├── lambda-permission-source-arn.yml SAM guard for Lambda::Permission SourceArn
-│       ├── sonar-python.yml                 SonarCloud Python analysis
 │       ├── sonar-terraform.yml              SonarCloud Terraform analysis
 │       ├── sonar-typescript.yml             SonarCloud TypeScript analysis
 │       │
@@ -97,8 +92,6 @@ spark-match-01-devops/
 │       ├── python-ci.yml                    uv + ruff + mypy + pytest + bandit + pip-audit
 │       │
 │       │ ─── catalog: deploy (AWS OIDC, caller-scoped secrets) ──────────
-│       ├── angular-spa-deploy.yml           SPA -> S3 + CloudFront invalidation
-│       ├── sam-deploy.yml                   sam build + sam deploy
 │       ├── container-deploy-ecr.yml         Dockerfile -> ECR (linux/arm64 default)
 │       ├── migrations-dry-run.yml           migration dry-run against ephemeral Postgres (read-only)
 │       ├── terraform-plan.yml               `terraform plan` per env + sticky PR comment
@@ -124,8 +117,7 @@ spark-match-01-devops/
 │       ├── README.md                       index + 6 cross-cutting conventions
 │       ├── python-ci/                      uses python-ci.yml
 │       ├── node-ci/                         uses gitleaks + eslint + node-test + node-build
-│       ├── terraform-ci/                    uses terraform-fmt + validate + tflint + plan
-│       └── sam-deploy/                      uses cfn-nag + lambda-permission-source-arn + sam-deploy
+│       └── terraform-ci/                    uses terraform-validate + tflint + plan
 │
 ├── governance/
 │   ├── repository-governance.json          desired state of org ruleset (schema v2)
@@ -134,11 +126,10 @@ spark-match-01-devops/
 ├── scripts/                                operational scripts (see scripts/README.md)
 │   ├── README.md                           catalog of scripts
 │   ├── audit-codeowners-ruleset.sh             🔍 audits ruleset for CODE_OWNERS enforcement
-│   ├── check_lambda_permission_source_arn.py   ⚙️ required by lambda-permission-source-arn.yml
 │   ├── configure-merge-methods.sh              bootstrap org-wide merge policy
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
-├── tests/                                 266 bats + 18 pytest = 284 tests
+├── tests/                                 bats tests for bash scripts + composite actions
 │   ├── bats/
 │   │   ├── helpers/
 │   │   │   ├── common.bash                 stubs for uv / pytest + ACTION_DIR
@@ -153,14 +144,6 @@ spark-match-01-devops/
 │   │   ├── reconciler-edge-cases.bats      6 tests for team cache + CRLF + --org override
 │   │   ├── release-please-config.bats      16 tests for .github/release-please-config.json
 │   │   └── cleanup-batch-pr8.bats          12 tests for PR-8 defaults.run.shell + prs:write + env-name
-│   ├── python/
-│   │   └── test_lambda.py                  15 tests for check_lambda_permission_source_arn.py
-│   └── fixtures/                           SAM template fixtures (5 cases)
-│       ├── sam-template-valid/
-│       ├── sam-template-missing-sourcearn/
-│       ├── sam-template-comments-and-edges/
-│       ├── sam-template-mixed-resources/
-│       └── sam-template-no-permissions/
 │
 ├── .release-please-manifest.json           current package version (release-please tracked)
 │
@@ -250,12 +233,9 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | `actionlint.yml` | Validate GitHub Actions syntax | — |
 | `gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v3`) | `GITLEAKS_LICENSE` (required for org-scoped repos under v3) |
 | `yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
-| `terraform-fmt.yml`     | `terraform fmt -check -recursive -diff` on the caller's Terraform tree | — |
 | `terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
 | `tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
 | `checkov.yml`           | Static analysis with checkov (pinned 3.2.415), terraform framework, hard-fail | — |
-| `cfn-nag.yml`           | `cfn_nag_scan` over `template.yaml` and any `contexts/**/template.yaml`; ruby version pinned, supports AWS SAM guards that cfn-nag 0.8.10 covers natively. The **specific guard for `Lambda::Permission` without `SourceArn`/`SourceAccount`** is the sibling `lambda-permission-source-arn.yml` reusable (cfn-nag 0.8.10 has no rule for this case). | — |
-| `lambda-permission-source-arn.yml` | Custom SAM guard that scans `template.yaml` + `contexts/**/template.yaml` and fails when an `AWS::Lambda::Permission` resource lacks `SourceArn:` or `SourceAccount:`. The scan logic lives at `scripts/check_lambda_permission_source_arn.py` (stdlib-only Python, regex-based, comment-aware). Required because cfn-nag 0.8.10's Lambda rules only check `W24` (action) and `F45` (EventSourceToken); neither validates `SourceArn` presence, so the cross-API confusion vulnerability that AWS API Gateway exposes remains uncaught without this check. | — |
 
 #### `actionlint.yml`
 
@@ -327,29 +307,6 @@ jobs:
     uses: spark-match/spark-match-01-devops/.github/workflows/yamllint.yml@main
     with:
       environment-name: ci
-```
-
-#### `terraform-fmt.yml`
-
-Runs `terraform fmt -check -recursive -diff` on the caller's Terraform tree. Recursion covers submodules automatically, so monorepos (e.g. `live/dev/` + `modules/*`) get the whole tree checked with one call. No AWS needed.
-
-Inputs:
-
-| Input        | Type   | Default | Notes                                                |
-|--------------|--------|---------|------------------------------------------------------|
-| environment-name | string | `dev` | Informational only; used in the job name and logs. |
-| terraform-version | string | `1.10.0` | X.Y.Z format. Defaults match the `terraform-plan.yml` default. |
-| working-directory | string | `.` | Where `terraform fmt -recursive` starts. |
-
-Usage:
-
-```yaml
-jobs:
-  terraform-fmt:
-    uses: spark-match/spark-match-01-devops/.github/workflows/terraform-fmt.yml@main
-    with:
-      environment-name: dev
-      terraform-version: 1.15.7
 ```
 
 #### `terraform-validate.yml`
@@ -429,30 +386,6 @@ jobs:
       environment-name: dev
 ```
 
-#### `cfn-nag.yml`
-
-Runs [`cfn_nag_scan`](https://github.com/stelligent/cfn_nag) over `template.yaml` and every `contexts/**/template.yaml` in the caller. Reads comments to suppress findings inline (`# cfn_nag_suppress: RULE_ID reason`). Ruby version pinned via `ruby/setup-ruby@v1`; cfn-nag gem version pinned via input.
-
-Inputs:
-
-| Input | Type | Default | Notes |
-|---|---|---|---|
-| `environment-name` | string | `dev` | Informational only. |
-| `cfn-nag-version` | string | `0.8.10` | Pinned for reproducible output. |
-| `ruby-version` | string | `3.3` | Pinned for reproducible output. |
-| `scan-paths` | string | `template.yaml contexts/` | Space-separated. |
-| `output-format` | string | (none) | Optional; pass `json` for machine-readable output. |
-
-Usage:
-
-```yaml
-jobs:
-  cfn-nag:
-    uses: spark-match/spark-match-01-devops/.github/workflows/cfn-nag.yml@main
-    with:
-      environment-name: dev
-```
-
 #### `trivy.yml`
 
 Runs [Aqua Trivy](https://github.com/aquasecurity/trivy) against the caller's repo. Three scan modes: `fs` (filesystem — Dockerfile misconfig, lockfile CVEs, IaC misconfig, secrets), `image` (container image — OS pkg vulns, library vulns), and `config` (IaC config scan). Defaults to `severity: CRITICAL` so the workflow fails only on the most severe findings; callers can tighten with `severity: CRITICAL,HIGH`. `aquasecurity/trivy-action` SHA-pinned to `ed142fd` (v0.36.0).
@@ -502,33 +435,9 @@ Internal workflow (not a reusable recipe — runs only on this catalog). Fires o
 
 This workflow is part of the SLSA Build Level 3 + supply-chain transparency posture (US Executive Order 14028, EU Cyber Resilience Act). For a repo with no real `package.json` / `requirements.txt` the SBOM is metadata-only, but it is still produced and attached.
 
-#### `lambda-permission-source-arn.yml`
+#### `sonar-terraform.yml`
 
-Companion to `cfn-nag.yml`. Runs the script at `scripts/check_lambda_permission_source_arn.py` against the caller's SAM templates. Fails CI when an `AWS::Lambda::Permission` resource declares neither `SourceArn:` nor `SourceAccount:`.
-
-Why this exists: cfn-nag 0.8.10's Lambda rules (W24 = action is `InvokeFunction`, F45 = no plaintext `EventSourceToken`) do NOT check for a missing `SourceArn`. Without it, AWS API Gateway can invoke the Lambda function from any other API in the same account (cross-API confusion). The defense-in-depth is the Lambda resource policy itself, which REQUIRES `SourceArn` to scope invocation. cfn-nag ships no rule for this case, hence this guard.
-
-Inputs:
-
-| Input | Type | Default | Notes |
-|---|---|---|---|
-| `environment-name` | string | `dev` | Informational only. |
-| `python-version` | string | `3.12` | The runner python used to invoke the script. |
-| `scan-paths` | string | `template.yaml contexts/` | Space-separated. |
-
-Usage:
-
-```yaml
-jobs:
-  lambda-permission-source-arn:
-    uses: spark-match/spark-match-01-devops/.github/workflows/lambda-permission-source-arn.yml@main
-    with:
-      environment-name: dev
-```
-
-#### `sonar-python.yml`
-
-SonarCloud analysis for Python projects. Pinned to a recent SonarScanner CLI; runs `sonar-scanner` with the caller's `sonar-project.properties` values as inputs. Used by `orion-backend` and `orion-identity`.
+SonarCloud analysis for Terraform. Designed for projects where Terraform is the primary language (no Python/JS).
 
 Inputs (highlights):
 
@@ -539,22 +448,17 @@ Inputs (highlights):
 | `sources` | string (required) | Comma-separated source paths (relative to `working-directory`). |
 | `tests` | string | Comma-separated test paths; empty disables test analysis. |
 | `coverage` | string | Path to coverage report (e.g. `coverage.xml`); empty skips coverage. |
+| `exclude-patterns` | string | Comma-separated globs to exclude from sources. |
 | `working-directory` | string | `.` |
 | `sonar-host-url` | string | `https://sonarcloud.io` |
 
 Required secrets: `SONAR_TOKEN` (same-name convention). Caller must set it in the GitHub Environment.
 
-#### `sonar-terraform.yml`
-
-SonarCloud analysis for Terraform. Designed for projects where Terraform is the primary language (no Python/JS). Companion to `sonar-python.yml`.
-
-Same input shape as `sonar-python.yml` plus `exclude-patterns` (comma-separated globs to exclude from sources).
-
 #### `sonar-typescript.yml`
 
 SonarCloud analysis for TypeScript. Used by `orion-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
 
-Same input shape as `sonar-python.yml` plus `tsconfig-path` (default `tsconfig.json`).
+Same input shape as `sonar-terraform.yml` (without `exclude-patterns`) plus `tsconfig-path` (default `tsconfig.json`).
 
 ### node
 
@@ -732,87 +636,6 @@ jobs:
 For multi-version matrix (when the cross-owner GHA bug is resolved upstream), pass `python-versions: '"3.11","3.12"'`. Today the recipe hardcodes `python-version: ["3.12"]` on the matrix; see [`docs/PYTHON-CI.md`](docs/PYTHON-CI.md) § 8.1.
 
 ### deploy
-
-#### `angular-spa-deploy.yml`
-
-Builds an Angular SPA via `npm ci` + `npm run build`, syncs the resulting bundle to S3 with `--delete`, and triggers a CloudFront invalidation. Designed for SPAs (Angular / React / Vue) hosted on S3 + CloudFront with OAC. Injects `API_URL` as a build-time env var so the SPA can target a backend per environment.
-
-Inputs:
-
-| Input | Type | Default | Notes |
-|---|---|---|---|
-| `environment-name` | string | — (required) | Becomes the GH Environment gate. Caller must define the environment and hold the role secret there. |
-| `aws-region` | string | `us-east-1` | Region of the S3 bucket and CloudFront distribution. |
-| `s3-bucket` | string | — (required) | SPA bucket name (e.g. `orion-frontend-dev`). |
-| `cloudfront-distribution-id` | string | — (required) | CloudFront distribution ID for invalidation. |
-| `cloudfront-invalidation-paths` | string | `/*` | Paths to invalidate. |
-| `node-version` | string | `24` | Node version for build. |
-| `build-script` | string | `build` | npm script that builds the SPA. |
-| `artifact-path` | string | `dist/orion-frontend/browser` | Path to the built bundle. |
-| `api-url` | string | `''` | Build-time env var `API_URL` for the SPA. |
-| `sync-extra-args` | string | `''` | Extra flags for `aws s3 sync`. |
-
-Required secrets (caller-side, scoped to the GitHub Environment):
-
-- `AWS_DEPLOY_ROLE_ARN` — IAM role with trust policy for `token.actions.githubusercontent.com`, scoped to the SPA bucket (`s3:GetObject|PutObject|DeleteObject|ListBucket`) and the SPA distribution (`cloudfront:CreateInvalidation`). The `iam-angular-spa-deploy-dev` Terraform module in `orion-infrastructure` creates exactly this shape.
-
-Usage:
-
-```yaml
-jobs:
-  deploy-dev:
-    uses: spark-match/spark-match-01-devops/.github/workflows/angular-spa-deploy.yml@main
-    with:
-      environment-name: dev
-      aws-region: us-east-1
-      s3-bucket: orion-frontend-dev
-      cloudfront-distribution-id: E1ABC2DEF3GHIJ
-      api-url: https://api.orion.dev
-    secrets:
-      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-```
-
-#### `sam-deploy.yml`
-
-Builds and deploys an AWS SAM application via OIDC. Handles checkout, node setup, npm cache, OIDC credentials, `npm ci`, the Lambda Layers build script, SAM CLI install, `sam validate --lint`, `sam build --use-container`, and `sam deploy --config-env <env>` with idempotent flags (`--no-confirm-changeset`, `--no-fail-on-empty-changeset`). The caller must already have `samconfig.toml` with sections `[default]`, `[prod]`, etc., and a Layers build script in `package.json`.
-
-Inputs:
-
-| Input        | Type   | Default | Notes |
-|--------------|--------|---------|-------|
-| environment-name | string | — (required) | Becomes the GitHub Environment gate. Caller must define the environment and hold the role secret there. Defaults `sam-config-env` to this value when not provided. |
-| aws-region   | string | `us-east-1` | Should match `[<env>].region` in `samconfig.toml`. |
-| stack-name   | string | `''` | CloudFormation stack name. Empty = use `samconfig.toml`. |
-| sam-template | string | `template.yaml` | Path to the SAM template, relative to repo root. |
-| sam-config-env | string | = environment-name | The `[<section>]` name in `samconfig.toml`. |
-| s3-bucket    | string | `''` | Artifacts bucket. Empty = use `samconfig.toml` or auto-managed. |
-| parameter-overrides-json | string | `{}` | Valid JSON object merged on top of `samconfig.toml` overrides. |
-| node-version | string | `24` | Used by the build container for `npm ci` and Layers build. |
-| sam-cli-version | string | `1.151.0` | Pinned for reproducible deploys. |
-| pre-build-script | string | `build:shared` | npm script to run before Layers build (e.g. compile the shared workspace). Empty = skip. |
-| build-layers-script | string | `layer:build:all` | npm script that builds Lambda Layers. Empty = no layers. |
-
-Required secrets (caller-side, scoped to the GitHub Environment):
-
-- `AWS_DEPLOY_ROLE_ARN` — IAM role with trust policy for `token.actions.githubusercontent.com` and permissions for CloudFormation, IAM, S3, SSM, and Lambda publish.
-
-Usage:
-
-```yaml
-jobs:
-  deploy-dev:
-    uses: spark-match/spark-match-01-devops/.github/workflows/sam-deploy.yml@main
-    with:
-      environment-name: dev
-      aws-region: us-east-1
-      stack-name: orion-backend-dev
-      sam-config-env: default
-      s3-bucket: orion-sam-artifacts-dev
-    secrets:
-      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-```
-
-The caller workflow must also declare `id-token: write` at the workflow or job level (GitHub mints the OIDC JWT from the caller's permissions context).
 
 #### `container-deploy-ecr.yml`
 
@@ -1013,11 +836,11 @@ Required secrets: none. Pure CLI check against a throwaway Postgres service cont
 
 These three workflows are **not** part of the consumer-facing catalog; they only run on this repo itself:
 
-- `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`actionlint`, `gitleaks`, `yamllint`, `quality`) against this repository so a broken recipe is caught here before consumers break. The python/node/deploy recipes (`python-ci`, `eslint`, `node-test`, `sam-deploy`, `container-deploy-ecr`, `terraform-plan`, `terraform-apply`, `terraform-destroy`) are NOT exercised here because this repo has no Node project, SAM stack, Python package, or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
+- `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`actionlint`, `gitleaks`, `yamllint`, `quality`) against this repository so a broken recipe is caught here before consumers break. The python/node/deploy recipes (`python-ci`, `eslint`, `node-test`, `container-deploy-ecr`, `terraform-plan`, `terraform-apply`, `terraform-destroy`) are NOT exercised here because this repo has no Node project, Python package, or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
 - `codeql.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
 - `release-please.yml` — release-please automation. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
 
-The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`sonar-python.yml`, `sonar-terraform.yml`, `sonar-typescript.yml`), which target the SonarCloud org's Python/Terraform/TypeScript projects; and to `migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
+The LaTeX reusables (`latex-build.yml`, `latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`sonar-terraform.yml`, `sonar-typescript.yml`), which target the SonarCloud org's Terraform/TypeScript projects; and to `migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
 
 ## Versioning
 
@@ -1031,8 +854,7 @@ See [`docs/VERSIONING.md`](docs/VERSIONING.md). Summary:
 
 ## Cache key convention
 
-All node-consuming recipes (`eslint.yml`, `angular-spa-deploy.yml`,
-`sam-deploy.yml`, `node-test.yml`) use the canonical cache key:
+All node-consuming recipes (`eslint.yml`, `node-test.yml`, `node-typecheck.yml`, `node-build.yml`) use the canonical cache key:
 
 ```
 <os>-node-<nodeVersion>-<pkgmanager>-<env>[-<recipeTag>]-<H>
@@ -1074,11 +896,10 @@ Full rationale, examples, extension guide, and migration notes:
 
 ## Operational scripts
 
-The `scripts/` directory holds 3 entries: 2 idempotent bash bootstrappers and 1 stdlib-only Python guard. Scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides.
+The `scripts/` directory holds **2 idempotent bash bootstrappers**. Scripts require `gh` CLI authenticated with org admin, support `--dry-run`, and respect `ORG=...` overrides.
 
 | Script | Type | Purpose | Required by a workflow? |
 |---|---|---|---|
-| [`check_lambda_permission_source_arn.py`](scripts/check_lambda_permission_source_arn.py) | Python | SAM guard: every `AWS::Lambda::Permission` resource in scanned paths must declare `SourceArn:` or `SourceAccount:`. Stdlib-only; regex-based; comment-aware. | **Yes** — consumed by `.github/workflows/lambda-permission-source-arn.yml` (curl from raw @main) |
 | [`configure-merge-methods.sh`](scripts/configure-merge-methods.sh) | Bash | Applies squash-only merge policy across every repo in the org (`delete_branch_on_merge=true`, `squash_merge_commit_title=PR_TITLE`, `squash_merge_commit_message=PR_BODY`). | No |
 | [`configure-repo-rulesets.sh`](scripts/configure-repo-rulesets.sh) | Bash | Declarative reconciler. Reads `governance/repository-governance.json` and reconciles each repo's ruleset to the desired state. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`. Backs up the current ruleset before any `PUT` and never uses `DELETE` unless `--prune-unexpected` is passed. | No |
 
@@ -1122,7 +943,7 @@ done
 
 ## Testing
 
-The repo ships with **139 tests** that run on every PR via `.github/workflows/quality.yml` and can be executed locally before pushing:
+The repo ships with **bats tests** that run on every PR via `.github/workflows/quality.yml` and can be executed locally before pushing:
 
 | Suite | Count | File | What it covers |
 |---|---|---|---|
@@ -1131,7 +952,6 @@ The repo ships with **139 tests** that run on every PR via `.github/workflows/qu
 | bats — reconciler | 52 | `tests/bats/reconciler-{prereqs,payload,check,apply,edge-cases}.bats` | Arg parsing, manifest validation, payload construction (jq), `--check` mode, `--apply` mode with PUT/POST/backup/dry-run, edge cases (team-id cache, CRLF, `--org` override) |
 | bats — release-please | 16 | `tests/bats/release-please-config.bats` | `.github/release-please-config.json` (PR title pattern, header/footer, changelog sections, schema validation, version pin) |
 | bats — workflow hygiene | 12 | `tests/bats/cleanup-batch-pr8.bats` | defaults.run.shell: bash on every workflow; terraform-destroy permissions; environment-name input alias; no `shell: bash` inside workflow_call.inputs |
-| pytest | 15 | `tests/python/test_lambda.py` | `check_lambda_permission_source_arn.py` over 5 SAM template fixtures under `tests/fixtures/sam-template-*/` |
 
 Shared helpers: `tests/bats/helpers/common.bash` (stubs for `uv` + `pytest`, sets `ACTION_DIR`); `tests/bats/helpers/reconciler.bash` (`gh` stub dispatching on URL + HTTP method, with `json_output` helper for JSON assertions).
 
@@ -1142,9 +962,6 @@ Shared helpers: `tests/bats/helpers/common.bash` (stubs for `uv` + `pytest`, set
 curl -fsSL https://github.com/bats-core/bats-core/archive/refs/tags/v1.11.1.tar.gz | tar -xz -C /tmp
 sudo /tmp/bats-core-1.11.1/install.sh /usr/local
 bats --version
-
-# pytest 9.1.1:
-pip install pytest==9.1.1
 
 # Optional: jq (bats helpers reference it for VALUE parsing):
 # Windows: choco install jq
@@ -1157,22 +974,19 @@ pip install pytest==9.1.1
 ```bash
 # All tests:
 bats tests/bats/
-python -m pytest tests/python/ -v
 
 # Just one suite:
 bats tests/bats/composite-validate.bats
-python -m pytest tests/python/test_lambda.py -v -k TestScanTemplate
 ```
 
-Expected runtime: < 1 s for bats, < 0.5 s for pytest. CI adds setup overhead (~25 s total per job including bats download + pip install).
+Expected runtime: < 1 s for bats. CI adds setup overhead (~25 s total per job including bats download).
 
 ### Adding a new test
 
 - For a new bash primitive / composite action → add `tests/bats/<subject>.bats`. Reuse `tests/bats/helpers/common.bash` for `ACTION_DIR` and stub definitions.
 - For a new bash script (e.g. a new reconciler / bootstrapper) → add `tests/bats/reconciler-<aspect>.bats` and reuse `tests/bats/helpers/reconciler.bash` for the `gh` stub.
-- For a new Python script → add `tests/python/test_<subject>.py`. Reuse `tests/fixtures/<case>/template.yaml` patterns.
 
-The CI workflow auto-discovers `tests/bats/*.bats` and `tests/python/test_*.py`, so no other configuration is needed.
+The CI workflow auto-discovers `tests/bats/*.bats`, so no other configuration is needed.
 
 ## Contributing
 

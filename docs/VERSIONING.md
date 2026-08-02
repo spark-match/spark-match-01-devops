@@ -55,7 +55,6 @@ Estructura actual bajo `.github/workflows/`:
 +-- actionlint.yml               # Atomic (ecosystem): GH Actions syntax validation
 +-- gitleaks.yml                 # Atomic (ecosystem): secret scanning (gitleaks v1 pin)
 +-- yamllint.yml                 # Atomic (ecosystem): YAML files
-+-- terraform-fmt.yml            # Atomic (ecosystem): terraform fmt
 +-- terraform-validate.yml       # Atomic (ecosystem): terraform init -backend=false + validate
 +-- tflint.yml                   # Atomic (ecosystem): tflint --recursive
 +-- checkov.yml                  # Atomic (ecosystem): checkov SCA
@@ -63,26 +62,11 @@ Estructura actual bajo `.github/workflows/`:
 +-- sbom-release.yml             # Internal: CycloneDX SBOM attached to GitHub Release on release:published (anchore/sbom-action v0.17.7)
 +-- eslint.yml                   # Atomic (node): npm run <lint-script>, eslint-version parametrizable
 +-- python-ci.yml                # Atomic (python): uv + ruff + mypy + pytest (or-cog-agent, otros proyectos Python uv-based)
-+-- sam-deploy.yml               # Atomic (deploy): sam build + deploy, samconfig env, layers build
-+-- angular-spa-deploy.yml       # Atomic (deploy): Angular SPA -> S3 + CloudFront, build + sync + invalidate
 +-- container-deploy-ecr.yml     # Atomic (deploy): docker buildx + ECR push (or-cog-agent, otros proyectos container-based)
 +-- migrations-dry-run.yml       # Atomic (ecosystem): node-pg-migrate --dry-run contra Postgres service container
 +-- latex-build.yml              # Atomic (article-side): latexmk → PDF
 +-- latex-release.yml            # Atomic (article-side): release of compiled PDF
 ```
-
-### `angular-spa-deploy.yml`
-
-Build de un SPA Angular via `npm ci` + `npm run build`, sync a S3 con
-`--delete`, y `cloudfront create-invalidation`. Inputs clave: `s3-bucket`,
-`cloudfront-distribution-id`, `node-version`, `build-script`, `artifact-path`,
-`api-url` (env var de frontend inyectada al build). Secret: `AWS_DEPLOY_ROLE_ARN`
-(restringido al bucket + distribution especifico via trust policy + inline IAM
-policy del modulo `iam-angular-spa-deploy-dev` en `orion-infrastructure`).
-
-Pattern complementario a `sam-deploy.yml`: este no usa SAM, sino
-directamente `aws s3 sync` + `aws cloudfront create-invalidation`. Adecuado
-para SPAs Angular/React/Vue estaticos sin backend serverless.
 
 ### Por que no usamos subcarpetas (limitacion de GH Actions)
 
@@ -94,7 +78,7 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
 
 ### Reglas del catalogo
 
-- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `actionlint.yml` + `sam-deploy.yml` sin tomar `yamllint.yml` o `eslint.yml`.
+- **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `actionlint.yml` + `python-ci.yml` sin tomar `yamllint.yml` o `eslint.yml`.
 - **Secrets solo en recipes de deploy.** Las recipes de ecosystem y node no reciben secrets (checks de codigo estatico puro).
 - **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (ahincho/orion-backend -> spark-match).
 - **Pin de herramientas externas.** actionlint v1.7.7, yamllint 1.35.1, eslint version parametrizable via input, terraform version parametrizable via input, sam-cli version parametrizable via input.
@@ -141,13 +125,12 @@ callers existentes no requieren cambios.
    PR contra `main`. Mapeo canonico (todos los callers usan `@main`):
    - `python-ci.yml`: `orion-cognitive-agent` (caller canonico de produccion)
    - `eslint.yml`, `node-test.yml`: `orion-frontend`
-   - `sam-deploy.yml`: `orion-backend`
    - `container-deploy-ecr.yml`: `orion-cognitive-agent`
    - `terraform-plan.yml`, `terraform-apply.yml`, y los ecosystem
-     recipes de Terraform (`terraform-fmt`, `terraform-validate`,
-     `tflint`, `checkov`, `cfn-nag`): `orion-infrastructure`
+     recipes de Terraform (`terraform-validate`,
+     `tflint`, `checkov`): `orion-infrastructure`
    - `latex-build.yml`, `latex-release.yml`: `spark-match-07-article`
-   - `actionlint.yml`, `gitleaks.yml`, `yamllint.yml`, `lambda-permission-source-arn.yml`:
+   - `actionlint.yml`, `gitleaks.yml`, `yamllint.yml`:
      `ci.yml` local (ver punto 1)
 3. Si la PR cambia un input o agrega un paso al recipe, el reviewer exige
    smoke test explicito del caller correspondiente antes de aprobar el

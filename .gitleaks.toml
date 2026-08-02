@@ -4,11 +4,8 @@
 # Default gitleaks rules cover most common secret formats (AWS access key
 # IDs, GitHub PATs, Slack tokens, etc.). This file ADDS:
 #
-#   1. Org-specific allowlists so legitimate fixtures in tests/fixtures/
-#      are not flagged. Without these, the gitleaks CI job fails on
-#      every PR because test SAM templates contain literal
-#      "AKIA..." strings and other obviously-fake credential-looking
-#      values.
+#   1. Org-specific allowlists so legitimate fixtures in
+#      tests/fixtures/ are not flagged (when present).
 #
 #   2. Custom rules for AWS patterns that the default rule set does NOT
 #      match (or that we want to flag more aggressively than the
@@ -30,15 +27,9 @@ useDefault = true
 # -----------------------------------------------------------------------------
 # Allowlists: paths / patterns that should NEVER be flagged.
 # -----------------------------------------------------------------------------
-# Test fixtures under tests/fixtures/ contain literal strings that look
-# like secrets (AKIA..., wJalrXUtnFEMI/K7MDENG/..., etc.) for the
-# purpose of testing scripts/check_lambda_permission_source_arn.py.
-# They are NOT real credentials; flagging them creates noise.
 [allowlist]
-description = "Allow test fixtures, docs, examples, and known-fake strings"
+description = "Allow docs, examples, and known-fake strings"
 paths = [
-  # Test fixtures with literal credential-looking strings.
-  '''tests/fixtures/.*''',
   # CHANGELOG.md contains historical references to PRs that are not
   # secrets but gitleaks entropy rules occasionally flag.
   '''CHANGELOG\.md''',

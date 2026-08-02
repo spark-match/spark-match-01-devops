@@ -42,8 +42,7 @@
 #     (e.g. `sub:repo:<org>/<caller>:ref:refs/heads/main`).
 #
 # Cross-owner secret forwarding: caller passes the secret explicitly via
-# `secrets:` block. See angular-spa-deploy.yml + terraform-apply.yml for
-# the same workaround.
+# `secrets:` block. See terraform-apply.yml for the same workaround.
 # =============================================================================
 
 name: Container Deploy (ECR)
