@@ -24,7 +24,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: run-commitlint
-        if: ${{ !startsWith(github.event.pull_request.head.ref, 'release-please--') }}
+        if: ${{
+            (github.event_name == 'pull_request' && !startsWith(github.event.pull_request.head.ref, 'release-please--'))
+            || (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release '))
+          }}
         uses: wagoid/commitlint-github-action@v6
         with:
           configFile: .commitlintrc.json
