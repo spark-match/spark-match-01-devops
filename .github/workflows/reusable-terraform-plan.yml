@@ -287,7 +287,7 @@ jobs:
         #      this when inputs.plan-role-arn is empty.
         # The job-level `environment:` binding (PR #228) is unrelated to
         # secret forwarding; it controls approval gates + required reviewers.
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ inputs.plan-role-arn != '' && inputs.plan-role-arn || secrets[inputs.plan-role-arn-secret] }}
           aws-region: ${{ inputs.aws-region }}

@@ -205,7 +205,7 @@ jobs:
         # Resolve role ARN from two paths (string input preferred to avoid
         # cross-owner secret masking). See reusable-terraform-plan.yml for
         # the full rationale.
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ inputs.apply-role-arn != '' && inputs.apply-role-arn || secrets[inputs.apply-role-arn-secret] }}
           aws-region: ${{ inputs.aws-region }}
