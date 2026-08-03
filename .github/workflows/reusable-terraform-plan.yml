@@ -41,8 +41,8 @@ on:
   workflow_call:
     secrets:
       AWS_PLAN_ROLE_ARN:
-        description: 'OIDC role ARN for terraform plan (assumed via aws-actions/configure-aws-credentials). Caller passes the value of its per-env secret (e.g. AWS_PLAN_ROLE_ARN_DEV). Required because cross-owner callers cannot use secrets: inherit.'
-        required: true
+        description: 'OIDC role ARN for terraform plan. Optional when caller passes inputs.plan-role-arn instead (preferred for cross-owner).'
+        required: false
     inputs:
       environment:
         description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
