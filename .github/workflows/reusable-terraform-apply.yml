@@ -193,13 +193,14 @@ jobs:
           terraform_wrapper: false
 
       - name: configure-aws-credentials-oidc-apply-role
-        # Cross-owner secret forwarding — see the same comment in
-        # reusable-terraform-plan.yml. The caller passes
-        #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
-        # explicitly (required by workflow_call on this reusable).
+        # Cross-owner secret lookup — see the same comment in
+        # reusable-terraform-plan.yml. The caller passes the secret NAME
+        # (not the value) via apply-role-arn-secret input. The value is
+        # looked up at runtime from the GH Environment bound to this job:
+        #   ${{ secrets[inputs.apply-role-arn-secret] }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-to-assume: ${{ secrets[inputs.apply-role-arn-secret] }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
