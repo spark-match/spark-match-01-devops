@@ -39,6 +39,10 @@ name: terraform-plan
 
 on:
   workflow_call:
+    secrets:
+      AWS_PLAN_ROLE_ARN:
+        description: 'OIDC role ARN for terraform plan (assumed via aws-actions/configure-aws-credentials). Caller passes the value of its per-env secret (e.g. AWS_PLAN_ROLE_ARN_DEV). Required because cross-owner callers cannot use secrets: inherit.'
+        required: true
     inputs:
       environment:
         description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
@@ -245,24 +249,24 @@ jobs:
         id: diag
         run: |
           echo "::notice::plan_secret_len=$(echo -n "$AWS_PLAN_ROLE_ARN" | wc -c)"
-          echo "::notice::plan_secret_name=$INPUTS_PLAN_ROLE_ARN_SECRET"
         env:
-          INPUTS_PLAN_ROLE_ARN_SECRET: ${{ inputs.plan-role-arn-secret }}
-          AWS_PLAN_ROLE_ARN: ${{ secrets[inputs.plan-role-arn-secret] }}
+          AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
       - name: configure-aws-credentials-oidc-plan-role
-        # Cross-owner secret lookup: this reusable does NOT declare secrets
-        # in workflow_call (cross-owner callers cannot use secrets: inherit).
-        # Instead it accesses the secret at runtime via dynamic lookup:
-        #   ${{ secrets[inputs.plan-role-arn-secret] }}
-        # The secret must exist in the GH Environment bound to this job
-        # (configured via inputs.environment-name / environment). Caller
-        # supplies the secret NAME (not the value) via the
-        # plan-role-arn-secret input — the value stays in the caller's
-        # environment-scoped secret store.
+        # Cross-owner secret forwarding: this reusable declares
+        #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
+        # in workflow_call. GitHub drops `secrets: inherit` across owner
+        # boundaries, so callers MUST pass the secret explicitly. Per-env
+        # convention: the caller forwards its environment-scoped secret
+        # (e.g. AWS_PLAN_ROLE_ARN_DEV) under the reusable's expected name:
+        #   secrets:
+        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN_DEV }}
+        # The job-level `environment:` binding (PR #228) controls approval
+        # gates and required reviewers; it does NOT change how secrets
+        # are forwarded.
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets[inputs.plan-role-arn-secret] }}
+          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
