@@ -192,7 +192,66 @@ pre-formateado.
     - Plantillas embebidas: `"name": "eslint-${{ inputs.environment-name }}"` (con guión, no espacio).
     - Para paréntesis con descripción (e.g. `(OIDC, plan role)`), kebab-case el contenido y unir con guión: `configure-aws-credentials-oidc-plan-role`.
 
-### 5.2 Workflows reusables
+### 5.2 Cómo añadir un nuevo reusable workflow
+
+> Patrón establecido en PR #254 (Tier 3) y aplicado por primera vez en
+> `spark-match-02-infrastructure` (PR #104, #105).
+
+Un reusable workflow (`on: workflow_call`) encapsula lógica reutilizable
+cross-repo. Para añadir uno:
+
+1. **Crear archivo** en `.github/workflows/reusable-<name>.yml` (prefijo
+   `reusable-` + kebab-case, ver §5.1).
+2. **Inputs vs secrets**:
+   - `workflow_call.inputs` para valores NO sensibles (paths, flags, toggles).
+   - `workflow_call.secrets` para credenciales (App IDs, tokens).
+   - Inputs y secrets deben tener `description` + `default` (si opcional) +
+     `required` explícito.
+3. **NO lookup dinámico de secrets**: `${{ secrets[inputs.foo] }}` está
+   prohibido por GH Actions (PR #256). Usar `workflow_call.secrets`
+   declarados y forwardear desde el caller.
+4. **NO definir `concurrency`**: GH Actions rechaza reusable workflows
+   que definan su propio concurrency block (PR #255). El caller lo posee.
+5. **Permisos mínimos**: `contents: read` por default. Escalar a `write`
+   solo si crea branches / tags / releases.
+6. **Dogfooding obligatorio**: el caller interno de 01-devops
+   (`commitlint.yml`, `release-please.yml`) debe consumir el reusable
+   via `uses: ./.github/workflows/...`. Esto valida el shape contra
+   la suite de bats ANTES de exponerlo cross-repo.
+7. **Tests bats**: añadir en `tests/bats/reusable-ci-workflows.bats`
+   (o archivo nuevo por dominio). Cubrir:
+   - `workflow_call` declarado.
+   - Cada input tiene `type` explícito.
+   - Cada action pinneada al major (`@vN`, NO SHA).
+   - Caller interno consume el reusable.
+   - Caller interno NO duplica steps del reusable.
+   - Reusable NO define `concurrency`.
+   - Caller interno SÍ define `concurrency`.
+   - Para reusables con secrets: caller forwardea ambos secrets via
+     `secrets:` block, reusable los consume via `${{ secrets.<name> }}`.
+8. **Pin cross-repo**: `uses: spark-match/spark-match-01-devops/.github/
+   workflows/reusable-<name>.yml@v0.1.16` (NO `@main`). Da control de
+   upgrades. Bumpear `@v0.1.17` cuando se libere una nueva versión con
+   cambios compatibles.
+9. **Documentar en §11**: añadir a la tabla de reusables, contar
+   correctamente. Bumpear el `package-name` en `.github/release-please-
+   config.json` si aplica.
+
+**Anti-patterns**:
+
+- `uses: ./...` cross-repo (solo funciona same-repo, error en runtime).
+- Inputs que cambian paths canónicos (hardcodear en su lugar).
+- `permissions: write` por defecto.
+- Reutilizar nombres de inputs legacy que impliquen lookup dinámico
+  de secrets.
+- Olvidar el auto-dogfooding (caller interno no consume el reusable).
+- Publicar reusable sin bats tests.
+
+**Referencia**: PR #254 introduce el patrón (con bugs corregidos en
+#255 y #256). PR #104 y #105 en `spark-match-02-infrastructure` son los
+primeros consumers cross-repo.
+
+### 5.3 Workflows reusables
 
 - **Top-level only** en `.github/workflows/`. Subcarpetas rompen `uses: ./...` (limitación de GitHub Actions).
 - Cada workflow expone un input `environment-name` (incluso si es informativo).
@@ -207,19 +266,19 @@ pre-formateado.
     echo "${INPUTS_FOO}"
   ```
 
-### 5.3 Composite actions
+### 5.4 Composite actions
 
 - `.github/actions/<name>/action.yml` (un directorio por action).
 - Sin deps de runtime fuera de las actions oficiales de GitHub.
 
-### 5.4 Scripts
+### 5.5 Scripts
 
 - Shebang `#!/usr/bin/env bash` + `set -euo pipefail` al top.
 - Cada script declara su uso en un header con ejemplos.
 - `--dry-run` cuando sea posible (todo script idempotente debe soportarlo).
 - Cubrir con bats tests si la lógica es no-trivial.
 
-### 5.5 Tests
+### 5.6 Tests
 
 - bats tests bajo `tests/bats/<subject>.bats`. Descubrimiento automático vía `tests/bats/*.bats` (ver `quality.yml`).
 - Helpers compartidos en `tests/bats/helpers/`.
@@ -302,7 +361,7 @@ Verificar:
 
 ## 11. Estado actual del catalog (referencia rápida)
 
-19 reusables distribuidos así (post-cleanup #201/#202/#203 + #207 rename):
+21 reusables distribuidos así (post-cleanup #201/#202/#203 + #207 rename + Tier 3 #254/#255/#256):
 
 | Capa | Cantidad | Reusables |
 |---|---:|---|
@@ -310,14 +369,19 @@ Verificar:
 | Node | 4 | `eslint`, `node-build`, `node-test`, `node-typecheck` |
 | Deploy | 4 | `migrations-dry-run`, `terraform-apply`, `terraform-destroy` (emergency), `terraform-plan` |
 | Article | 2 | `latex-build`, `latex-release` |
+| **CI/CD shared** | **2** | **`reusable-commitlint`, `reusable-release-please`** |
 
 5 workflows internos (no consumibles — son CI/CD de este repo): `ci`, `codeql-actions`, `commitlint`, `release-please`, `sbom`.
 
+4 composite actions (en `.github/actions/`): `bats-runner`, `codeql-fail-on-alerts`, `setup-actionlint`, `validate-workflow-inputs`.
+
 Consumidores activos (verificado en `main` + `dev` de cada repo):
-- `spark-match-02-infrastructure`: terraform-{plan,apply}, tflint, gitleaks, sonar-terraform, terraform-validate
+- `spark-match-02-infrastructure`: terraform-{plan,apply}, tflint, gitleaks, sonar-terraform, terraform-validate, **commitlint, release-please (Tier 3, post-#104/#105)**
 - `spark-match-03-backend`: sonar-typescript, migrations-dry-run, codeql
 - `spark-match-04-frontend` (dev): actionlint, gitleaks, eslint, node-{test,typecheck,build}, sonar-typescript, yamllint
 - `spark-match-07-article`: latex-{build,release}
+
+20 bats tests en `tests/bats/`, 312/312 verde en último CI run.
 
 Nota: los counts se desactualizan rápido. Para inventario en tiempo real:
 
