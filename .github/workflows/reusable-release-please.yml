@@ -28,10 +28,6 @@ permissions:
   contents: write
   pull-requests: write
 
-concurrency:
-  group: release-please-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   release-please:
     name: release-please
