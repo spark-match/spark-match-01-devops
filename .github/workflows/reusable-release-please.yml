@@ -2,27 +2,13 @@ name: reusable-release-please
 
 on:
   workflow_call:
-    inputs:
-      config-file:
-        description: "Path to the release-please config file, relative to repo root."
-        type: string
-        required: false
-        default: .github/release-please-config.json
-      manifest-file:
-        description: "Path to the release-please manifest file, relative to repo root."
-        type: string
-        required: false
-        default: .release-please-manifest.json
-      app-id-secret:
-        description: "Name of the GitHub Actions secret holding the GitHub App ID used to mint an installation token."
-        type: string
-        required: false
-        default: RELEASE_PLEASE_APP_ID
-      app-private-key-secret:
-        description: "Name of the GitHub Actions secret holding the GitHub App private key (PEM) used to mint an installation token."
-        type: string
-        required: false
-        default: RELEASE_PLEASE_APP_PRIVATE_KEY
+    secrets:
+      release-please-app-id:
+        description: "GitHub App ID used to mint an installation token for release-please. Must be passed by the caller via `secrets.RELEASE_PLEASE_APP_ID` (or equivalent)."
+        required: true
+      release-please-app-private-key:
+        description: "GitHub App private key (PEM) used to mint an installation token for release-please. Must be passed by the caller via `secrets.RELEASE_PLEASE_APP_PRIVATE_KEY` (or equivalent)."
+        required: true
 
 permissions:
   contents: write
@@ -38,14 +24,14 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets[inputs.app-id-secret] }}
-          private-key: ${{ secrets[inputs.app-private-key-secret] }}
+          app-id: ${{ secrets.release-please-app-id }}
+          private-key: ${{ secrets.release-please-app-private-key }}
       - name: run-release-please
         uses: googleapis/release-please-action@v5
         id: release
         with:
-          config-file: ${{ inputs.config-file }}
-          manifest-file: ${{ inputs.manifest-file }}
+          config-file: .github/release-please-config.json
+          manifest-file: .release-please-manifest.json
           token: ${{ steps.app-token.outputs.token }}
       - name: log-result
         if: always()
