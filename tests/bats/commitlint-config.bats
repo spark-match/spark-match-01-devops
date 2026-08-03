@@ -185,6 +185,19 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
   [[ "$output" == *"max 100"* ]]
 }
 
+@test "commitlint-config: hook rejects long header even when subject is < 100 (drift fix)" {
+  # Drift case: subject is 95 chars but prefix 'feat(workflows): ' (17 chars)
+  # makes the full header 112 chars. The CI-side commitlint check
+  # (header-max-length: 100) rejects this; the local hook must too.
+  # Pre-fix, the hook only checked subject length and would have passed.
+  LONG_SUBJECT=$(printf 'x%.0s' {1..95})
+  run bash -c '
+    echo -e "feat(workflows): '"$LONG_SUBJECT"'" | "'"$HOOK"'" /dev/stdin
+  '
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"header is"* ]]
+}
+
 @test "commitlint-config: hook allows Merge commits to pass through" {
   run bash -c '
     echo -e "Merge branch '\''feat/x'\'' into main" | "'"$HOOK"'" /dev/stdin
