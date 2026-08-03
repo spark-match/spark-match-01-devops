@@ -13,12 +13,12 @@ inputs:
 outputs:
   executable:
     description: 'Absolute path to the installed actionlint executable.'
-    value: ${{ steps.install.outputs.executable }}
+    value: ${{ steps.install-actionlint.outputs.executable }}
 runs:
   using: composite
   steps:
     - name: install-actionlint
-      id: install
+      id: install-actionlint
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
