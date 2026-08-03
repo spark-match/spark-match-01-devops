@@ -20,13 +20,25 @@
 # Behavior:
 #   1. Checkout the tagged commit.
 #   2. Run anchore/sbom-action in `cyclonedx-json` format with
-#      `upload-release-assets: true`. The action itself uploads the sbom
-#      as `sbom.cdx.json` to the GitHub Release that triggered the run.
-#      It also uploads the sbom as a workflow artifact under the same
-#      name so we can validate it locally.
-#   3. Download the workflow artifact back to cwd so the verify step
-#      can validate the cyclonedx JSON shape (`bomFormat == CycloneDX`,
+#      `upload-release-assets: false`. The action generates the sbom and
+#      uploads it as a workflow artifact under the name `sbom.cdx.json`,
+#      but does NOT push to the GitHub Release.
+#   3. Download the workflow artifact to a stable local path.
+#   4. Verify the sbom is valid cyclonedx JSON (`bomFormat == CycloneDX`,
 #      `specVersion` present).
+#   5. Upload the verified sbom to the GitHub Release via `gh release
+#      upload`. This step is explicit, retry-friendly, and works in both
+#      `release: published` and `workflow_dispatch` contexts.
+#
+# Why we replaced `upload-release-assets: true`:
+#   anchore/sbom-action@v0.24.0 has a known regression where the
+#   release-asset upload prints "Attaching SBOMs to release: <tag>"
+#   but returns a non-zero exit code without producing the asset.
+#   Re-running the same workflow via workflow_dispatch passes all
+#   steps, but the asset is still missing from the release because
+#   `upload-release-assets` is a no-op outside the `release: published`
+#   context. Splitting the upload into an explicit `gh release upload`
+#   step works around this and gives us retry-friendly logs.
 #
 # Why this exists:
 #   - Compliance: SLSA Build Level 3 + supply-chain transparency
@@ -50,6 +62,15 @@
 #     the false-positive "Process completed with exit code 1" on the
 #     verify step; the action uploads the sbom as artifact but does NOT
 #     place it in cwd by default). Discovered when v0.1.6 release ran.
+#   - fix-sbom-release-upload: split sbom generation from release
+#     upload. anchore/sbom-action@v0.24.0 has a regression where
+#     `upload-release-assets: true` exits with a non-zero code while
+#     printing "Attaching SBOMs to release: <tag>" without producing
+#     the asset on the release. Workaround: set
+#     `upload-release-assets: false` and call `gh release upload` in a
+#     dedicated step. Discovered when v0.1.17 release ran (the sbom
+#     was generated and stored as a workflow artifact but the release
+#     had 0 assets).
 # =============================================================================
 
 name: sbom-release
@@ -92,22 +113,22 @@ jobs:
         with:
           format: cyclonedx-json
           artifact-name: sbom.cdx.json
-          # upload-release-assets: the action itself uploads sbom.cdx.json
-          # to the GitHub Release that triggered this workflow run.
-          # No follow-up `gh release upload` step is needed; the previous
-          # iteration of this workflow did that, but it was redundant.
-          upload-release-assets: true
+          # `upload-release-assets` is a known-flaky path in v0.24.0
+          # (see header comment for details). We disable it here and
+          # upload via `gh release upload` in the next step, which is
+          # retry-friendly and works in both release + workflow_dispatch
+          # contexts.
+          upload-release-assets: false
 
       - name: download-sbom-artifact-for-verification
         # anchore/sbom-action uploads the sbom as a workflow artifact but
         # does NOT place it in the working directory by default. Pull it
-        # back to cwd so the verify step can validate the JSON shape.
+        # back to a stable local path so the verify + upload steps can
+        # operate on it.
         uses: actions/download-artifact@v8
         with:
           name: sbom.cdx.json
           path: ${{ runner.temp }}/sbom-download
-        # Always run so a verify failure does not block the attach-summary
-        # step from emitting useful diagnostics to the run page.
         continue-on-error: false
 
       - name: verify-sbom-artifact-exists-and-is-valid-json
@@ -129,6 +150,45 @@ jobs:
           fi
           echo "cyclonedx sbom ok: $(wc -c < "${SBOM_PATH}") bytes, specVersion=$(jq -r '.specVersion' "${SBOM_PATH}")"
 
+      - name: attach-sbom-to-release
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          SBOM_DIR: ${{ runner.temp }}/sbom-download
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # `gh release upload` requires the asset to exist on disk; we
+        # downloaded it to SBOM_DIR in the previous step. The flag
+        # `--clobber` overwrites a previous sbom.cdx.json if the same
+        # tag has been processed twice (idempotent re-runs). We pin
+        # `--repo` explicitly so the same workflow can be reused in
+        # fork PRs without surprises.
+        run: |
+          set -euo pipefail
+          if [ -z "${TAG}" ]; then
+            echo "::error::no release tag resolved (neither release event nor inputs.tag set)"
+            exit 1
+          fi
+          SBOM_PATH=$(find "${SBOM_DIR}" -type f -name 'sbom.cdx.json' | head -n1)
+          if [ -z "${SBOM_PATH}" ]; then
+            echo "::error::sbom.cdx.json missing in ${SBOM_DIR}; verify step must have failed silently"
+            exit 1
+          fi
+          # `gh release upload` returns 0 even when the asset already
+          # exists; combined with --clobber we get idempotent re-runs.
+          # Retry on transient API failures (5xx) up to 3 times.
+          attempt=1
+          max_attempts=3
+          until gh release upload "${TAG}" "${SBOM_PATH}" \
+                  --repo "${{ github.repository }}" \
+                  --clobber; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "::error::gh release upload failed after ${max_attempts} attempts"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep "$((attempt * 5))"
+          done
+          echo "uploaded sbom.cdx.json to release ${TAG} (size=$(wc -c < "${SBOM_PATH}"))"
+
       - name: attach-summary
         if: always()
         run: |
@@ -140,5 +200,6 @@ jobs:
             echo "| Tag | \`${{ github.event.release.tag_name || inputs.tag || '(none)' }}\` |"
             echo "| Format | \`cyclonedx-json\` |"
             echo "| Artifact | \`sbom.cdx.json\` |"
-            echo "| Generator | \`anchore/sbom-action@v0.17.7\` |"
+            echo "| Generator | \`anchore/sbom-action@v0.24.0\` |"
+            echo "| Upload | \`gh release upload (explicit step)\` |"
           } >> "$GITHUB_STEP_SUMMARY"
