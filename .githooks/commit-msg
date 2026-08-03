@@ -95,8 +95,13 @@ if [[ -n "$SCOPE" ]]; then
 fi
 
 # Subject rules.
-if (( ${#SUBJECT} > 100 )); then
-  err "subject is ${#SUBJECT} chars; max 100"
+# Header length is checked on the full FIRST_LINE (not just the subject)
+# so the local hook matches the CI-side `header-max-length: 100` rule
+# from .commitlintrc.json. Drift between the two meant a commit like
+# `feat(workflows): <95 chars>` (subject 95, header 114) passed locally
+# but failed in CI. See AGENTS.md §3 for the convention.
+if (( ${#FIRST_LINE} > 100 )); then
+  err "header is ${#FIRST_LINE} chars; max 100 (subject was ${#SUBJECT})"
 fi
 if [[ "$SUBJECT" =~ \.$ ]]; then
   err "subject must not end with '.'"
