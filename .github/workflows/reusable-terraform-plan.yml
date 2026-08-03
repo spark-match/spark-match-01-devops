@@ -120,10 +120,6 @@ on:
       environment:
         description: 'Environment identifier echoed back.'
         value: ${{ jobs.plan.outputs.environment }}
-    secrets:
-      AWS_PLAN_ROLE_ARN:
-        description: 'OIDC role ARN for the plan job (assumed via aws-actions/configure-aws-credentials). Optional: if the caller does not forward it, the reusable falls back to the env-scoped lookup (jobs.plan is bound to `environment: dev|prod|...` via input.environment-name || input.environment).'
-        required: false
 
 permissions:
   id-token: write          # For OIDC
