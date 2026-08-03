@@ -99,9 +99,11 @@ jobs:
             macos:bun)   CACHE_PATH="$HOME/.bun/install/cache" ;;
             *) echo "::error::Unsupported runner OS / pkg-manager combo: '$RUNNER_OS/$INPUTS_PKG_MANAGER'" >&2; exit 1 ;;
           esac
-          echo "lower-os=$(printf '%s' "$LOWER_OS" | tr -d '\n\r')" >> "$GITHUB_ENV"
-          echo "env-name=$(printf '%s' "$ENV_NAME" | tr -d '\n\r')" >> "$GITHUB_ENV"
-          echo "cache-path=$(printf '%s' "$CACHE_PATH" | tr -d '\n\r')" >> "$GITHUB_ENV"
+          {
+            echo "lower-os=$(printf '%s' "$LOWER_OS" | tr -d '\n\r')"
+            echo "env-name=$(printf '%s' "$ENV_NAME" | tr -d '\n\r')"
+            echo "cache-path=$(printf '%s' "$CACHE_PATH" | tr -d '\n\r')"
+          } >> "$GITHUB_ENV"
           echo "Cache key segments: lower-os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
         env:
@@ -147,8 +149,10 @@ jobs:
               ;;
             *) echo "::error::Unsupported pkg-manager: '$INPUTS_PKG_MANAGER'" >&2; exit 1 ;;
           esac
-          echo "pkg-install-cmd=$PKG_INSTALL_CMD" >> "$GITHUB_ENV"
-          echo "pkg-run-cmd=$PKG_RUN_CMD" >> "$GITHUB_ENV"
+          {
+            echo "pkg-install-cmd=$PKG_INSTALL_CMD"
+            echo "pkg-run-cmd=$PKG_RUN_CMD"
+          } >> "$GITHUB_ENV"
         env:
           INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
 
