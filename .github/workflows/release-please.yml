@@ -24,7 +24,7 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-      - name: run release-please
+      - name: run-release-please
         uses: googleapis/release-please-action@v5
         id: release
         with:

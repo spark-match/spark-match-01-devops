@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# sbom-release.yml - Generate CycloneDX SBOM and attach to GitHub Release
+# sbom.yml - Generate cyclonedx sbom and attach to GitHub Release
 # =============================================================================
 # NOTE: workflow_dispatch is declared below for manual re-runs of an
 # existing release tag. Useful when a release was published before the
-# SBOM workflow existed (e.g. retroactively attaching sbom.cdx.json to
+# sbom workflow existed (e.g. retroactively attaching sbom.cdx.json to
 # v0.1.4). Required: workflow_dispatch with a `tag:` input that names
 # the target release.
 # Trigger:
@@ -20,39 +20,39 @@
 # Behavior:
 #   1. Checkout the tagged commit.
 #   2. Run anchore/sbom-action in `cyclonedx-json` format with
-#      `upload-release-assets: true`. The action itself uploads the SBOM
+#      `upload-release-assets: true`. The action itself uploads the sbom
 #      as `sbom.cdx.json` to the GitHub Release that triggered the run.
-#      It also uploads the SBOM as a workflow artifact under the same
+#      It also uploads the sbom as a workflow artifact under the same
 #      name so we can validate it locally.
 #   3. Download the workflow artifact back to cwd so the verify step
-#      can validate the CycloneDX JSON shape (`bomFormat == CycloneDX`,
+#      can validate the cyclonedx JSON shape (`bomFormat == CycloneDX`,
 #      `specVersion` present).
 #
 # Why this exists:
 #   - Compliance: SLSA Build Level 3 + supply-chain transparency
 #     frameworks (US Executive Order 14028, EU Cyber Resilience Act)
-#     require a machine-readable SBOM for each release artifact.
+#     require a machine-readable sbom for each release artifact.
 #   - Downstream tooling: vulnerability scanners, license auditors, and
-#     dependency-graph analyzers all consume CycloneDX.
+#     dependency-graph analyzers all consume cyclonedx.
 #
 # Cross-owner safe: uses default GITHUB_TOKEN; no caller secrets.
 #
 # Pin: anchore/sbom-action@v0.17.7
-#   = v0.17.7. anchore/sbom-action is a maintained, widely-used SBOM
-#   generator that supports SPDX + CycloneDX. The CycloneDX native
+#   = v0.17.7. anchore/sbom-action is a maintained, widely-used sbom
+#   generator that supports SPDX + cyclonedx. The cyclonedx-native
 #   GitHub Action (CycloneDX/cyclonedx-action) was deprecated in 2024;
 #   anchore's action is the recommended successor.
 #
 # History:
 #   - PR-G4 (#186): initial sbom-release.yml
-#   - rename (#188): sbom-release.yml → sbom.yml
+#   - rename (#188): sbom-release.yml -> sbom.yml
 #   - fix-sbom-verify-step: add download-artifact before verify (closes
 #     the false-positive "Process completed with exit code 1" on the
-#     verify step; the action uploads the SBOM as artifact but does NOT
+#     verify step; the action uploads the sbom as artifact but does NOT
 #     place it in cwd by default). Discovered when v0.1.6 release ran.
 # =============================================================================
 
-name: SBOM Release
+name: sbom-release
 
 on:
   release:
@@ -60,7 +60,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to attach the SBOM to (e.g. v0.1.4). Required only for manual runs.'
+        description: 'Release tag to attach the sbom to (e.g. v0.1.4). Required only for manual runs.'
         type: string
         required: false
         default: ''
@@ -69,25 +69,25 @@ permissions:
   contents: write
 
 concurrency:
-  # One SBOM attach per release tag. Never cancel an in-flight upload
+  # One sbom attach per release tag. Never cancel an in-flight upload
   # (could leave a half-attached asset).
-  group: sbom-release-${{ github.event.release.tag_name || inputs.tag }}
+  group: sbom-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   sbom:
-    name: sbom (tag=${{ github.event.release.tag_name || inputs.tag || 'manual' }})
+    name: sbom-tag-${{ github.event.release.tag_name || inputs.tag || 'manual' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout release commit
+      - name: checkout-release-commit
         uses: actions/checkout@v7
         with:
           # release:published event includes the tag's commit SHA; check
-          # out that exact commit so the SBOM matches what was released.
+          # out that exact commit so the sbom matches what was released.
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
-      - name: Generate CycloneDX SBOM
+      - name: generate-cyclonedx-sbom
         uses: anchore/sbom-action@v0.17.7
         with:
           format: cyclonedx-json
@@ -98,8 +98,8 @@ jobs:
           # iteration of this workflow did that, but it was redundant.
           upload-release-assets: true
 
-      - name: Download SBOM artifact for verification
-        # anchore/sbom-action uploads the SBOM as a workflow artifact but
+      - name: download-sbom-artifact-for-verification
+        # anchore/sbom-action uploads the sbom as a workflow artifact but
         # does NOT place it in the working directory by default. Pull it
         # back to cwd so the verify step can validate the JSON shape.
         uses: actions/download-artifact@v4
@@ -110,7 +110,7 @@ jobs:
         # step from emitting useful diagnostics to the run page.
         continue-on-error: false
 
-      - name: Verify SBOM artifact exists and is valid JSON
+      - name: verify-sbom-artifact-exists-and-is-valid-json
         env:
           SBOM_DIR: ${{ runner.temp }}/sbom-download
         run: |
@@ -124,16 +124,16 @@ jobs:
           # Validate JSON shape (must have a "bomFormat" field equal to "CycloneDX").
           BOM_FORMAT=$(jq -r '.bomFormat // ""' "${SBOM_PATH}")
           if [ "${BOM_FORMAT}" != "CycloneDX" ]; then
-            echo "::error::${SBOM_PATH} is not a CycloneDX SBOM (bomFormat=${BOM_FORMAT:-<missing>})"
+            echo "::error::${SBOM_PATH} is not a cyclonedx sbom (bomFormat=${BOM_FORMAT:-<missing>})"
             exit 1
           fi
-          echo "CycloneDX SBOM ok: $(wc -c < "${SBOM_PATH}") bytes, specVersion=$(jq -r '.specVersion' "${SBOM_PATH}")"
+          echo "cyclonedx sbom ok: $(wc -c < "${SBOM_PATH}") bytes, specVersion=$(jq -r '.specVersion' "${SBOM_PATH}")"
 
-      - name: Attach summary
+      - name: attach-summary
         if: always()
         run: |
           {
-            echo "## SBOM Release - \`${{ github.event.release.tag_name || inputs.tag || 'manual' }}\`"
+            echo "## sbom-release - \`${{ github.event.release.tag_name || inputs.tag || 'manual' }}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"

@@ -1,5 +1,5 @@
 name: codeql-fail-on-alerts
-description: 'Parse CodeQL SARIF and fail the job if alerts >= severity threshold'
+description: 'Parse codeql SARIF and fail the job if alerts >= severity threshold'
 inputs:
   severity-threshold:
     description: 'Minimum severity to fail on (error|warning|note)'

@@ -4,7 +4,7 @@ query-filters:
   - exclude:
       id: js/actions/unpinned-3rd-party-action
       reason: >
-        The CodeQL query for unpinned 3rd party actions is not applicable
+        The codeql query for unpinned 3rd party actions is not applicable
         to this repository: it consists of YAML config files and shell
         scripts, not JavaScript or TypeScript. Excluded to avoid false
         positives and irrelevant alerts.

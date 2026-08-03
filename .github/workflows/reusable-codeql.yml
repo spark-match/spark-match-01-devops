@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: CodeQL - Static analysis for security vulnerabilities
+# Reusable Workflow: codeql - Static analysis for security vulnerabilities
 # =============================================================================
-# Atomic recipe (ecosystem layer). Runs CodeQL against the caller repository
+# Atomic recipe (ecosystem layer). Runs codeql against the caller repository
 # with the matrix, query pack, and path exclusions chosen by the caller.
 #
-# Supported languages (CodeQL built-ins):
+# Supported languages (codeql built-ins):
 #   - javascript  (covers TypeScript via internal tsc compilation)
 #   - actions     (GitHub Actions YAML)
 #   - python      (PyPI packages, requests, etc.)
@@ -16,15 +16,15 @@
 #   inputs.languages = "javascript,actions"    -> matrix: [javascript, actions]
 #
 # Query packs:
-#   - security              (default CodeQL, smallest FP-prone set)
+#   - security              (default codeql, smallest FP-prone set)
 #   - security-extended     (default here, includes security-and-quality)
 #   - security-and-quality  (adds lint-style checks)
 #
 # PR gating:
 #   When `fail-on-alerts: true` (default), the workflow exits non-zero if
-#   CodeQL reports any alert at severity >= `fail-on-severity` (default
+#   codeql reports any alert at severity >= `fail-on-severity` (default
 #   `warning`). The check is implemented as a SARIF post-step (jq), so it
-#   works for PR runs (where CodeQL only flags NEW diffs by default) and
+#   works for PR runs (where codeql only flags NEW diffs by default) and
 #   for push runs (where it flags everything in scope).
 #
 # USAGE (in caller repo):
@@ -37,9 +37,9 @@
 #         fail-on-alerts: 'true'
 #
 # Inputs:
-#   languages:        Comma-separated list of CodeQL languages.
+#   languages:        Comma-separated list of codeql languages.
 #                     Default: 'javascript'
-#   build-mode:       'none' or 'autobuild'. JS/TS with `none` uses CodeQL's
+#   build-mode:       'none' or 'autobuild'. JS/TS with `none` uses codeql's
 #                     internal tsc; autobuild runs `npm run build` etc.
 #                     Default: 'none'
 #   queries-pack:     'security' | 'security-extended' | 'security-and-quality'.
@@ -51,8 +51,8 @@
 #                     Default: 'warning'
 #
 # Path exclusions:
-#   - Callers that need to exclude paths from CodeQL analysis should pass
-#     them via the `config-file:` input (a CodeQL config YAML in the caller
+#   - Callers that need to exclude paths from codeql analysis should pass
+#     them via the `config-file:` input (a codeql config YAML in the caller
 #     repo with `paths-ignore:`). The `paths-ignore:` input was removed
 #     because `github/codeql-action/init@v4` does NOT define it as an
 #     actionlint-valid input (regression introduced in #142; fixed in #148).
@@ -60,24 +60,24 @@
 #     for the full input list.
 #
 # Notes:
-#   - CodeQL uses the caller's GITHUB_TOKEN via `security-events: write`.
+#   - codeql uses the caller's GITHUB_TOKEN via `security-events: write`.
 #     No external secrets required.
-#   - Caller is responsible for disabling GitHub's "Default CodeQL setup"
+#   - Caller is responsible for disabling GitHub's "default codeql setup"
 #     in repo Settings to avoid duplicate analysis.
 # =============================================================================
 
-name: CodeQL
+name: codeql
 
 on:
   workflow_call:
     inputs:
       languages:
-        description: 'Comma-separated CodeQL languages'
+        description: 'Comma-separated codeql languages'
         type: string
         default: 'javascript'
         required: false
       build-mode:
-        description: 'CodeQL build mode (none|autobuild)'
+        description: 'codeql build mode (none|autobuild)'
         type: string
         default: 'none'
         required: false
@@ -117,18 +117,18 @@ jobs:
   # array, since GitHub Actions expressions do NOT have a split() function
   # (only format/fromJson/join/tojson are available).
   setup:
-    name: Setup (parse languages)
+    name: setup-parse-languages
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       languages_json: ${{ steps.parse.outputs.languages_json }}
     steps:
-      - name: Parse languages input
+      - name: parse-languages-input
         id: parse
         shell: bash
         env:
           # Pass via env to prevent shell interpolation of ${{ inputs.languages }}
-          # (CodeQL actions/code-injection/medium). The caller controls this
+          # (codeql actions/code-injection/medium). The caller controls this
           # input; without env isolation, a malicious value could break out of
           # the single quotes via $(...) or similar.
           LANGS_RAW: ${{ inputs.languages }}
@@ -138,7 +138,7 @@ jobs:
           echo "languages_json=${LANGS_JSON}" >> "$GITHUB_OUTPUT"
 
   analyze:
-    name: "Analyze (${{ matrix.language }})"
+    name: "analyze-${{ matrix.language }}"
     runs-on: ubuntu-latest
     needs: setup
     timeout-minutes: 30
@@ -147,22 +147,22 @@ jobs:
       matrix:
         language: ${{ fromJson(needs.setup.outputs.languages_json) }}
     steps:
-      - name: Checkout repository
+      - name: checkout-repository
         uses: actions/checkout@v7
 
-      - name: Initialize CodeQL
+      - name: initialize-codeql
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ inputs.build-mode }}
           queries: ${{ inputs.queries-pack }}
 
-      - name: Perform CodeQL Analysis
+      - name: perform-codeql-analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
 
-      - name: Upload SARIF artifact
+      - name: upload-sarif-artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -171,7 +171,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Fail on alerts (severity >= ${{ inputs.fail-on-severity }})
+      - name: fail-on-alerts-severity-${{ inputs.fail-on-severity }}
         if: ${{ inputs.fail-on-alerts && github.event_name == 'pull_request' }}
         shell: bash
         env:
@@ -211,7 +211,7 @@ jobs:
           esac
           echo "Alerts at severity >= ${SEVERITY}: ${COUNT}"
           if [ "${COUNT}" -gt 0 ]; then
-            echo "::error::CodeQL found ${COUNT} new alert(s) at severity >= ${SEVERITY} in this PR."
+            echo "::error::codeql found ${COUNT} new alert(s) at severity >= ${SEVERITY} in this PR."
             echo "::group::Top alerts (severity, rule, file:line)"
             jq -r --arg sel "${SELECTOR}" '
               .runs[].results[] |
