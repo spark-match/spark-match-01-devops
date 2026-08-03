@@ -364,7 +364,7 @@ jobs:
           terraform_wrapper: false
 
       - name: configure-aws-credentials-oidc-apply-role
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
@@ -666,7 +666,7 @@ jobs:
           INPUTS_DRY_RUN: ${{ inputs.dry-run }}
           GITHUB_ACTOR: ${{ github.actor }}
       - name: configure-aws-credentials-oidc-apply-role
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
