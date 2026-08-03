@@ -84,9 +84,9 @@ jobs:
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
           esac
-          echo "lower_os=$(printf '%s' "$LOWER_OS" | tr -d '\n\r')" >> "$GITHUB_ENV"
-          echo "env_name=$(printf '%s' "$ENV_NAME" | tr -d '\n\r')" >> "$GITHUB_ENV"
-          echo "Cache key segments: lower_os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
+          echo "lower-os=$(printf '%s' "$LOWER_OS" | tr -d '\n\r')" >> "$GITHUB_ENV"
+          echo "env-name=$(printf '%s' "$ENV_NAME" | tr -d '\n\r')" >> "$GITHUB_ENV"
+          echo "Cache key segments: lower-os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
         env:
           INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
@@ -107,9 +107,9 @@ jobs:
           path: ~/.npm
           # Canonical cache key convention (lowercase, see docs/CACHE.md):
           #   <os>-node<nodeVersion>-<pkgmanager>-<env>-<H>
-          key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
+          key: ${{ env.lower-os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env-name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
-            ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
+            ${{ env.lower-os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env-name }}-
 
       - name: install-dependencies
         run: npm ci
