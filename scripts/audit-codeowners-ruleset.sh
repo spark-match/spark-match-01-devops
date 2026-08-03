@@ -15,6 +15,18 @@
 # Usage:
 #   ./scripts/audit-codeowners-ruleset.sh
 #   ./scripts/audit-codeowners-ruleset.sh --json    # machine-readable output
+#   ./scripts/audit-codeowners-ruleset.sh --dry-run # plan checks without API calls
+#   ./scripts/audit-codeowners-ruleset.sh --help    # show this header
+#
+# Examples:
+#   # Verify the ruleset enforces CODE_OWNERS review on this repo:
+#   ./scripts/audit-codeowners-ruleset.sh
+#
+#   # Audit a different repo (used by CI for cross-repo sweeps):
+#   REPO=spark-match/spark-match-02-infrastructure ./scripts/audit-codeowners-ruleset.sh
+#
+#   # Machine-readable JSON for downstream tooling:
+#   ./scripts/audit-codeowners-ruleset.sh --json | jq .
 #
 # Exit codes:
 #   0   all checks pass
@@ -22,26 +34,51 @@
 #   2   API error (auth, network)
 # =============================================================================
 
-set -u
+set -euo pipefail
 
 RULESET_ID="${RULESET_ID:-18893014}"
 REPO="${REPO:-spark-match/spark-match-01-devops}"
 JSON_OUT=0
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --json) JSON_OUT=1; shift ;;
+    --dry-run)
+      DRY_RUN=1
+      echo "::notice::DRY-RUN: skipping gh api calls; printing planned checks only."
+      shift
+      ;;
     --help|-h)
-      sed -n '2,30p' "$0"
+      sed -n '2,40p' "$0"
       exit 0
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
-if ! command -v gh >/dev/null 2>&1; then
+if ! command -v gh >/dev/null 2>&1 && [[ $DRY_RUN -eq 0 ]]; then
   echo "::error::gh CLI not found" >&2
   exit 2
+fi
+
+if [[ $DRY_RUN -eq 1 ]]; then
+  if [[ $JSON_OUT -eq 1 ]]; then
+    jq -n \
+      '{ruleset_id: '"$RULESET_ID"', repo: "'"$REPO"'", mode: "dry-run", checks_planned: ["require_code_owner_review", "required_approving_review_count", "strict_required_status_checks_policy", "required_status_checks_count", "allowed_merge_methods", "bypass_actors"], fail_count: 0}'
+  else
+    echo "Ruleset ${RULESET_ID} audit (DRY-RUN):"
+    echo "  repo:        ${REPO}"
+    echo "  ruleset_id:  ${RULESET_ID}"
+    echo "  planned checks:"
+    echo "    - require_code_owner_review == true"
+    echo "    - required_approving_review_count >= 1"
+    echo "    - strict_required_status_checks_policy == true"
+    echo "    - required_status_checks_count reported (informational)"
+    echo "    - allowed_merge_methods reported (informational)"
+    echo "    - bypass_actors reported (informational)"
+  fi
+  exit 0
 fi
 
 # Fetch the ruleset.
