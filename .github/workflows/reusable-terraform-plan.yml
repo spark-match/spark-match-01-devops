@@ -141,6 +141,7 @@ jobs:
     name: plan-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: ${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     outputs:
       plan-exit-code: ${{ steps.plan.outputs.plan-exit-code }}
       has-changes: ${{ steps.plan.outputs.has-changes }}
