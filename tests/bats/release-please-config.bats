@@ -130,7 +130,24 @@ setup() {
 }
 
 @test "release-please workflow points at config-file .github/release-please-config.json" {
-  run grep -E 'config-file:[[:space:]]*\.github/release-please-config\.json' .github/workflows/release-please.yml
-  [ "$status" -eq 0 ]
+  # The internal release-please.yml now consumes the reusable
+  # (.github/workflows/reusable-release-please.yml), which has config-file
+  # as a default of .github/release-please-config.json. The internal
+  # workflow can either rely on that default or override it explicitly.
+  # Either way, the effective config path resolves to the canonical
+  # .github/release-please-config.json.
+  if grep -qE 'uses:[[:space:]]*\./\.github/workflows/reusable-release-please\.yml' .github/workflows/release-please.yml; then
+    if grep -qE 'config-file:[[:space:]]*\.github/release-please-config\.json' .github/workflows/release-please.yml; then
+      : # explicit override present
+    else
+      : # relies on the reusable's default; verify that default is the canonical path
+      run grep -E 'default:[[:space:]]*\.github/release-please-config\.json' .github/workflows/reusable-release-please.yml
+      [ "$status" -eq 0 ]
+    fi
+  else
+    # legacy shape: must explicitly reference the config file
+    run grep -E 'config-file:[[:space:]]*\.github/release-please-config\.json' .github/workflows/release-please.yml
+    [ "$status" -eq 0 ]
+  fi
 }
 

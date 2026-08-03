@@ -1,0 +1,57 @@
+name: reusable-commitlint
+
+on:
+  workflow_call:
+    inputs:
+      config-file:
+        description: "Path to the commitlint config file, relative to repo root."
+        type: string
+        required: false
+        default: .commitlintrc.json
+      commit-depth:
+        description: "Number of commits to lint from the PR head (passed to wagoid/commitlint-github-action as commitDepth)."
+        type: number
+        required: false
+        default: 2
+      help-url:
+        description: "URL shown in the commitlint report when a commit fails. Typically the AGENTS.md of the consumer repo."
+        type: string
+        required: false
+        default: ""
+      skip-release-please:
+        description: "When true, skips commitlint for release-please branches (refs starting with 'release-please--') and for push events whose head commit message starts with 'release '. Mirrors the skip logic the consumer workflow would otherwise have to duplicate."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commitlint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-commits:
+    name: "commitlint-${{ github.event.pull_request.head.ref || github.ref_name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: checkout-repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: run-commitlint
+        if: ${{
+            !(inputs.skip-release-please
+              && (
+                (github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'release-please--'))
+                || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release '))
+              ))
+          }}
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: ${{ inputs.config-file }}
+          commitDepth: ${{ inputs.commit-depth }}
+          failOnErrors: true
+          helpURL: ${{ inputs.help-url }}

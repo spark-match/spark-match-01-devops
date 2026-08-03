@@ -1,0 +1,64 @@
+name: reusable-release-please
+
+on:
+  workflow_call:
+    inputs:
+      config-file:
+        description: "Path to the release-please config file, relative to repo root."
+        type: string
+        required: false
+        default: .github/release-please-config.json
+      manifest-file:
+        description: "Path to the release-please manifest file, relative to repo root."
+        type: string
+        required: false
+        default: .release-please-manifest.json
+      app-id-secret:
+        description: "Name of the GitHub Actions secret holding the GitHub App ID used to mint an installation token."
+        type: string
+        required: false
+        default: RELEASE_PLEASE_APP_ID
+      app-private-key-secret:
+        description: "Name of the GitHub Actions secret holding the GitHub App private key (PEM) used to mint an installation token."
+        type: string
+        required: false
+        default: RELEASE_PLEASE_APP_PRIVATE_KEY
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: generate-app-installation-token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets[inputs.app-id-secret] }}
+          private-key: ${{ secrets[inputs.app-private-key-secret] }}
+      - name: run-release-please
+        uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: ${{ inputs.config-file }}
+          manifest-file: ${{ inputs.manifest-file }}
+          token: ${{ steps.app-token.outputs.token }}
+      - name: log-result
+        if: always()
+        env:
+          RELEASES_CREATED: ${{ steps.release.outputs.releases_created || '0' }}
+          PULL_REQUEST_URL: ${{ steps.release.outputs.pull_request_url || '(none)' }}
+          UPLOAD_URL: ${{ steps.release.outputs.upload_url || '(none)' }}
+        run: |
+          echo "release-please result:"
+          echo "  releases_created=${RELEASES_CREATED}"
+          echo "  pull_request_url=${PULL_REQUEST_URL}"
+          echo "  upload_url=${UPLOAD_URL}"
