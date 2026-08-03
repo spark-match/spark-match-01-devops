@@ -8,3 +8,12 @@ query-filters:
         to this repository: it consists of YAML config files and shell
         scripts, not JavaScript or TypeScript. Excluded to avoid false
         positives and irrelevant alerts.
+  - exclude:
+      id: actions/unpinned-tag
+      reason: >
+        Per AGENTS.md Â§5.1 policy: third-party actions are pinned by
+        @vN (major-floating) or @N.N.N (exact version for actions
+        without v-prefixed tags). SHA-pinning is explicitly avoided to
+        receive automatic patch updates. This rule is enforced in
+        reverse by tests/bats/no-sha-pinning.bats which rejects any
+        SHA-pinned uses in workflows.
