@@ -7,14 +7,34 @@
 # results to a per-environment artifact + per-environment sticky comment on
 # the PR. Designed to be invoked from a matrix [dev, staging, prod, ...].
 #
-# USAGE (in caller repo, single env):
+# The job binds to a GitHub Environment ONLY when the caller passes
+# `environment: <name>`. Leaving `environment` empty (the default) means the
+# job runs without env binding: no deployment record, no branch policy check,
+# no approval gate. This is the recommended pattern for PR-triggered plans
+# because the PR ref (`refs/pull/N/merge`) is not in any env branch policy,
+# so binding to env would fail with `runner_id: 0` and `steps_count: 0`.
+#
+# For apply workflows that REQUIRE env binding (branch policy + reviewers),
+# see `reusable-terraform-apply.yml` (same pattern, but the caller always
+# passes `environment: <real-env-name>`).
+#
+# USAGE (in caller repo, single env, PR plan):
 #   jobs:
 #     plan-dev:
 #       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-plan.yml@main
 #       with:
-#         environment: dev
+#         # environment: dev is OMITTED -> no env binding, no branch policy check
 #         working-directory: live/dev
-#         plan-role-arn-secret: AWS_PLAN_ROLE_ARN_DEV
+#         plan-role-arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
+#
+# USAGE (in caller repo, single env, push to protected branch with branch policy):
+#   jobs:
+#     plan-prod:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-plan.yml@main
+#       with:
+#         environment: production  # binds to GH Environment, triggers branch policy
+#         working-directory: live/prod
+#         plan-role-arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
 #
 # USAGE (in caller repo, matrix N envs):
 #   jobs:
@@ -22,17 +42,18 @@
 #       strategy:
 #         matrix:
 #           include:
-#             - { environment: dev, working-directory: live/dev, ... }
-#             - { environment: staging, working-directory: live/staging, ... }
-#             - { environment: prod, working-directory: live/prod, ... }
+#             - { environment: '', working-directory: live/dev }
+#             - { environment: production, working-directory: live/prod }
 #       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-terraform-plan.yml@main
 #       with:
 #         environment: ${{ matrix.environment }}
 #         working-directory: ${{ matrix.working-directory }}
-#         plan-role-arn-secret: ${{ matrix.plan-role-arn-secret }}
+#         plan-role-arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
 #
-# Required GitHub Secret in caller repo: <plan-role-arn-secret>
-# Required AWS: IAM Role with OIDC trust policy for this repo
+# Naming: the role ARN identifier is stored as a repo-wide var named
+# `AWS_PLAN_ROLE_ARN` (no _DEV/_PROD suffix). The GitHub Environment scopes
+# which value to use when needed; ARNs are identifiers, not credentials, so
+# they don't need env-scoped secret protection.
 # =============================================================================
 
 name: terraform-plan
@@ -45,12 +66,7 @@ on:
         required: false
     inputs:
       environment:
-        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
-        type: string
-        required: false
-        default: ''
-      environment-name:
-        description: 'Preferred alias for `environment`. If set, takes precedence over the legacy `environment` input.'
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. When omitted (empty), the job runs WITHOUT env binding - recommended for PR-triggered plans.'
         type: string
         required: false
         default: ''
@@ -65,12 +81,12 @@ on:
         required: false
         default: 'us-east-1'
       plan-role-arn-secret:
-        description: 'Name of the GitHub Secret containing the OIDC role ARN for plan (e.g. AWS_PLAN_ROLE_ARN_DEV).'
+        description: 'Name of the GitHub Secret containing the OIDC role ARN for plan. Preferred for env-scoped secrets. Prefer plan-role-arn (string input) over this when ARNs are repo-wide vars (identifiers, not credentials).'
         type: string
         required: false
         default: 'AWS_PLAN_ROLE_ARN'
       plan-role-arn:
-        description: 'OIDC role ARN value passed directly as a string input. Use this instead of plan-role-arn-secret when calling cross-owner to avoid GitHub masking the value. Identifiers are not credentials.'
+        description: 'OIDC role ARN value passed directly as a string input. Use this instead of plan-role-arn-secret when calling cross-owner or when the ARN is a repo-wide var. Identifiers are not credentials.'
         type: string
         required: false
         default: ''
@@ -138,15 +154,17 @@ permissions:
 # Cancel in-progress plans for the same PR + env. Saves runner minutes
 # when a PR is pushed multiple times. New pushes supersede old plans.
 concurrency:
-  group: terraform-plan-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}-${{ github.ref }}
+  group: terraform-plan-${{ inputs.environment }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   plan:
-    name: plan-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
+    name: plan-${{ inputs.environment }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
+    # ONE input controls env binding. Empty = no binding (PR plans).
+    # Non-empty = bind to GH Environment (push to protected branch / manual dispatch).
+    environment: ${{ inputs.environment }}
     outputs:
       plan-exit-code: ${{ steps.plan.outputs.plan-exit-code }}
       has-changes: ${{ steps.plan.outputs.has-changes }}
@@ -190,10 +208,10 @@ jobs:
           fi
 
           # environment: solo letras, digitos, guion bajo, guion (alfanumerico para S3 prefix)
-          ENV_TO_CHECK="${INPUTS_ENVIRONMENT_NAME:-${INPUTS_ENVIRONMENT}}"
+          ENV_TO_CHECK="${INPUTS_ENVIRONMENT}"
           if [ -n "${ENV_TO_CHECK}" ]; then
             if ! echo "${ENV_TO_CHECK}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
-              ERRORS+=("environment-name: '${ENV_TO_CHECK}' solo puede contener letras, digitos, _ o -")
+              ERRORS+=("environment: '${ENV_TO_CHECK}' solo puede contener letras, digitos, _ o -")
             fi
           fi
 
@@ -212,7 +230,6 @@ jobs:
           INPUTS_PLAN_ROLE_ARN_SECRET: ${{ inputs.plan-role-arn-secret }}
           INPUTS_TERRAFORM_VERSION: ${{ inputs.terraform-version }}
           INPUTS_RETENTION_DAYS: ${{ inputs.retention-days }}
-          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
       - name: resolve-environment-identifier
         id: env
@@ -221,9 +238,7 @@ jobs:
         # para que GitHub no intente hacer cd a un dir que no existe.
         working-directory: .
         run: |
-          if [ -n "${INPUTS_ENVIRONMENT_NAME}" ]; then
-            ENV="${INPUTS_ENVIRONMENT_NAME}"
-          elif [ -n "${INPUTS_ENVIRONMENT}" ]; then
+          if [ -n "${INPUTS_ENVIRONMENT}" ]; then
             ENV="${INPUTS_ENVIRONMENT}"
           else
             ENV=$(basename "${INPUTS_WORKING_DIRECTORY}")
@@ -232,7 +247,6 @@ jobs:
           echo "Resolved environment: ${ENV}"
 
         env:
-          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       - name: checkout-caller-repository
