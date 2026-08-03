@@ -74,6 +74,7 @@ Scopes usados en este repo:
 | `quality` | bats/shellcheck/schema infra |
 | `reconciler` | tests del reconciler |
 | `repo` | cambios estructurales del repo (no catalog) |
+| `deps` | bumps de dependabot (pull requests automatizados) |
 
 Tipos: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`.
 
@@ -159,7 +160,7 @@ pre-formateado.
 - **No introducir dependencias nuevas** sin justificación en el pull request body.
 - **Pin por versiones o branches, NO por SHA**. Para third-party actions usar `@vN` (major flotante, e.g. `actions/checkout@v4`) cuando el action publica tags con prefijo `v`. Si el action NO publica tags con prefijo `v` (e.g. `ludeeus/action-shellcheck` solo tiene `2.0.0`), usar la versión exacta `@N.N.N` (e.g. `ludeeus/action-shellcheck@2.0.0`). Excepciones documentadas:
   - **Self-actions** (nuestras propias composite actions): siempre `@main`.
-  - **Anchore/sbom-action**: pinneado a `@v0.17.7` (minor pinned) porque la línea 0.x tiene breaking changes entre minors.
+  - **Anchore/sbom-action**: pinneado a `@v0.24.0` (minor pinned) porque la línea 0.x tiene breaking changes entre minors.
 - La guardia contra SHA-pinning vive en `tests/bats/no-sha-pinning.bats` (3 casos: third-party, self, AGENTS.md policy text). Si el guard falla, el pull request se bloquea.
 - **Naming convention — kebab-case obligatorio** en identificadores (excepto secretos y env vars del OS, que van en `SNAKE_CASE`):
   - **`kebab-case`** para:
@@ -236,8 +237,8 @@ Este repo **NO usa catch-all `*`** porque GitHub acumula code owners de todas la
 
 Paths actuales:
 
-- `/README.md`, `/LICENSE`, `/SECURITY.md`, `/CONTRIBUTING.md`, `/CODE_OF_CONDUCT.md`, `/CHANGELOG.md` → dual-owned (`@devops` + `@product-owners`)
-- `/.github/`, `/scripts/`, `/governance/`, `/tests/` → `@devops`
+- `/README.md`, `/LICENSE`, `/SECURITY.md`, `/CONTRIBUTING.md`, `/CODE_OF_CONDUCT.md`, `/CHANGELOG.md`, `/AGENTS.md` → dual-owned (`@devops` + `@product-owners`)
+- `/.github/`, `/scripts/`, `/governance/`, `/tests/`, `/.githooks/`, `/.commitlintrc.json`, `/.gitleaks.toml` → `@devops`
 - `/docs/` → dual-owned
 - `/.yamllint.yml`, `/.gitignore`, `/.shellcheckrc`, `/.release-please-manifest.json` → `@devops`
 
@@ -339,4 +340,4 @@ ls tests/bats/*.bats
 
 ---
 
-**Mantenido por**: opencode + el org owner de `spark-match`. Última revisión: 2026-08-02.
+**Mantenido por**: opencode + el org owner de `spark-match`. Última revisión: 2026-08-03.
