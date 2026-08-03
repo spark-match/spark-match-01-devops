@@ -37,7 +37,7 @@
 #
 # Cross-owner safe: uses default GITHUB_TOKEN; no caller secrets.
 #
-# Pin: anchore/sbom-action@v0.17.7
+# Pin: anchore/sbom-action@v0.24.0
 #   = v0.17.7. anchore/sbom-action is a maintained, widely-used sbom
 #   generator that supports SPDX + cyclonedx. The cyclonedx-native
 #   GitHub Action (CycloneDX/cyclonedx-action) was deprecated in 2024;
@@ -88,7 +88,7 @@ jobs:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: generate-cyclonedx-sbom
-        uses: anchore/sbom-action@v0.17.7
+        uses: anchore/sbom-action@v0.24.0
         with:
           format: cyclonedx-json
           artifact-name: sbom.cdx.json
