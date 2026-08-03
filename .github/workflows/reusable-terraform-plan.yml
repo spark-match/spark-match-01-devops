@@ -39,6 +39,10 @@ name: terraform-plan
 
 on:
   workflow_call:
+    secrets:
+      AWS_PLAN_ROLE_ARN:
+        description: 'OIDC role ARN for terraform plan (assumed via aws-actions/configure-aws-credentials). Caller passes the value of its per-env secret (e.g. AWS_PLAN_ROLE_ARN_DEV). Required because cross-owner callers cannot use secrets: inherit.'
+        required: true
     inputs:
       environment:
         description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, comment header, and display. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
@@ -252,9 +256,14 @@ jobs:
         # Cross-owner secret forwarding: this reusable declares
         #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
         # in workflow_call. GitHub drops `secrets: inherit` across owner
-        # boundaries, so callers MUST pass the secret explicitly:
+        # boundaries, so callers MUST pass the secret explicitly. Per-env
+        # convention: the caller forwards its environment-scoped secret
+        # (e.g. AWS_PLAN_ROLE_ARN_DEV) under the reusable's expected name:
         #   secrets:
-        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN_DEV }}
+        # The job-level `environment:` binding (PR #228) controls approval
+        # gates and required reviewers; it does NOT change how secrets
+        # are forwarded.
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}

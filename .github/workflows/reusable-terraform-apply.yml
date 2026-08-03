@@ -31,6 +31,10 @@ name: terraform-apply
 
 on:
   workflow_call:
+    secrets:
+      AWS_APPLY_ROLE_ARN:
+        description: 'OIDC role ARN for terraform apply (assumed via aws-actions/configure-aws-credentials). Caller passes the value of its per-env secret (e.g. AWS_APPLY_ROLE_ARN_PROD). Required because cross-owner callers cannot use secrets: inherit.'
+        required: true
     inputs:
       environment:
         description: 'Environment identifier (e.g. "dev", "staging", "prod"). Used for artifact naming, display, concurrency group. Defaults to basename of working-directory. Deprecated alias: prefer `environment-name`.'
@@ -195,7 +199,7 @@ jobs:
       - name: configure-aws-credentials-oidc-apply-role
         # Cross-owner secret forwarding — see the same comment in
         # reusable-terraform-plan.yml. The caller passes
-        #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+        #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN_<ENV> }}
         # explicitly (required by workflow_call on this reusable).
         uses: aws-actions/configure-aws-credentials@v4
         with:
