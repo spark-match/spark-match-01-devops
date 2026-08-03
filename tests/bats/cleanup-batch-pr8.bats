@@ -7,7 +7,9 @@
 # Locks down:
 #   - defaults.run.shell: bash on every workflow that has a defaults: block
 #   - reusable-terraform-destroy.yml has pull-requests: write permission
-#   - reusable-terraform-* workflows accept environment-name as alias of environment
+#   - reusable-terraform-apply.yml and reusable-terraform-destroy.yml accept
+#     environment-name as alias of environment (preferred pattern)
+#   - reusable-terraform-plan.yml uses ONE input (environment) - no cascade
 #   - reconciler.bash no longer tries to load bats-support / bats-assert
 #   - NO workflow has 'shell: bash' inside a workflow_call.inputs block
 #     (regression guard against the PR-174 mistake)
@@ -114,8 +116,17 @@ WORKFLOWS_DIR="$BATS_TEST_DIRNAME/../../.github/workflows"
   grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/reusable-terraform-destroy.yml"
 }
 
-@test "reusable-terraform-plan.yml declares environment-name input" {
-  grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/reusable-terraform-plan.yml"
+# reusable-terraform-plan.yml intentionally uses ONE input (environment) with
+# no cascade and no environment-name alias. See PR #262 for the rationale.
+# The cascade is unnecessary because the caller decides whether to bind to env
+# (just omit `environment` for PR plans, pass it for protected-branch plans).
+
+@test "reusable-terraform-plan.yml does NOT declare environment-name input" {
+  ! grep -qE '^[[:space:]]+environment-name:' "$WORKFLOWS_DIR/reusable-terraform-plan.yml"
+}
+
+@test "reusable-terraform-plan.yml uses ONE input: environment: \${{ inputs.environment }}" {
+  grep -qE '^[[:space:]]+environment: \$\{\{ inputs\.environment \}\}' "$WORKFLOWS_DIR/reusable-terraform-plan.yml"
 }
 
 @test "reusable-terraform-apply.yml environment input description mentions 'Deprecated alias'" {
@@ -139,19 +150,20 @@ WORKFLOWS_DIR="$BATS_TEST_DIRNAME/../../.github/workflows"
   [[ "$desc" == *"Deprecated alias"* ]]
 }
 
-@test "reusable-terraform-plan.yml environment input description mentions 'Deprecated alias'" {
+@test "reusable-terraform-plan.yml environment input description mentions PR-triggered (no env binding)" {
   local desc
   desc=$(awk '
     /^      environment:/ { in_block=1; next }
     in_block && /^      [a-z]/ { exit }
     in_block { print }
   ' "$WORKFLOWS_DIR/reusable-terraform-plan.yml")
-  [[ "$desc" == *"Deprecated alias"* ]]
+  echo "# desc: $desc"
+  [[ "$desc" == *"WITHOUT env binding"* ]]
 }
 
-@test "reusable-terraform-* workflows prefer environment-name over environment" {
-  for wf in reusable-terraform-apply.yml reusable-terraform-destroy.yml reusable-terraform-plan.yml; do
-    grep -q 'inputs.environment-name || inputs.environment || inputs.working-directory' "$WORKFLOWS_DIR/$wf" \
+@test "reusable-terraform-apply.yml and reusable-terraform-destroy.yml use the precedence chain" {
+  for wf in reusable-terraform-apply.yml reusable-terraform-destroy.yml; do
+    grep -q 'inputs.environment-name || inputs.environment' "$WORKFLOWS_DIR/$wf" \
       || { echo "# $wf missing the precedence chain"; return 1; }
   done
 }
