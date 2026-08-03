@@ -20,6 +20,14 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.17](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.16...v0.1.17) (2026-08-03)
+
+
+### Documentation
+
+* **repo:** refresh §11 catalog state and document reusable pattern ([#258](https://github.com/spark-match/spark-match-01-devops/issues/258)) ([180c4f2](https://github.com/spark-match/spark-match-01-devops/commit/180c4f2d3e448c3a9dea0e09618d10bdfcc6bce1))
+* **repo:** refresh catalog state and document reusable pattern. All 9 checks green. ([180c4f2](https://github.com/spark-match/spark-match-01-devops/commit/180c4f2d3e448c3a9dea0e09618d10bdfcc6bce1))
+
 ## [0.1.16](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.15...v0.1.16) (2026-08-03)
 
 
