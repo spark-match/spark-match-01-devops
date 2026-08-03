@@ -113,7 +113,7 @@ The header comment in the file lists the PRs that introduced each new path so fu
 | `spark-match-04-frontend` | `@spark-match/frontend-devs` | ahincho, BriyitHT | Frontend |
 | `spark-match-05-data-pipeline` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Data |
 | `spark-match-06-model-training` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | ML |
-| `spark-match-07-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | LaTeX |
+| `spark-match-07-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | latex |
 | `spark-match-08-deep-agent` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Agents |
 
 Every team has at least two members, which guarantees the author of any PR has a potential reviewer who is not themselves.
@@ -207,7 +207,7 @@ grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
 
 ### Delta desde el snapshot 2026-07-26
 
-- **2026-08-01 (spark-match-02-infrastructure, strict mode)**: tras gap analysis post-PR #77/#78/#79 (todos bypasaron tflint via admin-bypass), se agregaron 3 required checks adicionales: `tflint / tflint (env=dev)`, `gitleaks / gitleaks (env=dev)`, `sonar-terraform / SonarCloud Terraform (dev)`. Tracked en `tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md`. Prerequisito: infra debe arreglar `.tflint.hcl` antes de mergear PRs futuros.
+- **2026-08-01 (spark-match-02-infrastructure, strict mode)**: tras gap analysis post-PR #77/#78/#79 (todos bypasaron tflint via admin-bypass), se agregaron 3 required checks adicionales: `tflint / tflint (env=dev)`, `gitleaks / gitleaks (env=dev)`, `sonar-terraform / sonar-cloud terraform (dev)`. Tracked en `tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md`. Prerequisito: infra debe arreglar `.tflint.hcl` antes de mergear PRs futuros.
 
 ### Proceso de migracion aplicado (leccion aprendida)
 

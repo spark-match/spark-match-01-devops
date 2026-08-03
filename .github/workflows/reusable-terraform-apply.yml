@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: Terraform Apply (N-environment aware)
+# Reusable Workflow: terraform-apply (N-environment aware)
 # =============================================================================
 # Runs `terraform plan` then `terraform apply` against a caller-provided
 # working directory. Uses GitHub Environment as approval gate (configurable
@@ -27,7 +27,7 @@
 # If both are empty, the workflow fails (caller bug).
 # =============================================================================
 
-name: Terraform Apply
+name: terraform-apply
 
 on:
   workflow_call:
@@ -135,7 +135,7 @@ permissions:
 
 jobs:
   apply:
-    name: Apply (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
+    name: apply-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # GH Environment uses input fallback: gh-environment > environment.
@@ -151,7 +151,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
@@ -159,7 +159,7 @@ jobs:
           required: working-directory
           patterns: |
             {"terraform-version": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}
-      - name: Resolve environment identifier (for display/artifact/concurrency)
+      - name: resolve-environment-identifier
         id: env
         # Este step corre ANTES de checkout, asi que el working-directory del
         # caller (e.g. live/dev) aun no existe. Forzamos working-directory: .
@@ -183,11 +183,11 @@ jobs:
           INPUTS_GH_ENVIRONMENT: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
           INPUTS_AUTO_APPROVE: ${{ inputs.auto-approve }}
           INPUTS_DRIFT_ONLY: ${{ inputs.drift-only }}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
 
-      - name: Setup Terraform ${{ inputs.terraform-version }}
+      - name: setup-terraform-${{ inputs.terraform-version }}
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
@@ -196,7 +196,7 @@ jobs:
           # so raw terraform exit codes pass through to the script.
           terraform_wrapper: false
 
-      - name: Configure AWS credentials (OIDC, apply role)
+      - name: configure-aws-credentials-oidc-apply-role
         # Cross-owner secret forwarding — see the same comment in
         # reusable-terraform-plan.yml. The caller passes
         #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN }}
@@ -206,15 +206,15 @@ jobs:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
-      - name: Terraform fmt
+      - name: terraform-fmt
         run: terraform fmt -check -recursive -diff
 
-      - name: Create plugin cache directory
+      - name: create-plugin-cache-directory
         run: mkdir -p "${GITHUB_WORKSPACE}/.terraform.d/plugin-cache"
 
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
-      - name: Terraform init
+      - name: terraform-init
         run: |
           INIT_ARGS=(-input=false)
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
@@ -234,10 +234,10 @@ jobs:
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
           INPUTS_AWS_REGION: ${{ inputs.aws-region }}
-      - name: Terraform validate
+      - name: terraform-validate
         run: terraform validate -no-color
 
-      - name: Terraform plan
+      - name: terraform-plan
         id: plan
         run: |
           set +e
@@ -281,18 +281,18 @@ jobs:
           INPUTS_VAR_FILES: ${{ inputs.var-files }}
           INPUTS_TARGET: ${{ inputs.target }}
           INPUTS_EXTRA_ARGS: ${{ inputs.extra-args }}
-      - name: Convert plan to JSON
+      - name: convert-plan-to-json
         if: steps.plan.outputs.has-changes == 'true'
         run: terraform show -json tfplan > tfplan.json
 
-      - name: Generate plan summary
+      - name: generate-plan-summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
           ENV="${STEPS_ENV_OUTPUTS_ENVIRONMENT}"
           WD="${INPUTS_WORKING_DIRECTORY}"
           REGION="${INPUTS_AWS_REGION}"
           {
-            echo "## Terraform Apply Plan — \`${ENV}\`"
+            echo "## terraform-apply plan -- \`${ENV}\`"
             echo ""
             if [ "${INPUTS_DRIFT_ONLY}" = "true" ]; then
               echo "**Mode:** drift-only (no apply)"
@@ -321,7 +321,7 @@ jobs:
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
           STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
-      - name: Terraform apply
+      - name: terraform-apply
         id: apply
         if: steps.plan.outputs.has-changes == 'true' && inputs.drift-only != 'true'
         run: |
@@ -335,11 +335,11 @@ jobs:
             echo "apply-success=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Apply result summary
+      - name: apply-result-summary
         if: always()
         run: |
           {
-            echo "## Terraform Apply Result — \`${STEPS_ENV_OUTPUTS_ENVIRONMENT}\`"
+            echo "## terraform-apply result -- \`${STEPS_ENV_OUTPUTS_ENVIRONMENT}\`"
             echo ""
             if [ "${INPUTS_DRIFT_ONLY}" = "true" ]; then
               echo "Mode: **drift-only** (plan completed, no apply performed)"
@@ -370,13 +370,13 @@ jobs:
           STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
           STEPS_PLAN_OUTPUTS_HAS_CHANGES: ${{ steps.plan.outputs.has-changes }}
           STEPS_APPLY_OUTPUTS_APPLY_SUCCESS: ${{ steps.apply.outputs.apply-success }}
-      - name: Notify on apply failure
+      - name: notify-on-apply-failure
         if: failure() && steps.apply.outputs.apply-success != 'true' && inputs.drift-only != 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-apply-failed-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Apply Failed — `${{ steps.env.outputs.environment }}`
+            ## terraform-apply failed -- `${{ steps.env.outputs.environment }}`
 
             Working directory: `${{ inputs.working-directory }}`
             Commit: ${{ github.sha }}
@@ -390,13 +390,13 @@ jobs:
             2. Run `terraform plan` locally to see the drift
             3. Decide whether to manually fix or re-run this workflow
 
-      - name: Notify on drift detected
+      - name: notify-on-drift-detected
         if: always() && inputs.drift-only == 'true' && steps.plan.outputs.has-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-drift-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Drift Detected — `${{ steps.env.outputs.environment }}`
+            ## terraform-drift detected -- `${{ steps.env.outputs.environment }}`
 
             Scheduled drift detection found changes outside of Terraform.
             See [Job Summary](../../actions/runs/${{ github.run_id }}) for the resource change table.

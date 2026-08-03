@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: LaTeX Release
+# Reusable Workflow: latex-release
 # =============================================================================
-# Compiles a LaTeX document, auto-bumps the patch version from the latest git
+# Compiles a latex document, auto-bumps the patch version from the latest git
 # tag, creates the new tag, and publishes a GitHub Release with the PDF.
 #
 # USAGE (in caller repo):
@@ -21,13 +21,13 @@
 # Caller repo needs: contents: write permission (granted via GITHUB_TOKEN).
 # =============================================================================
 
-name: LaTeX Release
+name: latex-release
 
 on:
   workflow_call:
     inputs:
       root-file:
-        description: 'LaTeX root file to compile.'
+        description: 'latex root file to compile.'
         type: string
         required: false
         default: 'main.tex'
@@ -57,19 +57,19 @@ concurrency:
 
 jobs:
   release:
-    name: Build & Release PDF
+    name: build-release-pdf
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       new-version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0   # Need full history to find latest tag
 
-      - name: Determine next version
+      - name: determine-next-version
         id: version
         run: |
           LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
@@ -84,12 +84,12 @@ jobs:
           echo "Next version: ${NEW_VERSION}"
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Compile LaTeX document
+      - name: compile-latex-document
         uses: xu-cheng/latex-action@v4
         with:
           root_file: ${{ inputs.root-file }}
 
-      - name: Rename PDF with version
+      - name: rename-pdf-with-version
         run: |
           VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           ROOT_BASE="${INPUTS_ROOT_FILE%.tex}"
@@ -99,7 +99,7 @@ jobs:
         env:
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
           INPUTS_ROOT_FILE: ${{ inputs.root-file }}
-      - name: Create GitHub Release with PDF
+      - name: create-github-release-with-pdf
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.version }}

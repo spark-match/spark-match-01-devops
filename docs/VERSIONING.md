@@ -49,11 +49,11 @@ Estructura actual bajo `.github/workflows/`:
 ```
 .github/workflows/
 +-- ci.yml                            # Self-test: PR-triggered wrapper que llama los atomic reusables
-+-- codeql-actions.yml                # Self-test: CodeQL matrix (lenguaje 'actions', weekly + push + PR)
++-- codeql-actions.yml                # Self-test: codeql matrix (lenguaje 'actions', weekly + push + PR)
 +-- release-please.yml                # Self-test: release automation
 +-- commitlint.yml                    # Self-test: conventional commits enforcement
-+-- sbom.yml                          # Self-test: CycloneDX SBOM attached to GitHub Release on release:published
-+-- reusable-codeql.yml               # Reusable: CodeQL JS/TS caller analysis
++-- sbom.yml                          # Self-test: cyclonedx sbom attached to GitHub Release on release:published
++-- reusable-codeql.yml               # Reusable: codeql JS/TS caller analysis
 +-- reusable-quality.yml              # Reusable: shellcheck + manifest schema + bats
 +-- reusable-terraform-plan.yml       # Reusable: tf plan (N-env, OIDC, sf-sticky-comments)
 +-- reusable-terraform-apply.yml      # Reusable: tf apply con approval gate (N-env, OIDC)

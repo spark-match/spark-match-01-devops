@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: LaTeX Build
+# Reusable Workflow: latex-build
 # =============================================================================
-# Compiles a LaTeX document (typically an academic paper or report) and
+# Compiles a latex document (typically an academic paper or report) and
 # uploads the resulting PDF as an artifact.
 #
 # USAGE (in caller repo):
@@ -17,13 +17,13 @@
 # Recommended trigger: on pull_request in caller workflow file.
 # =============================================================================
 
-name: LaTeX Build
+name: latex-build
 
 on:
   workflow_call:
     inputs:
       root-file:
-        description: 'LaTeX root file to compile (e.g. main.tex, paper.tex).'
+        description: 'latex root file to compile (e.g. main.tex, paper.tex).'
         type: string
         required: false
         default: 'main.tex'
@@ -38,12 +38,12 @@ on:
         required: false
         default: 14
       use-lualatex:
-        description: 'Use LuaLaTeX instead of pdfLaTeX (default pdfLaTeX).'
+        description: 'Use lualatex instead of pdflatex (default pdflatex).'
         type: boolean
         required: false
         default: false
       shell-escape:
-        description: 'Enable LaTeX shell-escape (needed for some packages, security risk).'
+        description: 'Enable latex shell-escape (needed for some packages, security risk).'
         type: boolean
         required: false
         default: false
@@ -63,23 +63,23 @@ concurrency:
 
 jobs:
   build:
-    name: Compile LaTeX
+    name: compile-latex
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       artifact-name: ${{ inputs.artifact-name }}
     steps:
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
-      - name: Compile LaTeX document
+      - name: compile-latex-document
         uses: xu-cheng/latex-action@v4
         with:
           root_file: ${{ inputs.root-file }}
           latexmk_use_lualatex: ${{ inputs.use-lualatex }}
           latexmk_shell_escape: ${{ inputs.shell-escape }}
 
-      - name: Determine PDF output filename
+      - name: determine-pdf-output-filename
         id: pdf
         run: |
           BASENAME="${INPUTS_ROOT_FILE%.tex}"
@@ -87,7 +87,7 @@ jobs:
 
         env:
           INPUTS_ROOT_FILE: ${{ inputs.root-file }}
-      - name: Upload PDF as artifact
+      - name: upload-pdf-as-artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact-name }}
