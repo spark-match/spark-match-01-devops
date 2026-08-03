@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: TFLint - Terraform Linter
+# Reusable Workflow: tflint - terraform linter
 # =============================================================================
 # Atomic recipe (ecosystem layer). Runs `tflint --recursive` against the
-# caller's Terraform code (covers root + submodules via TFLint's recursive
+# caller's terraform code (covers root + submodules via tflint's recursive
 # directory walk). Caller must provide a `.tflint.hcl` config at the repo
-# root -- TFLint reads it per-subdirectory automatically.
+# root -- tflint reads it per-subdirectory automatically.
 #
 # USAGE (in caller repo):
 #   jobs:
@@ -24,7 +24,7 @@
 # Cross-owner safe: pure CLI check, no secrets forwarded.
 # =============================================================================
 
-name: TFLint
+name: tflint
 
 on:
   workflow_call:
@@ -50,33 +50,33 @@ permissions:
 
 jobs:
   tflint:
-    name: "tflint (env=${{ inputs.environment-name }})"
+    name: "tflint-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
             {"environment-name": "${{ inputs.environment-name }}","terraform-version": "${{ inputs.terraform-version }}"}
           patterns: |
             {"terraform-version": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
-      - name: Setup Terraform ${{ inputs.terraform-version }}
+      - name: setup-terraform-${{ inputs.terraform-version }}
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
           terraform_wrapper: false
 
-      - name: Setup TFLint
+      - name: setup-tflint
         uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: latest
 
       # Non-zero exit on any finding. Caller's .tflint.hcl config drives
       # enabled plugins and per-rule overrides.
-      - name: Run tflint
+      - name: run-tflint
         working-directory: ${{ inputs.working-directory }}
         run: tflint --recursive

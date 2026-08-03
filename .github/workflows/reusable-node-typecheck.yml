@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
-name: Node Typecheck
+name: node-typecheck
 
 on:
   workflow_call:
@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   typecheck:
-    name: "typecheck (env=${{ inputs.environment-name }})"
+    name: "typecheck-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -50,7 +50,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
@@ -70,7 +70,7 @@ jobs:
               "lockfile-name": "^[A-Za-z0-9._\\-]+$"
             }
 
-      - name: Resolve cache key tags
+      - name: resolve-cache-key-tags
         run: |
           set -euo pipefail
           LOWER_OS="${RUNNER_OS,,}"
@@ -87,16 +87,16 @@ jobs:
           INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_NODE_VERSION: ${{ inputs.node-version }}
           INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js ${{ inputs.node-version }}
+      - name: setup-nodejs-${{ inputs.node-version }}
         uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ inputs.node-version }}
           package-manager-cache: false
 
-      - name: Cache ${{ inputs.pkg-manager }} dependencies
+      - name: cache-${{ inputs.pkg-manager }}-dependencies
         uses: actions/cache@v6
         with:
           path: ~/.npm
@@ -106,10 +106,10 @@ jobs:
           restore-keys: |
             ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
 
-      - name: Install dependencies
+      - name: install-dependencies
         run: npm ci
 
-      - name: Run typecheck
+      - name: run-typecheck
         run: npm run "${INPUTS_TYPECHECK_SCRIPT}"
         env:
           INPUTS_TYPECHECK_SCRIPT: ${{ inputs.typecheck-script }}

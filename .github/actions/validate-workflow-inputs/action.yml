@@ -23,7 +23,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Run Validation
+    - name: run-validation
       shell: bash
       env:
         VALUES: ${{ inputs.values }}

@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
-name: SonarCloud - Terraform
+name: sonar-terraform
 
 on:
   workflow_call:
     inputs:
       project-key:
-        description: 'SonarCloud project key'
+        description: 'sonar-cloud project key'
         type: string
         required: true
       project-name:
-        description: 'SonarCloud project display name'
+        description: 'sonar-cloud project display name'
         type: string
         required: true
       organization:
-        description: 'SonarCloud organization key'
+        description: 'sonar-cloud organization key'
         type: string
         required: true
       sources:
@@ -39,7 +39,7 @@ on:
         required: true
     secrets:
       SONAR_TOKEN:
-        description: 'SonarCloud authentication token. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        description: 'sonar-cloud authentication token. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
         required: true
 
 permissions:
@@ -51,7 +51,7 @@ concurrency:
 
 jobs:
   sonar:
-    name: "SonarCloud Terraform (${{ inputs.env }})"
+    name: "sonar-terraform-${{ inputs.env }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -60,7 +60,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
@@ -76,13 +76,13 @@ jobs:
             }
           required: project-key|project-name|organization|sources|exclude-patterns|working-directory|env|fail-on-quality-gate
 
-      - name: Checkout
+      - name: checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: true
 
-      - name: Cache Sonar tools (scanner, GPG keys, embedded runtime)
+      - name: cache-sonar-tools
         uses: actions/cache@v6
         with:
           path: ~/.sonar
@@ -90,7 +90,7 @@ jobs:
           restore-keys: |
             sonar-tools-v8.2.1-${{ runner.os }}
 
-      - name: SonarCloud Scan
+      - name: sonar-cloud-scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
@@ -106,7 +106,7 @@ jobs:
             -Dsonar.architecture.sensor.skip=true
             -Dsonar.scanner.dumpToFile=true
 
-      - name: SonarCloud Quality Gate
+      - name: sonar-cloud-quality-gate
         id: qg
         if: ${{ always() }}
         continue-on-error: true
@@ -118,11 +118,11 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
 
-      - name: Enforce Quality Gate
+      - name: enforce-quality-gate
         if: ${{ always() && (steps.qg.outputs.quality-gate-status == 'FAILED' || (steps.qg.outcome == 'failure' && steps.qg.outputs.quality-gate-status == '')) && inputs.fail-on-quality-gate == 'true' }}
         run: |
           if [ -z "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
-            echo "::error::SonarCloud Quality Gate polling timed out (>300s). SonarCloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
+            echo "::error::sonar-cloud Quality Gate polling timed out (>300s). sonar-cloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
           else
             echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
           fi

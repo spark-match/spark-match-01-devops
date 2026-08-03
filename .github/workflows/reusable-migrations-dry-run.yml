@@ -120,7 +120,7 @@ permissions:
 
 jobs:
   migrations-dry-run:
-    name: "migrations-dry-run (env=${{ inputs.environment-name }})"
+    name: "migrations-dry-run-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     services:
@@ -148,7 +148,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         shell: bash
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         working-directory: .
         run: |
           set -euo pipefail
@@ -193,10 +193,10 @@ jobs:
           INPUTS_MIGRATIONS_SCHEMA: ${{ inputs.migrations-schema }}
           INPUTS_NPM_SCRIPT: ${{ inputs.npm-script }}
           INPUTS_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js ${{ inputs.node-version }}
+      - name: setup-nodejs-${{ inputs.node-version }}
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
@@ -204,7 +204,7 @@ jobs:
           # npm cache (one-shot npm ci is fast enough on cold runners).
           package-manager-cache: false
 
-      - name: Wait for Postgres
+      - name: wait-for-postgres
         # Belt-and-braces wait beyond the service health check - ensures
         # the cluster has fully come up before the migration step runs.
         # node-pg-migrate's singleTransaction mode wraps every migration
@@ -225,14 +225,14 @@ jobs:
 
         env:
           INPUTS_POSTGRES_USER: ${{ inputs.postgres-user }}
-      - name: Install caller dependencies
+      - name: install-caller-dependencies
         # The caller's package.json pins node-pg-migrate (or whatever
         # migration tool npm-script invokes). npm ci reproduces the
         # pinned version exactly, which is what the production Lambda
         # migrator's bundle also uses.
         run: npm ci
 
-      - name: Verify migrations directory exists
+      - name: verify-migrations-directory-exists
         run: |
           set -euo pipefail
           if [ ! -d "${INPUTS_MIGRATIONS_DIR}" ]; then
@@ -249,7 +249,7 @@ jobs:
         env:
           INPUTS_MIGRATIONS_DIR: ${{ inputs.migrations-dir }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-      - name: Apply migrations against ephemeral Postgres
+      - name: apply-migrations-against-ephemeral-postgres
         # The recipe is intentionally a thin wrapper around the caller's
         # npm script. node-pg-migrate v9 (as of mid-2026) silently ignores
         # several config-file keys; the canonical workaround is to pass
@@ -280,7 +280,7 @@ jobs:
           echo "===== Applying migrations via 'npm run ${INPUTS_NPM_SCRIPT}' ====="
           npm run "${INPUTS_NPM_SCRIPT}" --if-present
 
-      - name: Migration summary
+      - name: migration-summary
         # Read the tracking table directly via psql (preinstalled on
         # ubuntu-latest runners). Shows the order in which migrations
         # were applied - useful for reviewing PRs that add new files.
@@ -301,11 +301,11 @@ jobs:
           INPUTS_POSTGRES_PASSWORD: ${{ inputs.postgres-password }}
           INPUTS_POSTGRES_USER: ${{ inputs.postgres-user }}
           INPUTS_POSTGRES_DB: ${{ inputs.postgres-db }}
-      - name: Migrations dry-run summary
+      - name: migrations-dry-run-summary
         if: always()
         run: |
           {
-            echo "## Migrations dry-run - \`${INPUTS_ENVIRONMENT_NAME}\`"
+            echo "## migrations-dry-run - \`${INPUTS_ENVIRONMENT_NAME}\`"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"

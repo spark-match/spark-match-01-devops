@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# sbom-workflow.bats - regression tests for sbom.yml (CycloneDX SBOM release)
+# sbom-workflow.bats - regression tests for sbom.yml (cyclonedx sbom release)
 # =============================================================================
-# Locks down the SBOM Release workflow contract:
+# Locks down the sbom release workflow contract:
 #   - workflow_call triggers: release.published + workflow_dispatch (no
-#     pull_request trigger so PRs from forks don't trigger SBOM uploads
+#     pull_request trigger so PRs from forks don't trigger sbom uploads
 #     to upstream releases)
-#   - CycloneDX JSON format (not SPDX, not table)
-#   - SBOM anchored to the release tag's exact commit (ref: tag)
+#   - cyclonedx JSON format (not SPDX, not table)
+#   - sbom anchored to the release tag's exact commit (ref: tag)
 #   - anchore/sbom-action pinned to v0.17.7 (floating minor; see
 #     tests/bats/no-sha-pinning.bats for the global guard against
 #     SHA-pinning)
@@ -20,11 +20,12 @@
 #   - The verify step downloads the action's workflow artifact back to
 #     cwd (anchore/sbom-action uploads to /tmp + as artifact, NOT to
 #     cwd by default) so the JSON shape can be validated
-#   - The "Verify SBOM artifact" step parses the JSON and asserts
-#     bomFormat == "CycloneDX" so a tooling regression gets caught
+#   - The "verify-sbom-artifact-exists-and-is-valid-json" step parses
+#     the JSON and asserts bomFormat == "CycloneDX" so a tooling
+#     regression gets caught
 #   - permissions: contents: write (needed to upload release asset)
 #   - Concurrency group keyed by tag; cancel-in-progress: false
-#   - timeout-minutes: 10 (SBOM gen + verify typically <2 min)
+#   - timeout-minutes: 10 (sbom gen + verify typically <2 min)
 #
 # History:
 #   - PR-G4 (#186): initial sbom-release.yml + sbom-release-workflow.bats
@@ -65,7 +66,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 }
 
 @test "sbom: does NOT trigger on pull_request (would leak to upstream)" {
-  # A PR-triggered SBOM workflow would attempt to upload against a real
+  # A PR-triggered sbom workflow would attempt to upload against a real
   # release from a fork's PR — could be abused. Make sure we don't have it.
   if grep -qE '^[[:space:]]+pull_request:' "$WORKFLOW"; then
     echo "# sbom.yml must not have a pull_request trigger"
@@ -79,7 +80,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# SBOM format
+# sbom format
 # ---------------------------------------------------------------------------
 
 @test "sbom: requests CycloneDX JSON format (not SPDX, not table)" {
@@ -102,7 +103,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 # ---------------------------------------------------------------------------
 
 @test "sbom: checkout uses the release tag (not branch HEAD)" {
-  # Anchoring to the tag's commit means the SBOM matches the EXACT
+  # Anchoring to the tag's commit means the sbom matches the EXACT
   # contents that were released, not whatever happens to be on main.
   run grep -E "^[[:space:]]+ref:[[:space:]]+\\\${{[[:space:]]*github\\.event\\.release\\.tag_name" "$WORKFLOW"
   [ "$status" -eq 0 ]
@@ -112,7 +113,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 # Upload step (now via action's upload-release-assets)
 # ---------------------------------------------------------------------------
 
-@test "sbom: anchore/sbom-action uploads the SBOM directly to the Release" {
+@test "sbom: anchore/sbom-action uploads the sbom directly to the Release" {
   # The action itself uploads sbom.cdx.json to the GitHub Release that
   # triggered the run; no follow-up `gh release upload` step is needed.
   run grep -E "^[[:space:]]+upload-release-assets:[[:space:]]+true" "$WORKFLOW"
@@ -146,8 +147,8 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 # Verify step (download-artifact + bomFormat assertion)
 # ---------------------------------------------------------------------------
 
-@test "sbom: has a Download SBOM artifact step using actions/download-artifact" {
-  run grep -B1 -A5 "Download SBOM artifact" "$WORKFLOW"
+@test "sbom: has a download-sbom-artifact-for-verification step using actions/download-artifact" {
+  run grep -B1 -A5 "download-sbom-artifact-for-verification" "$WORKFLOW"
   [ "$status" -eq 0 ]
   [[ "$output" == *"actions/download-artifact@"* ]]
   # download-artifact pinned to @v4 (floating major); the global guard
@@ -162,7 +163,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
   [[ "$output" == *"CycloneDX"* ]]
 }
 
-@test "sbom: Verify step uses env-isolated SBOM_DIR (CodeQL guard)" {
+@test "sbom: verify step uses env-isolated SBOM_DIR (codeql guard)" {
   # The download path must be passed via env: and referenced as a shell
   # var, not interpolated directly in the run: block. PR #183 pattern.
   local offenders=()
@@ -171,8 +172,8 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
   while IFS= read -r line; do
     line_num=$((line_num + 1))
     if [[ "$line" =~ ^[[:space:]]*# ]]; then continue; fi
-    # Detect "Verify SBOM artifact" step body.
-    if [[ "$line" =~ -[[:space:]]name:[[:space:]]+Verify[[:space:]]+SBOM[[:space:]]+artifact ]]; then
+    # Detect "verify-sbom-artifact-exists-and-is-valid-json" step body.
+    if [[ "$line" =~ -[[:space:]]name:[[:space:]]+verify-sbom-artifact ]]; then
       in_verify=1
       continue
     fi
@@ -191,7 +192,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
     fi
   done < "$WORKFLOW"
   if [[ ${#offenders[@]} -gt 0 ]]; then
-    echo "# Verify SBOM step still has direct interpolation of runner.temp:"
+    echo "# verify-sbom step still has direct interpolation of runner.temp:"
     printf '  %s\n' "${offenders[@]}"
     return 1
   fi
@@ -220,7 +221,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 # ---------------------------------------------------------------------------
 
 @test "sbom: concurrency group keys on tag (one attach per tag)" {
-  run grep -E "^[[:space:]]+group:[[:space:]]+sbom-release-" "$WORKFLOW"
+  run grep -E "^[[:space:]]+group:[[:space:]]+sbom-" "$WORKFLOW"
   [ "$status" -eq 0 ]
   [[ "$output" == *"github.event.release.tag_name"* || "$output" == *"inputs.tag"* ]]
 }
@@ -241,7 +242,7 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 }
 
 @test "sbom: summary step is gated on always() so failures still surface" {
-  run grep -B1 -A1 "Attach summary" "$WORKFLOW"
+  run grep -B1 -A1 "attach-summary" "$WORKFLOW"
   [ "$status" -eq 0 ]
   [[ "$output" == *"if: always()"* ]]
 }

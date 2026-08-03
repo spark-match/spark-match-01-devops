@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
-name: SonarCloud - TypeScript
+name: sonar-typescript
 
 on:
   workflow_call:
     inputs:
       project-key:
-        description: 'SonarCloud project key'
+        description: 'sonar-cloud project key'
         type: string
         required: true
       project-name:
-        description: 'SonarCloud project display name'
+        description: 'sonar-cloud project display name'
         type: string
         required: true
       organization:
-        description: 'SonarCloud organization key'
+        description: 'sonar-cloud organization key'
         type: string
         required: true
       sources:
@@ -62,7 +62,7 @@ on:
         type: string
         required: true
       coverage-paths:
-        description: 'Comma-separated LCOV coverage report paths for SonarCloud'
+        description: 'Comma-separated LCOV coverage report paths for sonar-cloud'
         type: string
         required: true
       fail-on-quality-gate:
@@ -71,7 +71,7 @@ on:
         required: true
     secrets:
       SONAR_TOKEN:
-        description: 'SonarCloud authentication token. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        description: 'sonar-cloud authentication token. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
         required: true
 
 permissions:
@@ -83,7 +83,7 @@ concurrency:
 
 jobs:
   sonar:
-    name: "SonarCloud TypeScript (${{ inputs.env }})"
+    name: "sonar-typescript-${{ inputs.env }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -92,7 +92,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
@@ -125,30 +125,30 @@ jobs:
               "lockfile-name": "^[A-Za-z0-9._\\-]+$"
             }
 
-      - name: Checkout
+      - name: checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: true
 
-      - name: Set up Node.js ${{ inputs.node-version }}
+      - name: setup-nodejs-${{ inputs.node-version }}
         uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ inputs.node-version }}
           cache: ${{ inputs.package-manager }}
           cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.lockfile-name }}
 
-      - name: Install dependencies
+      - name: install-dependencies
         run: ${INPUTS_INSTALL_COMMAND}
 
         env:
           INPUTS_INSTALL_COMMAND: ${{ inputs.install-command }}
-      - name: Run tests with coverage
+      - name: run-tests-with-coverage
         run: ${INPUTS_TEST_COMMAND}
 
         env:
           INPUTS_TEST_COMMAND: ${{ inputs.test-command }}
-      - name: Cache Sonar tools (scanner, GPG keys, embedded runtime)
+      - name: cache-sonar-tools
         uses: actions/cache@v6
         with:
           path: ~/.sonar
@@ -156,7 +156,7 @@ jobs:
           restore-keys: |
             sonar-tools-v8.2.1-${{ runner.os }}
 
-      - name: SonarCloud Scan
+      - name: sonar-cloud-scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
@@ -175,7 +175,7 @@ jobs:
             -Dsonar.architecture.sensor.skip=true
             -Dsonar.scanner.dumpToFile=true
 
-      - name: SonarCloud Quality Gate
+      - name: sonar-cloud-quality-gate
         id: qg
         if: ${{ always() }}
         continue-on-error: true
@@ -187,11 +187,11 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
 
-      - name: Enforce Quality Gate
+      - name: enforce-quality-gate
         if: ${{ always() && (steps.qg.outputs.quality-gate-status == 'FAILED' || (steps.qg.outcome == 'failure' && steps.qg.outputs.quality-gate-status == '')) && inputs.fail-on-quality-gate == 'true' }}
         run: |
           if [ -z "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
-            echo "::error::SonarCloud Quality Gate polling timed out (>300s). SonarCloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
+            echo "::error::sonar-cloud Quality Gate polling timed out (>300s). sonar-cloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
           else
             echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
           fi

@@ -160,7 +160,7 @@ CI auto-discovers `tests/bats/*.bats`. No workflow changes needed.
 Conventional Commits 1.0.0, enforced by **`commitlint`** in two layers:
 
 1. **CI-side** (canonical): `.github/workflows/commitlint.yml` runs
-   `wagoidhq/commitlint-github-action@v5` on every PR. Reads
+   `wagoidhq/commitlint-github-action@v6` on every PR. Reads
    `.commitlintrc.json` and fails the check if any commit message
    violates the rules. Uses its own Node runtime — no local install
    required.
@@ -268,7 +268,7 @@ message in the merge form. Never merge a PR with red commitlint.
 
    **Mandatory flags**: `--assignee ahincho` and at least one `--label` (per the conventional-commit type). See the opencode `gh-pr-create` skill for the full convention.
 
-7. **Wait for CI** (actionlint + commitlint + gitleaks + yamllint + quality/bats + quality/shellcheck + quality/manifest-schema + CodeQL). All checks must be green before merge.
+7. **Wait for CI** (actionlint + commitlint + gitleaks + yamllint + quality/bats + quality/shellcheck + quality/manifest-schema + codeql). All checks must be green before merge.
 
 8. **Wait for CODE OWNERS review**. The ruleset requires `require_code_owner_review: true`. Self-approval is impossible — if you are the sole owner, ask another team member.
 

@@ -34,7 +34,7 @@ esac
 COUNT=$(jq "[.runs[].results[] | select(${SELECTOR})] | length" "${SARIF_FILE}")
 echo "Alerts at severity >= ${SEVERITY}: ${COUNT}"
 if [ "${COUNT}" -gt 0 ]; then
-  echo "::error::CodeQL found ${COUNT} alert(s) at severity >= ${SEVERITY} in this PR."
+  echo "::error::codeql found ${COUNT} alert(s) at severity >= ${SEVERITY} in this PR."
   echo "::group::Alerts (severity, rule, file, line)"
   jq -r ".runs[].results[] | select(${SELECTOR}) | [.level // \"warning\", .ruleId // \"unknown\", .locations[0].physicalLocation.artifactLocation.uri // \"?\", .locations[0].physicalLocation.region.startLine // \"?\"] | @tsv" "${SARIF_FILE}" 2>/dev/null \
     | sort -u \

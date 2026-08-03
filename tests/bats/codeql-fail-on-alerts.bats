@@ -100,7 +100,7 @@ fake_sarif() {
   run bash "$ACTION_SH"
   [ "$status" -eq 1 ]
   [[ "$output" == *"Alerts at severity >= warning: 2"* ]]
-  [[ "$output" == *"::error::CodeQL found 2 alert"* ]]
+  [[ "$output" == *"::error::codeql found 2 alert"* ]]
 }
 
 @test "SARIF with note: note is excluded from warning count" {

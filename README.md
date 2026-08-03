@@ -63,10 +63,10 @@ spark-match-01-devops/
 │   └── workflows/
 │       ├── ─── this repo's own CI/release ────────────────────────
 │       ├── ci.yml                           this repo's own CI (actionlint + gitleaks + yamllint + quality)
-│       ├── codeql-actions.yml               CodeQL on Actions YAML (push + weekly)
+│       ├── codeql-actions.yml               codeql on Actions YAML (push + weekly)
 │       ├── release-please.yml               release-please automation (cuts release PRs)
 │       ├── commitlint.yml                   commitlint check on every PR + push
-│       ├── sbom.yml                         CycloneDX SBOM attached to GH Release
+│       ├── sbom.yml                         cyclonedx sbom attached to GH Release
 │       │
 │       │ ─── catalog recipes (reusables, called via uses: from consumer repos) ──
 │       │ ─── prefix `reusable-` flags the workflow_call entrypoint ─────────────
@@ -77,10 +77,10 @@ spark-match-01-devops/
 │       ├── reusable-yamllint.yml            YAML files (uses caller's .yamllint.yml)
 │       ├── reusable-terraform-validate.yml  per-module init+validate (no backend)
 │       ├── reusable-tflint.yml              recursive tflint
-│       ├── reusable-sonar-terraform.yml     SonarCloud Terraform analysis
-│       ├── reusable-sonar-typescript.yml    SonarCloud TypeScript analysis
+│       ├── reusable-sonar-terraform.yml     sonar-cloud terraform analysis
+│       ├── reusable-sonar-typescript.yml    sonar-cloud typescript analysis
 │       ├── reusable-quality.yml             shellcheck + manifest schema + bats
-│       ├── reusable-codeql.yml              CodeQL for JS/TS caller repos
+│       ├── reusable-codeql.yml              codeql for JS/TS caller repos
 │       │
 │       │ ─── catalog: node (npm, no caller secrets) ───────────────────────
 │       ├── reusable-eslint.yml              `npm run <lint-script>`
@@ -97,8 +97,8 @@ spark-match-01-devops/
 │       │                                   optional GH Environment approval + post-destroy
 │       │                                   cleanup job (CLEANUP-<ENV>)
 │       │
-│       │ ─── catalog: article (LaTeX, kept for 07-article's toolchain) ────
-│       ├── reusable-latex-build.yml         compile LaTeX -> PDF artifact
+│       │ ─── catalog: article (latex, kept for 07-article's toolchain) ────
+│       ├── reusable-latex-build.yml         compile latex -> PDF artifact
 │       └── reusable-latex-release.yml       bump patch + GitHub Release
 │
 ├── docs/
@@ -188,7 +188,7 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | `reusable-terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
 | `reusable-tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
 | `reusable-quality.yml`           | shellcheck + manifest schema + bats | — |
-| `reusable-codeql.yml`            | CodeQL JS/TS caller-repo scan | — |
+| `reusable-codeql.yml`            | codeql JS/TS caller-repo scan | — |
 
 #### `reusable-actionlint.yml`
 
@@ -287,7 +287,7 @@ jobs:
 
 #### `reusable-tflint.yml`
 
-Runs `tflint --recursive` against the caller's Terraform code. Caller must provide a `.tflint.hcl` at the repo root — TFLint reads it per-subdirectory and follows the plugin set declared there.
+Runs `tflint --recursive` against the caller's Terraform code. Caller must provide a `.tflint.hcl` at the repo root — tflint reads it per-subdirectory and follows the plugin set declared there.
 
 Pins:
 
@@ -314,22 +314,22 @@ jobs:
 
 #### `sbom-release.yml`
 
-Internal workflow (not a reusable recipe — runs only on this catalog). Fires on `release: { types: [published] }` (i.e. after `release-please` publishes a tagged release) and generates a CycloneDX JSON SBOM using [`anchore/sbom-action`](https://github.com/anchore/sbom-action). The SBOM is checked in at the tagged commit (not main HEAD) and uploaded to the GitHub Release as `sbom.cdx.json`. Manual re-run via `workflow_dispatch` accepts a `tag:` input.
+Internal workflow (not a reusable recipe — runs only on this catalog). Fires on `release: { types: [published] }` (i.e. after `release-please` publishes a tagged release) and generates a cyclonedx JSON sbom using [`anchore/sbom-action`](https://github.com/anchore/sbom-action). The sbom is checked in at the tagged commit (not main HEAD) and uploaded to the GitHub Release as `sbom.cdx.json`. Manual re-run via `workflow_dispatch` accepts a `tag:` input.
 
 `permissions: contents: write` is required (upload needs write); `id-token`, `packages`, and `deployments` are explicitly NOT requested.
 
-This workflow is part of the SLSA Build Level 3 + supply-chain transparency posture (US Executive Order 14028, EU Cyber Resilience Act). For a repo with no real `package.json` / `requirements.txt` the SBOM is metadata-only, but it is still produced and attached.
+This workflow is part of the SLSA Build Level 3 + supply-chain transparency posture (US Executive Order 14028, EU Cyber Resilience Act). For a repo with no real `package.json` / `requirements.txt` the sbom is metadata-only, but it is still produced and attached.
 
 #### `reusable-sonar-terraform.yml`
 
-SonarCloud analysis for Terraform. Designed for projects where Terraform is the primary language (no Python/JS).
+sonar-cloud analysis for Terraform. Designed for projects where Terraform is the primary language (no Python/JS).
 
 Inputs (highlights):
 
 | Input | Type | Notes |
 |---|---|---|
-| `project-key` | string (required) | SonarCloud project key. |
-| `organization` | string (required) | SonarCloud organization key. |
+| `project-key` | string (required) | sonar-cloud project key. |
+| `organization` | string (required) | sonar-cloud organization key. |
 | `sources` | string (required) | Comma-separated source paths (relative to `working-directory`). |
 | `tests` | string | Comma-separated test paths; empty disables test analysis. |
 | `coverage` | string | Path to coverage report (e.g. `coverage.xml`); empty skips coverage. |
@@ -341,7 +341,7 @@ Required secrets: `SONAR_TOKEN` (same-name convention). Caller must set it in th
 
 #### `reusable-sonar-typescript.yml`
 
-SonarCloud analysis for TypeScript. Used by `orion-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
+sonar-cloud analysis for TypeScript. Used by `orion-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
 
 Same input shape as `reusable-sonar-terraform.yml` (without `exclude-patterns`) plus `tsconfig-path` (default `tsconfig.json`).
 
@@ -349,7 +349,7 @@ Same input shape as `reusable-sonar-terraform.yml` (without `exclude-patterns`) 
 
 #### `reusable-eslint.yml`
 
-Runs `npm run <lint-script>` for Node workspaces and caches `~/.npm` keyed on `os-node<node-version>-eslint<eslint-version>-package-lock.json`. Includes `eslint-version` so callers can roll forward to a new ESLint major without forking the recipe (cache key changes so no stale cache).
+Runs `npm run <lint-script>` for Node workspaces and caches `~/.npm` keyed on `os-node<node-version>-eslint<eslint-version>-package-lock.json`. Includes `eslint-version` so callers can roll forward to a new eslint major without forking the recipe (cache key changes so no stale cache).
 
 Inputs:
 
@@ -616,14 +616,14 @@ Required secrets: none. Pure CLI check against a throwaway Postgres service cont
 These workflows are **not** part of the consumer-facing catalog; they only run on this repo itself:
 
 - `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`reusable-actionlint`, `reusable-gitleaks`, `reusable-yamllint`, `reusable-quality`) against this repository so a broken recipe is caught here before consumers break. The node/deploy recipes (`reusable-eslint`, `reusable-node-test`, `reusable-terraform-plan`, `reusable-terraform-apply`, `reusable-terraform-destroy`) are NOT exercised here because this repo has no Node project or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
-- `codeql-actions.yml` — CodeQL analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
+- `codeql-actions.yml` — codeql analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
 - `commitlint.yml` — commitlint check on every PR + push. Validates Conventional Commits 1.0.0 against `.commitlintrc.json`.
 - `release-please.yml` — release-please automation. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
-- `sbom.yml` — CycloneDX SBOM attached to GitHub Release. Runs on `release: { types: [published] }`.
+- `sbom.yml` — cyclonedx sbom attached to GitHub Release. Runs on `release: { types: [published] }`.
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
 
-The LaTeX reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the SonarCloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`), which target the SonarCloud org's Terraform/TypeScript projects; and to `reusable-migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
+The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`), which target the sonar-cloud org's Terraform/TypeScript projects; and to `reusable-migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
 
 ## Versioning
 
@@ -647,7 +647,7 @@ All node-consuming recipes (`reusable-eslint.yml`, `reusable-node-test.yml`, `re
 - `nodeVersion` (e.g. `24`).
 - `pkgmanager` (`npm` | `pnpm` | `yarn` | `bun`).
 - `env` lowercased (`dev` | `prod` | `ci`).
-- `recipeTag` recipe-specific (only `reusable-eslint.yml` uses it, for ESLint major isolation).
+- `recipeTag` recipe-specific (only `reusable-eslint.yml` uses it, for eslint major isolation).
 - `<H>` is `sha256(<lockfile-name>)` of a single file (no glob).
 
 Compared to v3, this:
@@ -834,13 +834,13 @@ and weekly.
 | **actionlint** | Actions YAML syntax | every PR + push | required check | `.github/workflows/reusable-actionlint.yml` |
 | **yamllint** | YAML style + parse | every PR + push | required check | `.github/workflows/reusable-yamllint.yml` |
 | **gitleaks** | secret scan over git history | every PR + push | required check (org-scoped) | `.github/workflows/reusable-gitleaks.yml` |
-| **CodeQL** | `actions/*` rules (code-injection, unpinned-tag, envvar-injection) | every PR + push + weekly | informational | `.github/workflows/codeql-actions.yml` |
+| **codeql** | `actions/*` rules (code-injection, unpinned-tag, envvar-injection) | every PR + push + weekly | informational | `.github/workflows/codeql-actions.yml` |
 | **Dependabot** | weekly bump PRs for GitHub Actions | Mon 06:00 UTC | enabled | `.github/dependabot.yml` |
 | **Dependabot security updates** | auto-PR for known-vulnerable dependencies | on alert | enabled | repo-level (set via `PATCH .../dependabot_security_updates`) |
 | **Secret scanning** | native GH secret detection | always | **disabled** (requires GHAS paid plan) | n/a |
 | **Push protection** | block pushes that contain secrets | always | **disabled** (requires GHAS paid plan) | n/a |
 
-### CodeQL posture (snapshot 2026-07-29)
+### codeql posture (snapshot 2026-07-29)
 
 After Sprint A + B + C (PRs #148-#157):
 

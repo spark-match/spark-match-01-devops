@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: Terraform Destroy (N-environment aware)
+# Reusable Workflow: terraform-destroy (N-environment aware)
 # =============================================================================
 # Runs `terraform plan -destroy` then `terraform apply -destroy` against a
 # caller-provided working directory. Guarded by TWO independent gates:
@@ -50,7 +50,7 @@
 # confirmation gate.
 # =============================================================================
 
-name: Terraform Destroy
+name: terraform-destroy
 
 on:
   workflow_call:
@@ -190,7 +190,7 @@ permissions:
 
 jobs:
   destroy:
-    name: Destroy (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
+    name: destroy-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # GH Environment uses input fallback: gh-environment > environment.
@@ -206,7 +206,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Resolve environment + verify confirm token
+      - name: resolve-environment-verify-confirm-token
         id: env
         # Step runs BEFORE checkout, so caller's working-directory (e.g.
         # live/dev) doesn't exist yet. Force wd=. to avoid "No such file or
@@ -272,7 +272,7 @@ jobs:
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
           INPUTS_AWS_REGION: ${{ inputs.aws-region }}
           GITHUB_ACTOR: ${{ github.actor }}
-      - name: Validate inputs
+      - name: validate-inputs
         working-directory: .
         run: |
           set -euo pipefail
@@ -351,10 +351,10 @@ jobs:
           INPUTS_ENABLE_CLEANUP: ${{ inputs.enable-cleanup }}
           INPUTS_CLEANUP_TOKEN: ${{ inputs.cleanup-token }}
           INPUTS_CONFIRM_DESTROY_TOKEN: ${{ inputs.confirm-destroy-token }}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
-      - name: Setup Terraform ${{ inputs.terraform-version }}
+      - name: setup-terraform-${{ inputs.terraform-version }}
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
@@ -363,21 +363,21 @@ jobs:
           # so raw terraform exit codes pass through to the script.
           terraform_wrapper: false
 
-      - name: Configure AWS credentials (OIDC, apply role)
+      - name: configure-aws-credentials-oidc-apply-role
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
-      - name: Terraform fmt
+      - name: terraform-fmt
         run: terraform fmt -check -recursive -diff
 
-      - name: Create plugin cache directory
+      - name: create-plugin-cache-directory
         run: mkdir -p "${GITHUB_WORKSPACE}/.terraform.d/plugin-cache"
 
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
-      - name: Terraform init
+      - name: terraform-init
         run: |
           INIT_ARGS=(-input=false)
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
@@ -399,7 +399,7 @@ jobs:
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
           INPUTS_AWS_REGION: ${{ inputs.aws-region }}
-      - name: Backup current state pre-destroy
+      - name: backup-current-state-pre-destroy
         # We always upload the current state as an artifact, regardless of
         # whether the caller migrated to local or is still using S3. Lets
         # operators recover from a bad destroy by re-running `terraform apply`
@@ -414,7 +414,7 @@ jobs:
         env:
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
-      - name: Upload state backup artifact
+      - name: upload-state-backup-artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -423,10 +423,10 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
           if-no-files-found: ignore
 
-      - name: Terraform validate
+      - name: terraform-validate
         run: terraform validate -no-color
 
-      - name: Terraform plan (destroy)
+      - name: terraform-plan-destroy
         id: plan
         run: |
           set +e
@@ -469,15 +469,15 @@ jobs:
           INPUTS_VAR_FILES: ${{ inputs.var-files }}
           INPUTS_TARGET: ${{ inputs.target }}
           INPUTS_EXTRA_ARGS: ${{ inputs.extra-args }}
-      - name: Convert plan to JSON
+      - name: convert-plan-to-json
         if: steps.plan.outputs.had-changes == 'true'
         run: terraform show -json tfplan-destroy > tfplan-destroy.json
 
-      - name: Generate destroy plan summary
+      - name: generate-destroy-plan-summary
         if: steps.plan.outputs.had-changes == 'true'
         run: |
           {
-            echo "## ⚠️ Terraform Destroy Plan"
+            echo "## warning: terraform-destroy plan"
             echo ""
             echo "| Resource | Action |"
             echo "|:---|:---|"
@@ -487,16 +487,16 @@ jobs:
             ' tfplan-destroy.json || echo "_(no resource changes)_"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Generate no-changes summary
+      - name: generate-no-changes-summary
         if: steps.plan.outputs.had-changes == 'false'
         run: |
           {
-            echo "## Terraform Destroy — no-op"
+            echo "## terraform-destroy -- no-op"
             echo ""
             echo "Plan returned 0 changes: the environment is already empty (or fully matches terraform's recorded state)."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload destroy plan artifact
+      - name: upload-destroy-plan-artifact
         if: steps.plan.outputs.had-changes == 'true'
         uses: actions/upload-artifact@v7
         with:
@@ -504,7 +504,7 @@ jobs:
           path: ${{ inputs.working-directory }}/tfplan-destroy
           retention-days: ${{ inputs.retention-days }}
 
-      - name: Terraform apply (destroy)
+      - name: terraform-apply-destroy
         id: apply
         if: steps.plan.outputs.had-changes == 'true' && inputs.dry-run != 'true'
         run: |
@@ -518,7 +518,7 @@ jobs:
             echo "destroy-success=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Apply result summary
+      - name: apply-result-summary
         if: always()
         run: |
           {
@@ -550,13 +550,13 @@ jobs:
           STEPS_PLAN_OUTPUTS_HAD_CHANGES: ${{ steps.plan.outputs.had-changes }}
           STEPS_APPLY_OUTPUTS_DESTROY_SUCCESS: ${{ steps.apply.outputs.destroy-success }}
           STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
-      - name: Notify on destroy failure
+      - name: notify-on-destroy-failure
         if: failure() && steps.apply.outputs.destroy-success != 'true' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-destroy-failed-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Destroy FAILED — `${{ steps.env.outputs.environment }}`
+            ## terraform-destroy FAILED -- `${{ steps.env.outputs.environment }}`
 
             - **Working directory:** `${{ inputs.working-directory }}`
             - **Commit:** ${{ github.sha }}
@@ -583,7 +583,7 @@ jobs:
     # Gated by cleanup-token (must equal CLEANUP-<ENV>, case-sensitive) so it
     # cannot run accidentally on a destroy-only invocation. Idempotent: re-run
     # on already-clean state is a no-op.
-    name: Cleanup residuals (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
+    name: cleanup-residuals-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     needs: destroy
     if: always() && inputs.enable-cleanup == 'true' && needs.destroy.result == 'success'
     runs-on: ubuntu-latest
@@ -593,7 +593,7 @@ jobs:
       cleanup-success: ${{ steps.aggregate.outputs.cleanup-success }}
       cleanup-deleted-count: ${{ steps.aggregate.outputs.total_deleted }}
     steps:
-      - name: Verify cleanup token + project name
+      - name: verify-cleanup-token-and-project-name
         id: cleanup-init
         run: |
           set -euo pipefail
@@ -665,13 +665,13 @@ jobs:
           INPUTS_AWS_REGION: ${{ inputs.aws-region }}
           INPUTS_DRY_RUN: ${{ inputs.dry-run }}
           GITHUB_ACTOR: ${{ github.actor }}
-      - name: Configure AWS credentials (OIDC, apply role)
+      - name: configure-aws-credentials-oidc-apply-role
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
-      - name: Delete CloudWatch log groups
+      - name: delete-cloudwatch-log-groups
         id: delete-log-groups
         env:
           PROJECT: ${{ inputs.project-name }}
@@ -716,7 +716,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Delete SSM parameters
+      - name: delete-ssm-parameters
         id: delete-ssm-params
         env:
           PROJECT: ${{ inputs.project-name }}
@@ -753,7 +753,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Delete orphan S3 buckets (SAM artifacts)
+      - name: delete-orphan-s3-buckets-sam-artifacts
         id: delete-s3-buckets
         env:
           PROJECT: ${{ inputs.project-name }}
@@ -810,7 +810,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Delete CloudFormation stacks in active state
+      - name: delete-cloudformation-stacks-in-active-state
         id: delete-cf-stacks
         env:
           PROJECT: ${{ inputs.project-name }}
@@ -852,7 +852,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Aggregate results
+      - name: aggregate-results
         id: aggregate
         if: always()
         run: |
@@ -879,7 +879,7 @@ jobs:
           STEPS_DELETE_SSM_PARAMS_CONCLUSION: ${{ steps.delete-ssm-params.conclusion }}
           STEPS_DELETE_S3_BUCKETS_CONCLUSION: ${{ steps.delete-s3-buckets.conclusion }}
           STEPS_DELETE_CF_STACKS_CONCLUSION: ${{ steps.delete-cf-stacks.conclusion }}
-      - name: Notify on cleanup failure
+      - name: notify-on-cleanup-failure
         # Sticky comment on PR with cleanup details if any step failed. Same
         # pattern as the destroy failure comment, but header differs so the
         # two can coexist if both fire.
@@ -888,7 +888,7 @@ jobs:
         with:
           header: terraform-cleanup-residuals-failed-${{ inputs.environment || inputs.working-directory }}
           message: |
-            ## Cleanup residuals FAILED — `${{ inputs.environment || inputs.working-directory }}`
+            ## cleanup-residuals FAILED -- `${{ inputs.environment || inputs.working-directory }}`
 
             - **Project name:** `${{ inputs.project-name }}`
             - **Commit:** ${{ github.sha }}

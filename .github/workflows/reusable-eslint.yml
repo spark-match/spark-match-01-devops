@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: ESLint - JS/TS linting for Node workspaces
+# Reusable Workflow: eslint - JS/TS linting for Node workspaces
 # =============================================================================
 # Atomic recipe (node layer). Runs `npm run <lint-script>` in the caller's
-# repository with the requested Node and ESLint versions. Caches package
+# repository with the requested Node and eslint versions. Caches package
 # manager dependencies to keep runs fast.
 #
 # USAGE (in caller repo):
@@ -28,7 +28,7 @@
 # Cross-owner safe: no caller secrets forwarded.
 # =============================================================================
 
-name: ESLint
+name: eslint
 
 on:
   workflow_call:
@@ -54,7 +54,7 @@ on:
         required: false
         default: 'package-lock.json'
       eslint-version:
-        description: 'ESLint major version. Used in the npm cache key so rollback to a previous major does not hit a stale cache. Pass the major only (e.g. "10" for ESLint 10.x.x).'
+        description: 'eslint major version. Used in the npm cache key so rollback to a previous major does not hit a stale cache. Pass the major only (e.g. "10" for eslint 10.x.x).'
         type: string
         required: false
         default: '10'
@@ -74,7 +74,7 @@ permissions:
 
 jobs:
   eslint:
-    name: "eslint (env=${{ inputs.environment-name }})"
+    name: "eslint-${{ inputs.environment-name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -83,7 +83,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
         with:
           values: |
@@ -92,7 +92,7 @@ jobs:
             {"pkg-manager": ["npm", "pnpm", "yarn", "bun"]}
           patterns: |
             {"node-version": "^[0-9]+(\.[0-9]+){0,2}$"}
-      - name: Resolve cache key tags
+      - name: resolve-cache-key-tags
         # Lowercase runner.os + environment-name into env vars so the
         # canonical cache key convention can be expressed in actions/cache
         # (GH Actions expression language has no `lower()` function).
@@ -113,10 +113,10 @@ jobs:
           INPUTS_NODE_VERSION: ${{ inputs.node-version }}
           INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
           INPUTS_ESLINT_VERSION: ${{ inputs.eslint-version }}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js ${{ inputs.node-version }}
+      - name: setup-nodejs-${{ inputs.node-version }}
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
@@ -124,23 +124,23 @@ jobs:
           # double caching with our explicit actions/cache step below.
           package-manager-cache: false
 
-      - name: Cache ${{ inputs.pkg-manager }} dependencies
+      - name: cache-${{ inputs.pkg-manager }}-dependencies
         uses: actions/cache@v6
         with:
           path: ~/.npm
           # Canonical cache key convention (lowercase, see docs/CACHE.md):
           #   <os>-node-<nodeVersion>-<pkgmanager>-eslint<major>-<env>-<H>
           # - eslint<major> is intentionally between pkgmanager and env so
-          #   rollback to a previous ESLint major invalidates the cache
+          #   rollback to a previous eslint major invalidates the cache
           #   without affecting other recipes in the same env.
           key: ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ env.env_name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
             ${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-eslint${{ inputs.eslint-version }}-${{ env.env_name }}-
 
-      - name: Install dependencies
+      - name: install-dependencies
         run: npm ci
 
-      - name: Run ESLint
+      - name: run-eslint
         run: npm run "${INPUTS_LINT_SCRIPT}"
         env:
           INPUTS_LINT_SCRIPT: ${{ inputs.lint-script }}

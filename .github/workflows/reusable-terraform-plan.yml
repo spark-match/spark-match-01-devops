@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
 # =============================================================================
-# Reusable Workflow: Terraform Plan (N-environment aware)
+# Reusable Workflow: terraform-plan (N-environment aware)
 # =============================================================================
 # Runs `terraform plan` against a caller-provided working directory and writes
 # results to a per-environment artifact + per-environment sticky comment on
@@ -35,7 +35,7 @@
 # Required AWS: IAM Role with OIDC trust policy for this repo
 # =============================================================================
 
-name: Terraform Plan
+name: terraform-plan
 
 on:
   workflow_call:
@@ -138,7 +138,7 @@ concurrency:
 
 jobs:
   plan:
-    name: Plan (${{ inputs.environment-name || inputs.environment || inputs.working-directory }})
+    name: plan-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -151,7 +151,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Validate inputs
+      - name: validate-inputs
         id: validate
         # Este step corre ANTES de checkout, asi que el working-directory del
         # caller (e.g. live/dev) aun no existe. Forzamos working-directory: .
@@ -208,7 +208,7 @@ jobs:
           INPUTS_RETENTION_DAYS: ${{ inputs.retention-days }}
           INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
-      - name: Resolve environment identifier
+      - name: resolve-environment-identifier
         id: env
         # Este step corre ANTES de checkout, asi que el working-directory del
         # caller (e.g. live/dev) aun no existe. Forzamos working-directory: .
@@ -229,11 +229,11 @@ jobs:
           INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-      - name: Checkout caller repository
+      - name: checkout-caller-repository
         uses: actions/checkout@v7
 
 
-      - name: Setup Terraform ${{ inputs.terraform-version }}
+      - name: setup-terraform-${{ inputs.terraform-version }}
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform-version }}
@@ -242,7 +242,7 @@ jobs:
           # so raw terraform exit codes pass through to the script.
           terraform_wrapper: false
 
-      - name: Configure AWS credentials (OIDC, plan role)
+      - name: configure-aws-credentials-oidc-plan-role-diag
         # Diagnostic: print secret length to log (GitHub masks the value but
         # length is preserved).
         id: diag
@@ -251,7 +251,7 @@ jobs:
         env:
           AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
-      - name: Configure AWS credentials (OIDC, plan role)
+      - name: configure-aws-credentials-oidc-plan-role
         # Cross-owner secret forwarding: this reusable declares
         #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
         # in workflow_call. GitHub drops `secrets: inherit` across owner
@@ -263,15 +263,15 @@ jobs:
           role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
-      - name: Terraform fmt
+      - name: terraform-fmt
         run: terraform fmt -check -recursive -diff
 
-      - name: Create plugin cache directory
+      - name: create-plugin-cache-directory
         run: mkdir -p "${GITHUB_WORKSPACE}/.terraform.d/plugin-cache"
 
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
-      - name: Terraform init
+      - name: terraform-init
         run: |
           INIT_ARGS=(-input=false)
           if [ -n "${INPUTS_BACKEND_BUCKET}" ]; then
@@ -291,10 +291,10 @@ jobs:
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
           INPUTS_AWS_REGION: ${{ inputs.aws-region }}
-      - name: Terraform validate
+      - name: terraform-validate
         run: terraform validate -no-color
 
-      - name: Terraform plan
+      - name: terraform-plan
         id: plan
         run: |
           set +e
@@ -340,18 +340,18 @@ jobs:
           INPUTS_VAR_FILES: ${{ inputs.var-files }}
           INPUTS_TARGET: ${{ inputs.target }}
           INPUTS_EXTRA_ARGS: ${{ inputs.extra-args }}
-      - name: Convert plan to JSON
+      - name: convert-plan-to-json
         if: steps.plan.outputs.has-changes == 'true'
         run: terraform show -json tfplan > tfplan.json
 
-      - name: Generate plan summary
+      - name: generate-plan-summary
         if: steps.plan.outputs.has-changes == 'true'
         run: |
           ENV="${STEPS_ENV_OUTPUTS_ENVIRONMENT}"
           WD="${INPUTS_WORKING_DIRECTORY}"
           REGION="${INPUTS_AWS_REGION}"
           {
-            echo "## Terraform Plan Summary"
+            echo "## terraform-plan summary"
             echo ""
             echo "| Field | Value |"
             echo "|:---|:---|"
@@ -377,7 +377,7 @@ jobs:
           INPUTS_BACKEND_BUCKET: ${{ inputs.backend-bucket }}
           INPUTS_BACKEND_KEY: ${{ inputs.backend-key }}
           STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
-      - name: Upload plan artifact
+      - name: upload-plan-artifact
         if: steps.plan.outputs.has-changes == 'true'
         uses: actions/upload-artifact@v7
         with:
@@ -385,13 +385,13 @@ jobs:
           path: ${{ inputs.working-directory }}/tfplan
           retention-days: ${{ inputs.retention-days }}
 
-      - name: Comment PR with plan summary
+      - name: comment-pr-with-plan-summary
         if: steps.plan.outputs.has-changes == 'true' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-plan-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Plan — `${{ steps.env.outputs.environment }}`
+            ## terraform-plan -- `${{ steps.env.outputs.environment }}`
 
             - **Environment:** `${{ steps.env.outputs.environment }}`
             - **Working directory:** `${{ inputs.working-directory }}`
@@ -403,12 +403,12 @@ jobs:
 
             Download the artifact `terraform-plan-${{ steps.env.outputs.environment }}-pr-${{ github.event.pull_request.number }}` and run `terraform show tfplan` locally for full details.
 
-      - name: Comment PR with no-changes notice
+      - name: comment-pr-with-no-changes-notice
         if: steps.plan.outputs.has-changes == 'false' && inputs.comment-on-pr == true && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-plan-${{ steps.env.outputs.environment }}
           message: |
-            ## Terraform Plan — `${{ steps.env.outputs.environment }}`
+            ## terraform-plan -- `${{ steps.env.outputs.environment }}`
 
-            No changes. ✓
+            No changes. OK

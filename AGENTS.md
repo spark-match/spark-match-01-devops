@@ -161,6 +161,34 @@ pre-formateado.
   - **Self-actions** (nuestras propias composite actions): siempre `@main`.
   - **Anchore/sbom-action**: pinneado a `@v0.17.7` (minor pinned) porque la línea 0.x tiene breaking changes entre minors.
 - La guardia contra SHA-pinning vive en `tests/bats/no-sha-pinning.bats` (3 casos: third-party, self, AGENTS.md policy text). Si el guard falla, el pull request se bloquea.
+- **Naming convention — kebab-case obligatorio** en identificadores (excepto secretos y env vars del OS, que van en `SNAKE_CASE`):
+  - **`kebab-case`** para:
+    - **Job IDs** (`jobs: <id>:`) y nombres de archivo (`reusable-<name>.yml`).
+    - **Step IDs** (`- id: <id>`).
+    - **Inputs** de `workflow_call` o composite action (`inputs.<name>:`, `with: <name>: value`).
+    - **Outputs** (`outputs.<name>:`).
+    - **Display names** de workflow, job, y step (`name: <name>` en `workflow_call`, `jobs`, y `steps`). Plantillas `${{ inputs.x }}` se concatenan con `-` (sin espacios).
+    - **Referencias a marcas/herramientas** dentro de `name:`, comentarios, descripciones de inputs y mensajes `::error::`. Marcas y herramientas van en kebab:
+      - `SonarCloud` -> `sonar-cloud`
+      - `CodeQL` -> `codeql`
+      - `LaTeX` -> `latex`
+      - `ESLint` -> `eslint`
+      - `TFLint` -> `tflint`
+      - `SBOM` -> `sbom`
+      - `CycloneDX` -> `cyclonedx` (excepto donde es valor literal de schema JSON, e.g. `bomFormat == CycloneDX`)
+      - `Terraform` -> `terraform` (lowercase, una sola palabra)
+  - **`SNAKE_CASE`** (uppercase con guion bajo) para:
+    - **Secretos** (`secrets.SOME_SECRET`, `secrets.GITLEAKS_LICENSE`, `secrets.AWS_PLAN_ROLE_ARN`). Convención heredada del entorno: las env vars que GitHub Actions expone para secrets siguen la convención POSIX de uppercase.
+    - **Env vars pasadas al SO** dentro de `env:` blocks (`env: SBOM_DIR: ...`, `env: RUNNER_TEMP: ...`). Convención POSIX: env vars exportadas al OS van en `UPPER_SNAKE_CASE`.
+  - **Excepciones intencionales** (no kebab):
+    - URLs externas: `https://sonarcloud.io`, `https://github.com/anchore/sbom-action` (no romper links).
+    - Nombres de acciones de terceros: `actions/checkout`, `anchore/sbom-action`, `github/codeql-action` (no romper refs de mercado).
+    - Nombres de eventos de GitHub: `pull_request`, `push`, `workflow_call`, `workflow_dispatch`, `release`, `schedule` (son palabras reservadas del schema).
+    - **Valores literales de schema**: `CycloneDX` como valor JSON de `bomFormat`, `cyclonedx-json` como valor de `format:` en anchore/sbom-action (mantener contrato con el schema externo).
+  - **Reglas de transición**:
+    - Si un nombre previo en `name:` usaba Title Case (e.g. `"Compile LaTeX document"`), kebab-casearlo: `compile-latex-document`.
+    - Plantillas embebidas: `"name": "eslint-${{ inputs.environment-name }}"` (con guión, no espacio).
+    - Para paréntesis con descripción (e.g. `(OIDC, plan role)`), kebab-case el contenido y unir con guión: `configure-aws-credentials-oidc-plan-role`.
 
 ### 5.2 Workflows reusables
 
@@ -169,7 +197,7 @@ pre-formateado.
 - Inputs van en `workflow_call.inputs` con `description`, `type`, `required`, `default`.
 - Para workflows de deploy: gate vía GitHub Environment + secret `AWS_DEPLOY_ROLE_ARN` (o equivalente). El repo que invoca define el Environment.
 - **Cross-owner secrets**: pasar explícitamente vía bloque `secrets:` en el repo que invoca. GitHub bloquea `secrets: inherit` entre owners distintos.
-- **Env-isolate** cualquier `${{ inputs.* }}` usado dentro de `run:` (CodeQL guard contra code injection):
+- **Env-isolate** cualquier `${{ inputs.* }}` usado dentro de `run:` (codeql guard contra code injection):
   ```yaml
   env:
     INPUTS_FOO: ${{ inputs.foo }}

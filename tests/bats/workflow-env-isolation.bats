@@ -13,7 +13,7 @@
 #
 # Why: GitHub Actions evaluates ${{ }} BEFORE bash sees the shell script.
 # If the substituted value contains $(...), backticks, or shell
-# metacharacters, bash evaluates them as code. CodeQL flags caller-input
+# metacharacters, bash evaluates them as code. codeql flags caller-input
 # versions as 'Code injection' (see alerts 508-517, closed by PR #183).
 # Same risk applies to step outputs (lower-severity because the step
 # output is repo-controlled, not caller-controlled, but the pattern is
