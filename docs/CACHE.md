@@ -22,7 +22,7 @@ Every cache key targeting npm / pnpm / yarn / bun dependencies follows:
 | `H`            | `sha256(lockfile)` (single file)     | `42f24408b…`  |
 
 `recipeTag` is optional. Today only `reusable-eslint.yml` uses it (to invalidate the
-cache when ESLint major is bumped without affecting other recipes in the
+cache when eslint major is bumped without affecting other recipes in the
 same env). All other recipes omit it.
 
 ### Examples
@@ -31,9 +31,9 @@ same env). All other recipes omit it.
   `linux-node24-npm-dev-42f24408bd87f5097500676766b18b6738302fcdcc75650e1b817d948a6b0b95`
 - Prod deploy (when added):
   `linux-node24-npm-prod-<H>` ← isolated from dev by the `env` segment
-- ESLint v10 on dev:
+- eslint v10 on dev:
   `linux-node24-npm-eslint10-dev-<H>`
-- After rolling back to ESLint v9:
+- After rolling back to eslint v9:
   `linux-node24-npm-eslint9-dev-<H>` ← isolated by `eslint<rev>`
 - Windows runner:
   `windows-node24-npm-dev-<H>`
