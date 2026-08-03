@@ -69,6 +69,11 @@ on:
         type: string
         required: false
         default: 'AWS_PLAN_ROLE_ARN'
+      plan-role-arn:
+        description: 'OIDC role ARN value passed directly as a string input. Use this instead of plan-role-arn-secret when calling cross-owner to avoid GitHub masking the value. Identifiers are not credentials.'
+        type: string
+        required: false
+        default: ''
       terraform-version:
         description: 'Terraform version to use.'
         type: string
@@ -271,20 +276,20 @@ jobs:
           AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
       - name: configure-aws-credentials-oidc-plan-role
-        # Cross-owner secret forwarding: this reusable declares
-        #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
-        # in workflow_call. GitHub drops `secrets: inherit` across owner
-        # boundaries, so callers MUST pass the secret explicitly. Per-env
-        # convention: the caller forwards its environment-scoped secret
-        # (e.g. AWS_PLAN_ROLE_ARN_DEV) under the reusable's expected name:
-        #   secrets:
-        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN_DEV }}
-        # The job-level `environment:` binding (PR #228) controls approval
-        # gates and required reviewers; it does NOT change how secrets
-        # are forwarded.
+        # Resolve the role ARN from two input paths:
+        #   1. inputs.plan-role-arn (string, not a secret) — used by the
+        #      dev/02-infrastructure callers. The ARN is an identifier, not
+        #      a credential, so passing it as a regular input avoids the
+        #      cross-owner secret masking (which redacts forwarded secrets
+        #      to "-" inside the reusable, breaking OIDC assume-role).
+        #   2. secrets[inputs.plan-role-arn-secret] — used by callers that
+        #      forward the secret via workflow_call.secrets. Falls back to
+        #      this when inputs.plan-role-arn is empty.
+        # The job-level `environment:` binding (PR #228) is unrelated to
+        # secret forwarding; it controls approval gates + required reviewers.
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          role-to-assume: ${{ inputs.plan-role-arn != '' && inputs.plan-role-arn || secrets[inputs.plan-role-arn-secret] }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
