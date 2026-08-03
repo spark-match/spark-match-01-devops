@@ -110,37 +110,38 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/sbom.yml"
 }
 
 # ---------------------------------------------------------------------------
-# Upload step (now via action's upload-release-assets)
+# Upload step (split from generation since anchore/sbom-action@v0.24.0 has
+# a regression in upload-release-assets; we use an explicit `gh release
+# upload` step in the workflow instead).
 # ---------------------------------------------------------------------------
 
-@test "sbom: anchore/sbom-action uploads the sbom directly to the Release" {
-  # The action itself uploads sbom.cdx.json to the GitHub Release that
-  # triggered the run; no follow-up `gh release upload` step is needed.
+@test "sbom: anchore/sbom-action does NOT upload to release (split work around v0.24.0 regression)" {
+  # anchore/sbom-action@v0.24.0 has a known regression where
+  # `upload-release-assets: true` prints "Attaching SBOMs to release: <tag>"
+  # but exits non-zero without producing the asset. The fix is to disable
+  # the action's upload and use `gh release upload` in a dedicated step
+  # (visible in the next test). If someone re-enables it, the next test
+  # will fail because we'd have two uploaders racing for the same asset.
   run grep -E "^[[:space:]]+upload-release-assets:[[:space:]]+true" "$WORKFLOW"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
 }
 
-@test "sbom: does NOT have a separate `gh release upload` step (redundant)" {
-  # Regression guard for the previous design. The action's
-  # `upload-release-assets: true` replaces the follow-up `gh release upload`
-  # step entirely. If someone re-adds it, they'd duplicate the asset and
-  # introduce drift on re-runs. Exclude comments so mentioning the old
-  # design in the workflow header doesn't trip this guard.
-  local offenders=()
+@test "sbom: has a separate `gh release upload` step (explicit upload to release)" {
+  # The dedicated step uses `gh release upload` with --clobber + retries.
+  # This replaces the buggy `upload-release-assets: true` path. Exclude
+  # comment lines so mentioning the old design in the workflow header
+  # does not trip this guard.
+  local hits=0
   local line_num=0
   while IFS= read -r line; do
     line_num=$((line_num + 1))
     # Skip comments (lines starting with #).
     if [[ "$line" =~ ^[[:space:]]*# ]]; then continue; fi
     if [[ "$line" == *"gh release upload"* ]]; then
-      offenders+=("$line_num: $line")
+      hits=$((hits + 1))
     fi
   done < "$WORKFLOW"
-  if [[ ${#offenders[@]} -gt 0 ]]; then
-    echo "# sbom.yml must not use 'gh release upload' outside comments; anchore/sbom-action handles it via upload-release-assets"
-    printf '  %s\n' "${offenders[@]}"
-    return 1
-  fi
+  [ "$hits" -ge 1 ]
 }
 
 # ---------------------------------------------------------------------------
