@@ -100,32 +100,52 @@ INTERNAL_RELEASE_PLEASE="$BATS_TEST_DIRNAME/../../.github/workflows/release-plea
   [ "$status" -eq 0 ]
 }
 
-@test "reusable-ci-workflows: reusable-release-please.yml exposes config-file input" {
-  run grep -E "config-file:" "$REUSABLE_RELEASE_PLEASE"
+@test "reusable-ci-workflows: reusable-release-please.yml uses canonical config-file path" {
+  # The reusable hardcodes the canonical config-file path
+  # (.github/release-please-config.json) because all spark-match repos
+  # follow the same layout. If a consumer ever needs to override it,
+  # promote config-file back to a workflow_call.input.
+  run grep -E "config-file:[[:space:]]*\\.github/release-please-config\\.json" "$REUSABLE_RELEASE_PLEASE"
   [ "$status" -eq 0 ]
-  run grep -B1 -A2 "config-file:" "$REUSABLE_RELEASE_PLEASE"
-  [[ "$output" == *"type: string"* ]]
 }
 
-@test "reusable-ci-workflows: reusable-release-please.yml exposes manifest-file input" {
-  run grep -E "manifest-file:" "$REUSABLE_RELEASE_PLEASE"
+@test "reusable-ci-workflows: reusable-release-please.yml uses canonical manifest-file path" {
+  run grep -E "manifest-file:[[:space:]]*\\.release-please-manifest\\.json" "$REUSABLE_RELEASE_PLEASE"
   [ "$status" -eq 0 ]
-  run grep -B1 -A2 "manifest-file:" "$REUSABLE_RELEASE_PLEASE"
-  [[ "$output" == *"type: string"* ]]
 }
 
-@test "reusable-ci-workflows: reusable-release-please.yml exposes app-id-secret input" {
-  run grep -E "app-id-secret:" "$REUSABLE_RELEASE_PLEASE"
+@test "reusable-ci-workflows: reusable-release-please.yml declares release-please-app-id secret" {
+  # Secrets (not inputs) are how reusable workflows must receive credentials.
+  # GH Actions rejects `${{ secrets[inputs.foo] }}` lookups because they
+  # enable secret-name exfiltration.
+  run grep -E "release-please-app-id:" "$REUSABLE_RELEASE_PLEASE"
   [ "$status" -eq 0 ]
-  run grep -B1 -A2 "app-id-secret:" "$REUSABLE_RELEASE_PLEASE"
-  [[ "$output" == *"type: string"* ]]
+  run grep -B1 -A2 "release-please-app-id:" "$REUSABLE_RELEASE_PLEASE"
+  [[ "$output" == *"required: true"* ]]
 }
 
-@test "reusable-ci-workflows: reusable-release-please.yml exposes app-private-key-secret input" {
-  run grep -E "app-private-key-secret:" "$REUSABLE_RELEASE_PLEASE"
+@test "reusable-ci-workflows: reusable-release-please.yml declares release-please-app-private-key secret" {
+  run grep -E "release-please-app-private-key:" "$REUSABLE_RELEASE_PLEASE"
   [ "$status" -eq 0 ]
-  run grep -B1 -A2 "app-private-key-secret:" "$REUSABLE_RELEASE_PLEASE"
-  [[ "$output" == *"type: string"* ]]
+  run grep -B1 -A2 "release-please-app-private-key:" "$REUSABLE_RELEASE_PLEASE"
+  [[ "$output" == *"required: true"* ]]
+}
+
+@test "reusable-ci-workflows: reusable-release-please.yml does NOT use dynamic secrets[inputs.*] lookup" {
+  # Anti-pattern: looking up a secret by name resolved from an input is
+  # forbidden by GH Actions because the secret name would be visible in
+  # logs and the value cannot be resolved at runtime.
+  run grep -E "secrets\[inputs\." "$REUSABLE_RELEASE_PLEASE"
+  [ "$status" -ne 0 ]
+}
+
+@test "reusable-ci-workflows: reusable-release-please.yml uses app-id input" {
+  # actions/create-github-app-token@v3 still accepts `app-id` (prints a
+  # deprecation warning suggesting `client-id`, but the input is still
+  # functional). Switching to `client-id` requires pinning @v4+, which
+  # is out of scope for this PR.
+  run grep -E "^\s*app-id:" "$REUSABLE_RELEASE_PLEASE"
+  [ "$status" -eq 0 ]
 }
 
 @test "reusable-ci-workflows: reusable-release-please.yml uses create-github-app-token@v3" {
@@ -195,5 +215,16 @@ INTERNAL_RELEASE_PLEASE="$BATS_TEST_DIRNAME/../../.github/workflows/release-plea
 
 @test "reusable-ci-workflows: internal release-please.yml owns concurrency (caller-side)" {
   run grep -E "^concurrency:" "$INTERNAL_RELEASE_PLEASE"
+  [ "$status" -eq 0 ]
+}
+
+@test "reusable-ci-workflows: internal release-please.yml passes both release-please secrets explicitly" {
+  # The caller MUST forward both secrets in a `secrets:` block because
+  # GH Actions does not auto-inherit secrets into reusable workflows
+  # (security boundary). Forgetting to forward a secret means the
+  # reusable silently gets an empty value, which fails at action runtime.
+  run grep -E "release-please-app-id:[[:space:]]*\\\${{ secrets\.RELEASE_PLEASE_APP_ID }}" "$INTERNAL_RELEASE_PLEASE"
+  [ "$status" -eq 0 ]
+  run grep -E "release-please-app-private-key:[[:space:]]*\\\${{ secrets\.RELEASE_PLEASE_APP_PRIVATE_KEY }}" "$INTERNAL_RELEASE_PLEASE"
   [ "$status" -eq 0 ]
 }
