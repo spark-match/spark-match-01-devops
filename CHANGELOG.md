@@ -20,6 +20,27 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.12](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.11...v0.1.12) (2026-08-03)
+
+
+### Features
+
+* **workflows:** real pnpm/yarn/bun support across node reusables ([#226](https://github.com/spark-match/spark-match-01-devops/issues/226)) ([df4e515](https://github.com/spark-match/spark-match-01-devops/commit/df4e515cb8becf063ceed9eac3ca3dc3685037eb))
+
+
+### Bug Fixes
+
+* **workflows:** accept apply-role-arn as string input (mirror plan) ([#242](https://github.com/spark-match/spark-match-01-devops/issues/242)) ([079fb17](https://github.com/spark-match/spark-match-01-devops/commit/079fb17bfba017e62ffc5679a74d21d7e17ddb83))
+* **workflows:** accept plan-role-arn as string input to bypass cross-owner secret masking ([#241](https://github.com/spark-match/spark-match-01-devops/issues/241)) ([46f4989](https://github.com/spark-match/spark-match-01-devops/commit/46f49890a977a9294799448f9061d13924528a28))
+* **workflows:** add hex16 diag to bypass log masking of role arn ([#240](https://github.com/spark-match/spark-match-01-devops/issues/240)) ([79336de](https://github.com/spark-match/spark-match-01-devops/commit/79336dee63f0ec87c7bae31c6f92e4ee78608d2c))
+* **workflows:** bind reusable-terraform-plan job to gh environment ([#228](https://github.com/spark-match/spark-match-01-devops/issues/228)) ([82f8da0](https://github.com/spark-match/spark-match-01-devops/commit/82f8da0cf8becc713d2c4bc8b4c85375a486ccc3))
+* **workflows:** detect role arn format in diag step (plan only) ([#238](https://github.com/spark-match/spark-match-01-devops/issues/238)) ([3aa4e0c](https://github.com/spark-match/spark-match-01-devops/commit/3aa4e0c51ae3e123d8620e3f89b7eae963b67ca8))
+* **workflows:** look up aws role arn via plan/apply-role-arn-secret input ([#232](https://github.com/spark-match/spark-match-01-devops/issues/232)) ([29ab3ad](https://github.com/spark-match/spark-match-01-devops/commit/29ab3add8b0365260797e9ad26148424fd25372b))
+* **workflows:** make aws role arn secrets optional ([#243](https://github.com/spark-match/spark-match-01-devops/issues/243)) ([320c799](https://github.com/spark-match/spark-match-01-devops/commit/320c7993cfeb6b0be73dac0970b5582b6d77b4d1))
+* **workflows:** make aws role arn secrets optional for env-scoped lookup ([#229](https://github.com/spark-match/spark-match-01-devops/issues/229)) ([9887618](https://github.com/spark-match/spark-match-01-devops/commit/98876188c5d64ece652f9eac5b163cd86b9dcd91))
+* **workflows:** remove aws role arn secrets decl; rely on env binding ([#231](https://github.com/spark-match/spark-match-01-devops/issues/231)) ([69f4d97](https://github.com/spark-match/spark-match-01-devops/commit/69f4d97ec7f8be6a78e645e9f51bcf944852ace0))
+* **workflows:** revert dynamic secret lookup; restore standard cross-owner pattern ([#234](https://github.com/spark-match/spark-match-01-devops/issues/234)) ([d9a6fca](https://github.com/spark-match/spark-match-01-devops/commit/d9a6fcaf9ca1861590e387c2b48bf6a0e81b8d18))
+
 ## [0.1.11](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.10...v0.1.11) (2026-08-02)
 
 
