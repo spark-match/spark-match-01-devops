@@ -20,6 +20,19 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.16](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.15...v0.1.16) (2026-08-03)
+
+
+### Features
+
+* **workflows:** extract commitlint + release-please into shared reusables ([#254](https://github.com/spark-match/spark-match-01-devops/issues/254)) ([e7618a7](https://github.com/spark-match/spark-match-01-devops/commit/e7618a71e995d7da2bdcd9eb641f897fe2ea6f89))
+
+
+### Bug Fixes
+
+* **workflows:** pass release-please secrets via workflow_call secrets block ([#256](https://github.com/spark-match/spark-match-01-devops/issues/256)) ([800177d](https://github.com/spark-match/spark-match-01-devops/commit/800177d4dcce149dc95a0769dbf62185f70574a9))
+* **workflows:** remove concurrency blocks from reusable ci workflows ([#255](https://github.com/spark-match/spark-match-01-devops/issues/255)) ([32f8e0d](https://github.com/spark-match/spark-match-01-devops/commit/32f8e0d651caa3aead979bb9ccf87a5c5860aa21))
+
 ## [0.1.15](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.14...v0.1.15) (2026-08-03)
 
 
