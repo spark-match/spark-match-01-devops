@@ -20,6 +20,15 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.18](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.17...v0.1.18) (2026-08-03)
+
+
+### Bug Fixes
+
+* **repo:** split sbom generation from release upload (anchore v0.24.0 regression) ([#260](https://github.com/spark-match/spark-match-01-devops/issues/260)) ([cc96f19](https://github.com/spark-match/spark-match-01-devops/commit/cc96f196e83b5e28f67368bf9362e620d1c7eccc))
+* **repo:** split sbom generation from release upload (anchore v0.24.0 regression). All 9 checks green. Merged via REST API direct. ([cc96f19](https://github.com/spark-match/spark-match-01-devops/commit/cc96f196e83b5e28f67368bf9362e620d1c7eccc))
+* **workflows:** simplify reusable-terraform-plan env binding to single input ([#262](https://github.com/spark-match/spark-match-01-devops/issues/262)) ([1dc78c0](https://github.com/spark-match/spark-match-01-devops/commit/1dc78c0209ad3ba611f2edc2a4eac62393a44641))
+
 ## [0.1.17](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.16...v0.1.17) (2026-08-03)
 
 
