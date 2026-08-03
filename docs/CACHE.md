@@ -112,7 +112,7 @@ Every cache step declares a single `restore-keys` prefix that matches
 the primary key minus the `<H>` hash:
 
 ```
-${{ env.lower_os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env_name }}-
+${{ env.lower-os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env-name }}-
 ```
 
 This means: if the exact key is missing (e.g. new env added without a
