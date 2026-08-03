@@ -33,7 +33,8 @@
         "ci",
         "quality",
         "reconciler",
-        "repo"
+        "repo",
+        "deps"
       ]
     ],
     "scope-case": [2, "always", "lower-case"],
