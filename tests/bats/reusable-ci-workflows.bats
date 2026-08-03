@@ -168,3 +168,32 @@ INTERNAL_RELEASE_PLEASE="$BATS_TEST_DIRNAME/../../.github/workflows/release-plea
   run grep -E "googleapis/release-please-action" "$INTERNAL_RELEASE_PLEASE"
   [ "$status" -ne 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# GitHub Actions constraint: reusable workflows cannot define their own
+# concurrency block. The caller owns concurrency; the reusable inherits it.
+# If a reusable defines concurrency, GH Actions rejects the run with:
+#   "Error: The workflow 'X' is requesting a concurrency group but the
+#   reusable workflow 'Y' also requests a concurrency group. Reusable
+#   workflows cannot request a concurrency group."
+# ---------------------------------------------------------------------------
+
+@test "reusable-ci-workflows: reusable-commitlint.yml does not define concurrency" {
+  run grep -E "^concurrency:" "$REUSABLE_COMMITLINT"
+  [ "$status" -ne 0 ]
+}
+
+@test "reusable-ci-workflows: reusable-release-please.yml does not define concurrency" {
+  run grep -E "^concurrency:" "$REUSABLE_RELEASE_PLEASE"
+  [ "$status" -ne 0 ]
+}
+
+@test "reusable-ci-workflows: internal commitlint.yml owns concurrency (caller-side)" {
+  run grep -E "^concurrency:" "$INTERNAL_COMMITLINT"
+  [ "$status" -eq 0 ]
+}
+
+@test "reusable-ci-workflows: internal release-please.yml owns concurrency (caller-side)" {
+  run grep -E "^concurrency:" "$INTERNAL_RELEASE_PLEASE"
+  [ "$status" -eq 0 ]
+}
