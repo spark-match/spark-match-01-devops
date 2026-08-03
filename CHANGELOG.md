@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.14](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.13...v0.1.14) (2026-08-03)
+
+
+### Bug Fixes
+
+* **composite:** kebab-case name and align step ids with step names ([#248](https://github.com/spark-match/spark-match-01-devops/issues/248)) ([df58942](https://github.com/spark-match/spark-match-01-devops/commit/df58942e45e3af36fb5ffa1a62181927a9cefc50))
+
 ## [0.1.13](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.12...v0.1.13) (2026-08-03)
 
 
