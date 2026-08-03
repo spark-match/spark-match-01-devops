@@ -61,6 +61,11 @@ on:
         type: string
         required: false
         default: 'AWS_APPLY_ROLE_ARN'
+      apply-role-arn:
+        description: 'OIDC role ARN value passed directly as a string input. Use this instead of apply-role-arn-secret when calling cross-owner to avoid GitHub masking the value. Identifiers are not credentials.'
+        type: string
+        required: false
+        default: ''
       terraform-version:
         description: 'Terraform version to use.'
         type: string
@@ -197,13 +202,12 @@ jobs:
           terraform_wrapper: false
 
       - name: configure-aws-credentials-oidc-apply-role
-        # Cross-owner secret forwarding — see the same comment in
-        # reusable-terraform-plan.yml. The caller passes
-        #   AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN_<ENV> }}
-        # explicitly (required by workflow_call on this reusable).
+        # Resolve role ARN from two paths (string input preferred to avoid
+        # cross-owner secret masking). See reusable-terraform-plan.yml for
+        # the full rationale.
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-to-assume: ${{ inputs.apply-role-arn != '' && inputs.apply-role-arn || secrets[inputs.apply-role-arn-secret] }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
