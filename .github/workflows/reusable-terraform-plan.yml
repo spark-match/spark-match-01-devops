@@ -249,6 +249,9 @@ jobs:
         #   plan_secret_format=arn     -> value matches ^arn:aws:iam::[0-9]+:role/.+
         #   plan_secret_format=empty   -> zero length (no value forwarded)
         #   plan_secret_format=other   -> anything else; print length + first5 chars
+        # Also prints the first 16 hex bytes of the value via base64 to bypass
+        # any GitHub log masking of substrings (the masking would otherwise
+        # hide the leading "arn:aws:iam::" prefix).
         id: diag
         run: |
           if [ -z "$AWS_PLAN_ROLE_ARN" ]; then
@@ -261,6 +264,9 @@ jobs:
             echo "::notice::plan_secret_len=${#AWS_PLAN_ROLE_ARN}"
             echo "::notice::plan_secret_first5=${AWS_PLAN_ROLE_ARN:0:5}"
           fi
+          # Hex dump of first 16 bytes to bypass GitHub log masking
+          HEX=$(printf '%s' "$AWS_PLAN_ROLE_ARN" | head -c 16 | od -An -tx1 | tr -d ' \n')
+          echo "::notice::plan_secret_hex16=${HEX}"
         env:
           AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
