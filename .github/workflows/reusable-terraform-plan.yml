@@ -121,9 +121,7 @@ on:
         description: 'Environment identifier echoed back.'
         value: ${{ jobs.plan.outputs.environment }}
     secrets:
-      AWS_PLAN_ROLE_ARN:
-        description: 'OIDC role ARN for the plan job (assumed via aws-actions/configure-aws-credentials). Optional: if the caller does not forward it, the reusable falls back to the env-scoped lookup (jobs.plan is bound to `environment: dev|prod|...` via input.environment-name || input.environment).'
-        required: false
+      inherit: true
 
 permissions:
   id-token: write          # For OIDC
@@ -253,12 +251,11 @@ jobs:
           AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
       - name: configure-aws-credentials-oidc-plan-role
-        # Cross-owner secret forwarding: this reusable declares
-        #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
-        # in workflow_call. GitHub drops `secrets: inherit` across owner
-        # boundaries, so callers MUST pass the secret explicitly:
-        #   secrets:
-        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+        # `secrets: inherit` lets the reusable read any secret available to
+        # the caller, including env-scoped secrets (jobs.plan is bound to
+        # `environment: dev|prod|...` via input.environment-name || input.
+        # environment). For cross-owner callers, the env must be in the
+        # upstream repo (or the caller must forward the secret explicitly).
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}

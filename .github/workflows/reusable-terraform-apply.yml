@@ -118,9 +118,7 @@ on:
         description: 'Environment identifier echoed back.'
         value: ${{ jobs.apply.outputs.environment }}
     secrets:
-      AWS_APPLY_ROLE_ARN:
-        description: 'OIDC role ARN for the apply job (assumed via aws-actions/configure-aws-credentials). Optional: if the caller does not forward it, the reusable falls back to the env-scoped lookup (jobs.apply is bound to `environment: gh-environment|environment-name|environment` via inputs).'
-        required: false
+      inherit: true
 
 # Concurrency group keyed by resolved environment (env || working-directory basename)
 # and the working directory. Prevents concurrent applies to the same env.
