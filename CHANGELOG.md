@@ -20,6 +20,22 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.13](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.12...v0.1.13) (2026-08-03)
+
+
+### Bug Fixes
+
+* **ci:** allow deps scope in commitlint (dependabot) ([#247](https://github.com/spark-match/spark-match-01-devops/issues/247)) ([40e8361](https://github.com/spark-match/spark-match-01-devops/commit/40e836122960a22c41f213df41baa408266d68c9))
+* **ci:** disable body-max-line-length so dependabot bumps pass ([#244](https://github.com/spark-match/spark-match-01-devops/issues/244)) ([98243cd](https://github.com/spark-match/spark-match-01-devops/commit/98243cd54e0d4a7dd6ced9a7a1946032c3d7bd8e))
+* **ci:** disable body-max-line-length so dependabot bumps pass ([#246](https://github.com/spark-match/spark-match-01-devops/issues/246)) ([47baeff](https://github.com/spark-match/spark-match-01-devops/commit/47baeffd7520f52fb304cf810b44082baa77aa93))
+
+
+### CI/CD
+
+* **deps:** bump anchore/sbom-action from 0.17.7 to 0.24.0 in the third-party-actions group across 1 directory ([#237](https://github.com/spark-match/spark-match-01-devops/issues/237)) ([bd0f026](https://github.com/spark-match/spark-match-01-devops/commit/bd0f02632f953d70c03710432f429a9d1d818023))
+* **deps:** bump aws-actions/configure-aws-credentials from 4 to 6 in the aws-actions group across 1 directory ([#235](https://github.com/spark-match/spark-match-01-devops/issues/235)) ([69b7195](https://github.com/spark-match/spark-match-01-devops/commit/69b7195d6b07f97dd59b323bdd24fa3a851e4aa2))
+* **deps:** bump the actions-ecosystem group across 1 directory with 3 updates ([#239](https://github.com/spark-match/spark-match-01-devops/issues/239)) ([3c615cd](https://github.com/spark-match/spark-match-01-devops/commit/3c615cd4e86bed92353ce7e7bd996d0c670843e6))
+
 ## [0.1.12](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.11...v0.1.12) (2026-08-03)
 
 
