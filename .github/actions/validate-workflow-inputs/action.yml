@@ -1,4 +1,4 @@
-name: Validate Workflow Inputs
+name: validate-workflow-inputs
 description: 'Validates required inputs, enum values, and regex patterns. Fails with ::error:: on violations.'
 inputs:
   values:

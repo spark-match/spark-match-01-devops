@@ -12,10 +12,10 @@ inputs:
 outputs:
   count:
     description: 'Number of *.bats files discovered'
-    value: ${{ steps.discover.outputs.count }}
+    value: ${{ steps.discover-bats-files.outputs.count }}
   files:
     description: 'Newline-separated list of discovered bats files'
-    value: ${{ steps.discover.outputs.files }}
+    value: ${{ steps.discover-bats-files.outputs.files }}
 runs:
   using: composite
   steps:
@@ -25,19 +25,19 @@ runs:
         BATS_VERSION: ${{ inputs.bats-version }}
       run: "$GITHUB_ACTION_PATH/install.sh"
     - name: discover-bats-files
-      id: discover
+      id: discover-bats-files
       shell: bash
       env:
         BATS_DIR: ${{ inputs.bats-dir }}
       run: "$GITHUB_ACTION_PATH/discover.sh"
     - name: run-bats-tests
-      if: steps.discover.outputs.count > 0
+      if: steps.discover-bats-files.outputs.count > 0
       shell: bash
       env:
-        DISCOVER_FILES: ${{ steps.discover.outputs.files }}
+        DISCOVER_FILES: ${{ steps.discover-bats-files.outputs.files }}
       run: "$GITHUB_ACTION_PATH/run.sh"
     - name: skip-notice
-      if: steps.discover.outputs.count == 0
+      if: steps.discover-bats-files.outputs.count == 0
       shell: bash
       env:
         BATS_DIR: ${{ inputs.bats-dir }}
