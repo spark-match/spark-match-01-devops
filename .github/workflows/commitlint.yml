@@ -15,21 +15,8 @@ concurrency:
 
 jobs:
   lint-commits:
-    name: "commitlint-${{ github.event.pull_request.head.ref || github.ref_name }}"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: checkout-repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: run-commitlint
-        if: ${{
-            (github.event_name == 'pull_request' && !startsWith(github.event.pull_request.head.ref, 'release-please--'))
-            || (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'release '))
-          }}
-        uses: wagoid/commitlint-github-action@v6
-        with:
-          configFile: .commitlintrc.json
-          commitDepth: 2
-          failOnErrors: true
+    uses: ./.github/workflows/reusable-commitlint.yml
+    with:
+      config-file: .commitlintrc.json
+      help-url: "https://github.com/spark-match/spark-match-01-devops/blob/main/AGENTS.md"
+      skip-release-please: true

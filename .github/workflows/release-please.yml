@@ -14,31 +14,4 @@ concurrency:
 
 jobs:
   release-please:
-    name: release-please
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: generate-app-installation-token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-      - name: run-release-please
-        uses: googleapis/release-please-action@v5
-        id: release
-        with:
-          config-file: .github/release-please-config.json
-          manifest-file: .release-please-manifest.json
-          token: ${{ steps.app-token.outputs.token }}
-      - name: log-result
-        if: always()
-        env:
-          RELEASES_CREATED: ${{ steps.release.outputs.releases_created || '0' }}
-          PULL_REQUEST_URL: ${{ steps.release.outputs.pull_request_url || '(none)' }}
-          UPLOAD_URL: ${{ steps.release.outputs.upload_url || '(none)' }}
-        run: |
-          echo "release-please result:"
-          echo "  releases_created=${RELEASES_CREATED}"
-          echo "  pull_request_url=${PULL_REQUEST_URL}"
-          echo "  upload_url=${UPLOAD_URL}"
+    uses: ./.github/workflows/reusable-release-please.yml
