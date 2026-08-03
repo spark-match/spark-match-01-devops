@@ -121,6 +121,25 @@ runner-os/node-version/pkgmanager/env combination. That fallback is
 better than nothing but is expected to be slower (full install on top of
 a partially-matching cache). Plan accordingly.
 
+### 4.1 Cache path per pkg-manager + OS
+
+The cache step's `path:` value is resolved by `resolve-cache-key-tags`
+and exported as `${{ env.cache-path }}`. Default locations used (overridable
+if the caller sets `NPM_CONFIG_CACHE` / `PNPM_HOME` / `YARN_CACHE_FOLDER`
+/ `BUN_INSTALL` in their repo, but the recipes do not honor these today):
+
+| pkg-manager | Linux | Windows | macOS |
+|---|---|---|---|
+| `npm`  | `$HOME/.npm` | `$LOCALAPPDATA/npm-cache` | `$HOME/.npm` |
+| `pnpm` | `$HOME/.local/share/pnpm/store` | `$LOCALAPPDATA/pnpm/store` | `$HOME/Library/pnpm/store` |
+| `yarn` | `$HOME/.cache/yarn` | `$LOCALAPPDATA/Yarn/Cache` | `$HOME/Library/Caches/Yarn` |
+| `bun`  | `$HOME/.bun/install/cache` | `$LOCALAPPDATA/bun/install/cache` | `$HOME/.bun/install/cache` |
+
+The full OS x pkg-manager grid is exhaustive in the workflow's `case`
+statement: an unsupported combo exits 1 with `::error::`. Adding a new
+pkg-manager (or a new OS) requires extending both the table above AND
+the `case` in every node reusable.
+
 ## 5. Manual cache inspection
 
 The cache backend is opaque, so debugging is limited. Useful angles:
