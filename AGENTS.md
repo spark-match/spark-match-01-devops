@@ -180,6 +180,7 @@ pre-formateado.
   - **`SNAKE_CASE`** (uppercase con guion bajo) para:
     - **Secretos** (`secrets.SOME_SECRET`, `secrets.GITLEAKS_LICENSE`, `secrets.AWS_PLAN_ROLE_ARN`). Convención heredada del entorno: las env vars que GitHub Actions expone para secrets siguen la convención POSIX de uppercase.
     - **Env vars pasadas al SO** dentro de `env:` blocks (`env: SBOM_DIR: ...`, `env: RUNNER_TEMP: ...`). Convención POSIX: env vars exportadas al OS van en `UPPER_SNAKE_CASE`.
+  - **`kebab-case` (lowercase con guión) — excepción para env vars de workflow-level**: cuando se exporta una env var al runtime del workflow mediante `echo "key=value" >> "$GITHUB_ENV"` (típicamente desde un step bash dentro de `run:`), el nombre de la variable va en kebab-case lowercase, igual que el kebab-case de los identificadores YAML. Esto aplica a variables como `lower-os`, `env-name`, `cache-path`, `pkg-install-cmd`, `pkg-run-cmd` que son leídas vía `${{ env.lower-os }}` desde steps posteriores. La razón: consistencia con el identificador del step que las crea y legibilidad en `${{ }}` expressions. NO usar mayúsculas, ni guiones bajos, ni mezcla de estilos en este contexto.
   - **Excepciones intencionales** (no kebab):
     - URLs externas: `https://sonarcloud.io`, `https://github.com/anchore/sbom-action` (no romper links).
     - Nombres de acciones de terceros: `actions/checkout`, `anchore/sbom-action`, `github/codeql-action` (no romper refs de mercado).

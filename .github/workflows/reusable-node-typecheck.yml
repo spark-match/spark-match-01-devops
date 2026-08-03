@@ -79,8 +79,24 @@ jobs:
             linux|windows|macos) ;;
             *) echo "::error::Unsupported runner OS for cache key: '$RUNNER_OS'" >&2; exit 1 ;;
           esac
+          case "$LOWER_OS:$INPUTS_PKG_MANAGER" in
+            linux:npm)   CACHE_PATH="$HOME/.npm" ;;
+            linux:pnpm)  CACHE_PATH="$HOME/.local/share/pnpm/store" ;;
+            linux:yarn)  CACHE_PATH="$HOME/.cache/yarn" ;;
+            linux:bun)   CACHE_PATH="$HOME/.bun/install/cache" ;;
+            windows:npm) CACHE_PATH="$LOCALAPPDATA/npm-cache" ;;
+            windows:pnpm) CACHE_PATH="$LOCALAPPDATA/pnpm/store" ;;
+            windows:yarn) CACHE_PATH="$LOCALAPPDATA/Yarn/Cache" ;;
+            windows:bun)  CACHE_PATH="$LOCALAPPDATA/bun/install/cache" ;;
+            macos:npm)   CACHE_PATH="$HOME/.npm" ;;
+            macos:pnpm)  CACHE_PATH="$HOME/Library/pnpm/store" ;;
+            macos:yarn)  CACHE_PATH="$HOME/Library/Caches/Yarn" ;;
+            macos:bun)   CACHE_PATH="$HOME/.bun/install/cache" ;;
+            *) echo "::error::Unsupported runner OS / pkg-manager combo: '$RUNNER_OS/$INPUTS_PKG_MANAGER'" >&2; exit 1 ;;
+          esac
           echo "lower-os=$(printf '%s' "$LOWER_OS" | tr -d '\n\r')" >> "$GITHUB_ENV"
           echo "env-name=$(printf '%s' "$ENV_NAME" | tr -d '\n\r')" >> "$GITHUB_ENV"
+          echo "cache-path=$(printf '%s' "$CACHE_PATH" | tr -d '\n\r')" >> "$GITHUB_ENV"
           echo "Cache key segments: lower-os=$LOWER_OS node=${INPUTS_NODE_VERSION} pm=${INPUTS_PKG_MANAGER} env=$ENV_NAME"
 
         env:
@@ -96,20 +112,60 @@ jobs:
           node-version: ${{ inputs.node-version }}
           package-manager-cache: false
 
+      - name: setup-pkg-manager
+        run: |
+          set -euo pipefail
+          case "$INPUTS_PKG_MANAGER" in
+            npm)
+              PKG_INSTALL_CMD="npm ci"
+              PKG_RUN_CMD="npm run"
+              ;;
+            pnpm)
+              corepack enable
+              corepack prepare pnpm@latest --activate
+              PKG_INSTALL_CMD="pnpm install --frozen-lockfile"
+              PKG_RUN_CMD="pnpm run"
+              ;;
+            yarn)
+              corepack enable
+              corepack prepare yarn@latest --activate
+              YARN_VERSION="$(yarn --version)"
+              case "$YARN_VERSION" in
+                1.*) PKG_INSTALL_CMD="yarn install --frozen-lockfile" ;;
+                *)   PKG_INSTALL_CMD="yarn install --immutable" ;;
+              esac
+              PKG_RUN_CMD="yarn run"
+              ;;
+            bun)
+              PKG_INSTALL_CMD="bun install --frozen-lockfile"
+              PKG_RUN_CMD="bun run"
+              ;;
+            *) echo "::error::Unsupported pkg-manager: '$INPUTS_PKG_MANAGER'" >&2; exit 1 ;;
+          esac
+          echo "pkg-install-cmd=$PKG_INSTALL_CMD" >> "$GITHUB_ENV"
+          echo "pkg-run-cmd=$PKG_RUN_CMD" >> "$GITHUB_ENV"
+        env:
+          INPUTS_PKG_MANAGER: ${{ inputs.pkg-manager }}
+
+      - name: setup-bun-runtime
+        if: inputs.pkg-manager == 'bun'
+        uses: oven-sh/setup-bun@v2
+
       - name: cache-${{ inputs.pkg-manager }}-dependencies
         uses: actions/cache@v6
         with:
-          path: ~/.npm
-          # Canonical cache key convention (lowercase, see docs/CACHE.md):
-          #   <os>-node<nodeVersion>-<pkgmanager>-<env>-<H>
+          path: ${{ env.cache-path }}
           key: ${{ env.lower-os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env-name }}-${{ hashFiles(format('{0}/{1}', inputs.working-directory, inputs.lockfile-name)) }}
           restore-keys: |
             ${{ env.lower-os }}-node${{ inputs.node-version }}-${{ inputs.pkg-manager }}-${{ env.env-name }}-
 
       - name: install-dependencies
-        run: npm ci
+        env:
+          PKG_INSTALL_CMD: ${{ env.pkg-install-cmd }}
+        run: ${PKG_INSTALL_CMD}
 
       - name: run-typecheck
-        run: npm run "${INPUTS_TYPECHECK_SCRIPT}"
         env:
           INPUTS_TYPECHECK_SCRIPT: ${{ inputs.typecheck-script }}
+          PKG_RUN_CMD: ${{ env.pkg-run-cmd }}
+        run: ${PKG_RUN_CMD} "${INPUTS_TYPECHECK_SCRIPT}"
