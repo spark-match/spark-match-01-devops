@@ -15,3 +15,6 @@ concurrency:
 jobs:
   release-please:
     uses: ./.github/workflows/reusable-release-please.yml
+    secrets:
+      release-please-app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+      release-please-app-private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
