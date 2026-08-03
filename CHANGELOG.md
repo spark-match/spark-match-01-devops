@@ -20,6 +20,18 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [0.1.15](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.14...v0.1.15) (2026-08-03)
+
+
+### Bug Fixes
+
+* **repo:** align commit-msg hook with header-max-length ci rule ([#253](https://github.com/spark-match/spark-match-01-devops/issues/253)) ([5405471](https://github.com/spark-match/spark-match-01-devops/commit/5405471ea88709ba8c87cd25e5e24cd2f06c38e2))
+
+
+### Documentation
+
+* **repo:** refresh scope table, pin example, and codeowners paths ([#251](https://github.com/spark-match/spark-match-01-devops/issues/251)) ([05b2dde](https://github.com/spark-match/spark-match-01-devops/commit/05b2dde52f4e31396f32b100507ae79f2c135333))
+
 ## [0.1.14](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.13...v0.1.14) (2026-08-03)
 
 
