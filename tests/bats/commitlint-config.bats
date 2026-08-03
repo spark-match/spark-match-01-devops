@@ -86,6 +86,14 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
   jq -e '.rules["header-max-length"] == [2, "always", 100]' "$CONFIG" >/dev/null
 }
 
+@test "commitlint-config: body-max-line-length is disabled (level 0)" {
+  # body-max-line-length is disabled (level 0) so Dependabot's long
+  # auto-generated body lines (with changelog URLs, semver bumps, etc.)
+  # pass. The header is still capped at 100 via header-max-length.
+  LEVEL=$(jq -r '.rules["body-max-line-length"][0]' "$CONFIG")
+  [ "$LEVEL" -eq 0 ]
+}
+
 @test "commitlint-config: has helpUrl pointing at AGENTS.md" {
   run jq -r '.helpUrl' "$CONFIG"
   [ "$status" -eq 0 ]
