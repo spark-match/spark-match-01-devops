@@ -245,19 +245,24 @@ jobs:
         id: diag
         run: |
           echo "::notice::plan_secret_len=$(echo -n "$AWS_PLAN_ROLE_ARN" | wc -c)"
+          echo "::notice::plan_secret_name=$INPUTS_PLAN_ROLE_ARN_SECRET"
         env:
-          AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          INPUTS_PLAN_ROLE_ARN_SECRET: ${{ inputs.plan-role-arn-secret }}
+          AWS_PLAN_ROLE_ARN: ${{ secrets[inputs.plan-role-arn-secret] }}
 
       - name: configure-aws-credentials-oidc-plan-role
-        # Cross-owner secret forwarding: this reusable declares
-        #   secrets: AWS_PLAN_ROLE_ARN: { required: true }
-        # in workflow_call. GitHub drops `secrets: inherit` across owner
-        # boundaries, so callers MUST pass the secret explicitly:
-        #   secrets:
-        #     AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+        # Cross-owner secret lookup: this reusable does NOT declare secrets
+        # in workflow_call (cross-owner callers cannot use secrets: inherit).
+        # Instead it accesses the secret at runtime via dynamic lookup:
+        #   ${{ secrets[inputs.plan-role-arn-secret] }}
+        # The secret must exist in the GH Environment bound to this job
+        # (configured via inputs.environment-name / environment). Caller
+        # supplies the secret NAME (not the value) via the
+        # plan-role-arn-secret input — the value stays in the caller's
+        # environment-scoped secret store.
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          role-to-assume: ${{ secrets[inputs.plan-role-arn-secret] }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
