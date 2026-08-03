@@ -244,11 +244,23 @@ jobs:
           terraform_wrapper: false
 
       - name: configure-aws-credentials-oidc-plan-role-diag
-        # Diagnostic: print secret length to log (GitHub masks the value but
-        # length is preserved).
+        # Diagnostic: detect secret format without exposing the value.
+        # Reports one of:
+        #   plan_secret_format=arn     -> value matches ^arn:aws:iam::[0-9]+:role/.+
+        #   plan_secret_format=empty   -> zero length (no value forwarded)
+        #   plan_secret_format=other   -> anything else; print length + first5 chars
         id: diag
         run: |
-          echo "::notice::plan_secret_len=$(echo -n "$AWS_PLAN_ROLE_ARN" | wc -c)"
+          if [ -z "$AWS_PLAN_ROLE_ARN" ]; then
+            echo "::notice::plan_secret_format=empty"
+          elif [[ "$AWS_PLAN_ROLE_ARN" =~ ^arn:aws:iam::[0-9]+:role/.+ ]]; then
+            echo "::notice::plan_secret_format=arn"
+            echo "::notice::plan_secret_len=${#AWS_PLAN_ROLE_ARN}"
+          else
+            echo "::notice::plan_secret_format=other"
+            echo "::notice::plan_secret_len=${#AWS_PLAN_ROLE_ARN}"
+            echo "::notice::plan_secret_first5=${AWS_PLAN_ROLE_ARN:0:5}"
+          fi
         env:
           AWS_PLAN_ROLE_ARN: ${{ secrets.AWS_PLAN_ROLE_ARN }}
 
