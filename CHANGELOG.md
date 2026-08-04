@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.2.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.1.0...v1.2.0) (2026-08-04)
+
+
+### Features
+
+* **frontend:** add reusable-frontend-deploy workflow ([#292](https://github.com/spark-match/spark-match-01-devops/issues/292)) ([622ca10](https://github.com/spark-match/spark-match-01-devops/commit/622ca10aecab2d659152ce016aac28f766a35b44))
+
 ## [1.1.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.7...v1.1.0) (2026-08-04)
 
 
