@@ -316,6 +316,13 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/<owner>/<repo>/pulls/<N>/me
 
 > Patrón establecido en PR #254 (Tier 3) y aplicado por primera vez en
 > `spark-match-02-infrastructure` (PR #104, #105).
+>
+> **Pin cross-repo**: la regla vigente es `@main` per
+> `docs/VERSIONING.md` (single-main-branch model, decision 2026-07). Los
+> tags `vX.Y.Z` existen por trazabilidad de release-please pero NO son
+> el pin requerido para callers internos. Esta sub-sección históricamente
+> recomendaba `@vX.Y.Z`; esa guía queda derogada y el contrato actual es
+> `@main`. Ver §5.2 item 8 abajo.
 
 Un reusable workflow (`on: workflow_call`) encapsula lógica reutilizable
 cross-repo. Para añadir uno:
@@ -350,9 +357,13 @@ cross-repo. Para añadir uno:
    - Para reusables con secrets: caller forwardea ambos secrets via
      `secrets:` block, reusable los consume via `${{ secrets.<name> }}`.
 8. **Pin cross-repo**: `uses: spark-match/spark-match-01-devops/.github/
-   workflows/reusable-<name>.yml@v0.1.18` (NO `@main`). Da control de
-   upgrades. Bumpear `@v0.1.19` cuando se libere una nueva versión con
-   cambios compatibles.
+   workflows/reusable-<name>.yml@main` per `docs/VERSIONING.md`
+   (single-main-branch model, decision 2026-07). Los tags `vX.Y.Z`
+   existen por trazabilidad de release-please pero NO son el pin
+   requerido para callers internos. Si en el futuro spark-match
+   quisiera ofrecer versiones estables a repos third-party (no
+   spark-match org), se haría vía un proceso de release dedicado
+   (ver `docs/VERSIONING.md` § "Cuando se justificara SemVer").
 9. **Documentar en §11**: añadir a la tabla de reusables, contar
    correctamente. Bumpear el `package-name` en `.github/release-please-
    config.json` si aplica.

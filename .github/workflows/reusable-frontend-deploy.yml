@@ -15,11 +15,6 @@
 # Pin: callers cross-repo usan `@main` per docs/VERSIONING.md. La version
 # v1.2.0+ existe por trazabilidad de release-please pero NO es el pin
 # requerido para callers internos.
-#
-# NOTE: AGENTS.md §5.2 recomienda pin-by-version (`@vX.Y.Z`). Esa guia
-# contradice docs/VERSIONING.md (decision 2026-07) y queda pendiente de
-# alineacion. Mientras tanto, el patron canónico para callers internos
-# es `@main` per VERSIONING.
 
 name: frontend-deploy
 
