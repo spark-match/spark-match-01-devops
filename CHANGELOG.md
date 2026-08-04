@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.0.5](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.4...v1.0.5) (2026-08-04)
+
+
+### Documentation
+
+* remove legacy orion branding references ([#284](https://github.com/spark-match/spark-match-01-devops/issues/284)) ([37ecfc7](https://github.com/spark-match/spark-match-01-devops/commit/37ecfc7ff3f804846365e175c0cb06d7bc2135aa))
+
 ## [1.0.4](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.3...v1.0.4) (2026-08-04)
 
 
