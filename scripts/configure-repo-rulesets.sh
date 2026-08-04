@@ -120,7 +120,7 @@ fi
 validate_manifest() {
   local mf="$1"
   jq -e '
-    .version == 2 and
+    (.version == 2 or .version == 3) and
     (.defaults | type == "object") and
     (.repositories | type == "object") and
     (.defaults.allowedMergeMethods | type == "array") and
