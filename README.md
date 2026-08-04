@@ -291,7 +291,7 @@ Runs `tflint --recursive` against the caller's Terraform code. Caller must provi
 
 Pins:
 
-- `terraform-linters/setup-tflint@v6` (bumped from v4 in an `orion-infrastructure` PR)
+- `terraform-linters/setup-tflint@v6` (bumped from v4 in a `spark-match-02-infrastructure` PR)
 - `tflint_version: latest` (caller can pin via `.tflint.hcl` config)
 
 Inputs:
@@ -341,7 +341,7 @@ Required secrets: `SONAR_TOKEN` (same-name convention). Caller must set it in th
 
 #### `reusable-sonar-typescript.yml`
 
-sonar-cloud analysis for TypeScript. Used by `orion-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
+sonar-cloud analysis for TypeScript. Used by `spark-match-04-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
 
 Same input shape as `reusable-sonar-terraform.yml` (without `exclude-patterns`) plus `tsconfig-path` (default `tsconfig.json`).
 
@@ -523,7 +523,7 @@ Key inputs:
 | auto-approve | bool | `false` | Skip approval (only for non-prod envs with empty reviewers). |
 | dry-run | bool | `false` | Plan only — no resources are destroyed. Useful for previewing what would be removed. |
 | retention-days | number | `14` | 1-90 (GitHub Actions limits); for the plan artifact and the pre-destroy state backup. |
-| project-name | string | `''` (auto-derive from `backend-bucket`) | Used as the filter prefix for log groups (`/aws/lambda/<project>-*`, etc.), SSM parameters (`/<project>/*`), S3 buckets (`<project>-sam-artifacts-*`), and CloudFormation stacks (`<project>-*`). Auto-derived from `backend-bucket` when empty using the pattern `<project>-tfstate-<env>` (so `orion-tfstate-dev` produces `orion`). Pass explicitly only if your bucket name does not follow the convention. |
+| project-name | string | `''` (auto-derive from `backend-bucket`) | Used as the filter prefix for log groups (`/aws/lambda/<project>-*`, etc.), SSM parameters (`/<project>/*`), S3 buckets (`<project>-sam-artifacts-*`), and CloudFormation stacks (`<project>-*`). Auto-derived from `backend-bucket` when empty using the pattern `<project>-tfstate-<env>` (so `myapp-tfstate-dev` produces `myapp`). Pass explicitly only if your bucket name does not follow the convention. |
 | enable-cleanup | bool | `false` | Run the post-destroy cleanup job. Only executes if destroy was successful. |
 | cleanup-token | string | `''` | Required when `enable-cleanup=true`. Must equal `CLEANUP-<ENV>` (case-sensitive). Separate gate so cleanup cannot run accidentally on a destroy-only invocation. |
 
@@ -547,7 +547,7 @@ Behavior:
 - `dry-run: true` propagates: the cleanup job lists matches and writes them to the step summary without deleting.
 - CloudFormation `delete-stack` is async — the stack itself transitions to `DELETE_COMPLETE` minutes later. Re-running the workflow (with the same token) confirms.
 - The `backend-bucket` is excluded from S3 sweep by name match (it's the Terraform state bucket, owned by a different destroy step).
-- IAM users (e.g. `orion-admin`) and GitHub-side resources (Secrets, Variables, Environments) are NOT touched.
+- IAM users (e.g. `myapp-admin`) and GitHub-side resources (Secrets, Variables, Environments) are NOT touched.
 
 Caller-side example:
 
@@ -593,7 +593,7 @@ After destroy you can `rm backend-override.hcl tfstate.tfstate.local*` and run t
 
 #### `reusable-migrations-dry-run.yml`
 
-Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `orion-backend` for every PR (Sprint 2 — see ADR-016).
+Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `spark-match-03-backend` for every PR (Sprint 2 — see ADR-016).
 
 Inputs (highlights):
 
@@ -602,7 +602,7 @@ Inputs (highlights):
 | `environment-name` | string | `dev` | Informational; used in job name + logs. |
 | `postgres-version` | string | `17` | Postgres major version for the service container. |
 | `migrations-dir` | string | `migrations` | Path to the `*.sql` directory (relative to `working-directory`). |
-| `migrations-table` | string | `orion_migrations` | node-pg-migrate tracking table. |
+| `migrations-table` | string | `spark_match_migrations` | node-pg-migrate tracking table. |
 | `migrations-schema` | string | `public` | Schema holding the tracking table. |
 | `npm-script` | string | `migrate:up` | npm script that applies the migrations. Must use node-pg-migrate. |
 | `node-version` | string | `24` | Node.js version for the runner. |
@@ -623,7 +623,7 @@ These workflows are **not** part of the consumer-facing catalog; they only run o
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
 
-The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the orion stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`), which target the sonar-cloud org's Terraform/TypeScript projects; and to `reusable-migrations-dry-run.yml`, which validates `orion-backend`'s SQL migrations against an ephemeral Postgres on every PR.
+The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`), which target the sonar-cloud org's Terraform/TypeScript projects; and to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR.
 
 ## Versioning
 

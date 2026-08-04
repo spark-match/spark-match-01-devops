@@ -2,7 +2,7 @@
 
 This document explains the canonical cache key used by all node-consuming
 reusable workflows in `spark-match/spark-match-01-devops@main`, as well
-as the inline test job in `ahincho/orion-frontend/.github/workflows/ci.yml`.
+as the inline test job in `spark-match/spark-match-04-frontend/.github/workflows/ci.yml`.
 
 ## 1. The convention
 
@@ -161,9 +161,9 @@ lowercase, included `pkgmanager`, and the `<H>` was narrowed to a single
 file. Existing v3 entries are orphaned and will be GC'd by the 7-day
 retention.
 
-## 7. Inline test job (orion-frontend/ci.yml)
+## 7. Inline test job (spark-match-04-frontend/ci.yml)
 
-The `unit tests` job in `orion-frontend/.github/workflows/ci.yml` follows
+The `unit tests` job in `spark-match-04-frontend/.github/workflows/ci.yml` follows
 the same convention with the key hardcoded for clarity:
 
 ```yaml

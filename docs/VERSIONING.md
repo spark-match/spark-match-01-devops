@@ -80,7 +80,7 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
 
 - **Sin acoplamiento interno entre layers.** Cada recipe es invocable independiente. Un caller puede usar solo `reusable-actionlint.yml` + `reusable-eslint.yml` sin tomar `reusable-yamllint.yml`.
 - **Secrets solo en recipes de deploy.** Las recipes de ecosystem y node no reciben secrets (checks de codigo estatico puro).
-- **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (ahincho/orion-backend -> spark-match).
+- **Cross-owner friendly.** Las recipes usan `secrets:` por nombre explicito (e.g. `AWS_DEPLOY_ROLE_ARN`) y esperan que el caller los pase con `secrets: inherit` o explicito. Esto evita el bloqueo de GitHub para callers cross-owner (el proyecto legado pre-rebrand -> spark-match).
 - **Pin de herramientas externas.** actionlint v1.7.7, yamllint 1.35.1, eslint version parametrizable via input, terraform version parametrizable via input, sam-cli version parametrizable via input.
 - **Prefijo `reusable-`** obligatorio en archivos con `workflow_call`. Sin prefijo = CI/CD interno de este repo, no llamable desde consumers.
 
@@ -92,10 +92,10 @@ Todas las recipes aceptan al menos `environment-name` (informativo: loggeado en 
    `deploy/` — este repo no tiene proyecto Node ni Terraform donde correrlos.
 2. Cada recipe se valida cuando un caller repo la invoca desde su propio
    PR contra `main`. Mapeo canonico (todos los callers usan `@main`):
-   - `reusable-eslint.yml`, `reusable-node-test.yml`: `orion-frontend`
+   - `reusable-eslint.yml`, `reusable-node-test.yml`: `spark-match-04-frontend`
    - `reusable-terraform-plan.yml`, `reusable-terraform-apply.yml`, y los ecosystem
      recipes de Terraform (`reusable-terraform-validate.yml`,
-     `reusable-tflint.yml`): `orion-infrastructure`
+     `reusable-tflint.yml`): `spark-match-02-infrastructure`
    - `reusable-latex-build.yml`, `reusable-latex-release.yml`: `spark-match-07-article`
    - `reusable-actionlint.yml`, `reusable-gitleaks.yml`, `reusable-yamllint.yml`:
      `ci.yml` local (ver punto 1)
