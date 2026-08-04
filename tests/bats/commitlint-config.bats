@@ -50,15 +50,17 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
   done
 }
 
-@test "commitlint-config: scope-enum contains the 13 org-approved scopes (incl. deps)" {
-  # 13 = composite, workflows, ecosystem, node, deploy, governance,
+@test "commitlint-config: scope-enum contains the 14 org-approved scopes (incl. deps, frontend)" {
+  # 14 = composite, workflows, ecosystem, node, deploy, frontend, governance,
   #      scripts, docs, ci, quality, reconciler, repo, deps
   # `deps` was added for Dependabot-generated commits which use the
   # `ci(deps):` prefix.
+  # `frontend` was added for the reusable-frontend-deploy workflow
+  # introduced in PR adding reusable-frontend-deploy.yml.
   COUNT=$(jq -r '.rules["scope-enum"][2] | length' "$CONFIG")
-  [ "$COUNT" -eq 13 ]
+  [ "$COUNT" -eq 14 ]
 
-  for s in composite workflows ecosystem node deploy governance scripts docs ci quality reconciler repo deps; do
+  for s in composite workflows ecosystem node deploy frontend governance scripts docs ci quality reconciler repo deps; do
     jq -e --arg s "$s" '.rules["scope-enum"][2] | index($s) != null' "$CONFIG" >/dev/null \
       || { echo "missing scope: $s"; return 1; }
   done
@@ -127,9 +129,9 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
   [ "$status" -eq 0 ]
 }
 
-@test "commitlint-config: hook header lists the same 13 scopes as commitlintrc" {
+@test "commitlint-config: hook header lists the same 14 scopes as commitlintrc" {
   run bash -c '
-    for s in composite workflows ecosystem node deploy governance scripts docs ci quality reconciler repo deps; do
+    for s in composite workflows ecosystem node deploy frontend governance scripts docs ci quality reconciler repo deps; do
       echo -e "chore($s): subject" | "'"$HOOK"'" /dev/stdin >/dev/null 2>&1 \
         || { echo "hook rejected scope: $s"; exit 1; }
     done
