@@ -28,18 +28,18 @@
 # Inputs:
 #   - environment-name:  informational; appears in job name and logs.
 #   - postgres-version:  Postgres major version to spin up. Default 17 (matches
-#                        orion-infrastructure modules/rds-postgres default since
+#                        spark-match-02-infrastructure modules/rds-postgres default since
 #                        the 16.4 -> 17.10 major bump in Sprint C).
 #   - postgres-user/-password/-db:  credentials used by the runner to connect.
 #                                  Defaults are safe for a throwaway container.
 #   - migrations-dir:    path to the *.sql directory, relative to
 #                        working-directory. Default 'migrations'.
 #   - migrations-table:  node-pg-migrate tracking table. Default
-#                        'orion_migrations' (matches .npmrc.migrate convention
-#                        in orion-backend).
+#                        'spark_match_migrations' (matches .npmrc.migrate convention
+#                        in spark-match-03-backend).
 #   - migrations-schema: schema holding the tracking table. Default 'public'.
 #   - node-version:      Node.js version for the runner. Default 24 (matches
-#                        orion-backend's engines.node).
+#                        spark-match-03-backend's engines.node).
 #   - working-directory: where 'npm ci' runs (where package.json lives).
 #   - npm-script:        npm script that applies the migrations. Default
 #                        'migrate:up'. node-pg-migrate exits non-zero on any
@@ -78,7 +78,7 @@ on:
         description: 'Database name to create on first boot.'
         type: string
         required: false
-        default: 'orion_test'
+        default: 'spark_match_test'
       migrations-dir:
         description: 'Path to the *.sql directory, relative to working-directory.'
         type: string
@@ -88,7 +88,7 @@ on:
         description: 'node-pg-migrate tracking table name (matches .npmrc.migrate migrationsTable).'
         type: string
         required: false
-        default: 'orion_migrations'
+        default: 'spark_match_migrations'
       migrations-schema:
         description: 'Schema that holds the migrations tracking table.'
         type: string
@@ -254,7 +254,7 @@ jobs:
         # npm script. node-pg-migrate v9 (as of mid-2026) silently ignores
         # several config-file keys; the canonical workaround is to pass
         # every option as an explicit CLI arg in the caller's `migrate:*`
-        # npm scripts. See orion-backend/package.json for the reference
+        # npm scripts. See spark-match-03-backend/package.json for the reference
         # shape.
         #
         # The recipe does NOT forward --migrations-table, --migrations-schema,
