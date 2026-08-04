@@ -9,6 +9,10 @@
     {
       "date": "2026-08-01",
       "change": "Added 3 strict required checks for spark-match-02-infrastructure (tflint, gitleaks, sonar-terraform) after gap analysis revealed 3 PRs (#77/#78/#79) had bypassed tflint via admin-bypass. Tracked in tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md."
+    },
+    {
+      "date": "2026-08-04",
+      "change": "Reconciled spark-match-02-infrastructure statusChecks against actual reported check contexts. Manifest had 5 placeholder names (Plan (dev) / Plan (dev), tflint (env=dev), etc.) that did not match the 8 checks GitHub Actions actually reports (plan-dev / plan-, tflint / tflint-, etc.). Surfaced by --check returning drift. Fix: replaced 5 placeholders with the 8 real check contexts reported by /actions/runs/{id}/jobs API."
     }
   ],
   "defaults": {
@@ -48,11 +52,14 @@
       "reviewerTeam": "devops",
       "filePatterns": ["**"],
       "statusChecks": [
-        "Plan (dev) / Plan (dev)",
+        "plan-dev / plan-",
         "Checkov",
-        "tflint / tflint (env=dev)",
-        "gitleaks / gitleaks (env=dev)",
-        "sonar-terraform / SonarCloud Terraform (dev)"
+        "tflint / tflint-",
+        "gitleaks / gitleaks-",
+        "sonar-terraform / sonar-terraform-dev",
+        "terraform-validate / terraform-validate-",
+        "quality / bats",
+        "lint-commits / commitlint"
       ]
     },
     "spark-match-00-knowledge-base": {
