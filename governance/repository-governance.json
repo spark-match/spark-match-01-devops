@@ -13,6 +13,10 @@
     {
       "date": "2026-08-04",
       "change": "Reconciled spark-match-02-infrastructure statusChecks against actual reported check contexts. Manifest had 5 placeholder names (Plan (dev) / Plan (dev), tflint (env=dev), etc.) that did not match the 8 checks GitHub Actions actually reports (plan-dev / plan-, tflint / tflint-, etc.). Surfaced by --check returning drift. Fix: replaced 5 placeholders with the 8 real check contexts reported by /actions/runs/{id}/jobs API."
+    },
+    {
+      "date": "2026-08-04",
+      "change": "Added lint-commits / commitlint-main to required status checks for spark-match-01-devops. Defense against REST API merge pitfall: when squash-merging via PUT /pulls/N/merge without explicit commit_title, GitHub uses the PR title as the merge commit subject. If the PR title has camelCase, the resulting merge commit violates subject-case in commitlint, but the PR-side commitlint check (which lints git commit messages, not PR title) had already passed. Adding commitlint-main as required catches this on the post-merge push to main."
     }
   ],
   "defaults": {
@@ -38,7 +42,8 @@
       "statusChecks": [
         "actionlint / actionlint-ci",
         "gitleaks / gitleaks-ci",
-        "yamllint / yamllint-ci"
+        "yamllint / yamllint-ci",
+        "lint-commits / commitlint-main"
       ]
     },
     "spark-match-07-article": {

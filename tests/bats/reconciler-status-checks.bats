@@ -27,6 +27,7 @@ setup() {
     | sort == [
         "actionlint / actionlint-ci",
         "gitleaks / gitleaks-ci",
+        "lint-commits / commitlint-main",
         "yamllint / yamllint-ci"
       ]
   ' "$MANIFEST" >/dev/null
@@ -36,6 +37,18 @@ setup() {
   jq -e '
     .repositories["spark-match-01-devops"].statusChecks
     | all(. | contains("(env=") | not)
+  ' "$MANIFEST" >/dev/null
+}
+
+@test "spark-match-01-devops statusChecks MUST include commitlint-main as a guard against REST API merge title concatenation" {
+  # Defense against PR title becoming the squash-merge commit subject:
+  # the PR-side commitlint check lints git commit messages (not PR titles),
+  # so a camelCase PR title can pass the PR check but produce a merge commit
+  # that violates subject-case. Required on the post-merge push to main
+  # forces the system to flag this.
+  jq -e '
+    .repositories["spark-match-01-devops"].statusChecks
+    | any(. == "lint-commits / commitlint-main")
   ' "$MANIFEST" >/dev/null
 }
 
