@@ -66,7 +66,7 @@ Scopes usados en este repo:
 |---|---|
 | `composite` | composite actions |
 | `workflows` | reusable workflows |
-| `ecosystem` / `node` / `python` / `deploy` | workflows por capa |
+| `ecosystem` / `node` / `python` / `deploy` / `frontend` | workflows por capa |
 | `governance` | manifest, schema, scripts de ruleset |
 | `scripts` | scripts bash |
 | `docs` | README, `docs/`, CONTRIBUTING |
