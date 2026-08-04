@@ -1,5 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Spark Match
+# =============================================================================
+# Reusable Workflow: Python CI (uv + ruff + mypy + pytest)
+# =============================================================================
+# Atomic recipe (python layer). Drives the canonical Python QA pipeline:
+# ruff format + check, mypy strict, pytest with coverage gate (default 80%),
+# bandit, pip-audit. Caller passes `commands` as a CSV to opt out of any
+# step (e.g. drop security on internal-only libs).
+#
+# Caller expects a `pyproject.toml` at `working-directory` (default `.`).
+# Optional `uv.lock` for reproducible installs.
+#
+# Coverage report is emitted as Cobertura XML at `coverage.xml` (downloaded
+# as artifact `python-ci-coverage`). Pair with reusable-sonar-python.yml
+# to upload it to sonar-cloud (or upload manually to Codecov).
+#
+# Pin: callers cross-repo usan `@main` per docs/VERSIONING.md.
+# =============================================================================
+
 name: reusable-python-ci
 
 on:
