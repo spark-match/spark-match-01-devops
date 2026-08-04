@@ -68,29 +68,30 @@ This repo follows the org-wide security baseline documented in `docs/GOVERNANCE-
 - CODE OWNERS review is required on every PR to `main` (ruleset field `require_code_owner_review: true`).
 - Branch protection blocks direct pushes; admin bypass is scoped to the pull-request context.
 
-## Security Tooling (current state, 2026-07-29)
+## Security Tooling (current state, 2026-08-04)
 
 See the `## Security` section in [README.md](README.md#security) for the full toolchain matrix. Summary:
 
 - **Required CI checks**: actionlint, yamllint, gitleaks (on every PR + push)
 - **CodeQL**: runs on PR + push + weekly; 502 alerts fixed across Sprints A/B/C (none open)
 - **Dependabot security updates**: enabled (auto-PR for vulnerable deps)
-- **Native GitHub secret scanning**: **disabled** (requires GitHub Advanced Security paid plan)
+- **Native GitHub secret scanning**: **enabled** (secret scanning + push protection; free for public repos, no GHAS purchase needed — see below)
 - **Gitleaks custom config**: `.gitleaks.toml` at repo root with custom AWS rules (`aws-account-id`, `aws-role-arn`, `aws-sts-session-token`) and allowlists for `docs/` and `CHANGELOG.md`.
 - **Pre-commit secret scan**: `.githooks/pre-commit` (gitleaks). Enable per clone via `git config core.hooksPath .githooks`. Catches secrets at commit time before they reach CI.
 
-The repo's Free-plan posture is documented inline so future maintainers know why `reusable-gitleaks.yml` exists in the catalog and how to upgrade if/when `spark-match` moves to a paid plan.
+Native secret scanning + push protection are free for public repos and do not require a paid plan; `secret_scanning_non_provider_patterns` and `secret_scanning_validity_checks` remain GitHub Advanced Security-only (confirmed empirically — see below). `reusable-gitleaks.yml` stays in the catalog as defense-in-depth regardless, and is the only scanner that understands the org's custom AWS patterns.
 
-### Enabling native GitHub secret scanning (admin task, no code change)
+### Native GitHub secret scanning (enabled 2026-08-04)
 
-When the org moves to GitHub Advanced Security:
+Enabled via **Settings** → **Code security and analysis** (or `PATCH /repos/{owner}/{repo}` with a `security_and_analysis` body):
 
-1. GitHub → repository **Settings** → **Code security and analysis**.
-2. Enable **Secret scanning** (detects ~200 partner token formats that gitleaks may miss, including GitHub PATs, Slack tokens, Stripe keys, etc.).
-3. Enable **Push protection** to block pushes containing detected secrets before they land on the remote.
-4. Configure **custom patterns** for org-specific secrets if needed (org-level secret scanning settings).
+1. **Secret scanning** — detects ~200 partner token formats that gitleaks may miss (GitHub PATs, Slack tokens, Stripe keys, etc.). **Enabled.** Free for public repos; no GHAS purchase required.
+2. **Push protection** — blocks a `git push` that contains a detected secret before it lands on the remote. **Enabled.** Also free for public repos.
+3. **Non-provider patterns** and **validity checks** remain **GitHub Advanced Security-only**, even for a public repo. A live `PATCH` attempt to enable both on 2026-08-04 returned HTTP 200 but silently left `status: disabled` for each — GitHub accepts the request but ignores the field when the repo has no GHAS license, no error raised.
 
-Until that step is done, gitleaks is the sole secret scanner. See `.gitleaks.toml` for custom AWS rules that complement the default rule set.
+gitleaks is kept in the catalog as defense-in-depth: it runs the full git history on every PR + push and covers the custom AWS rules (`aws-account-id`, `aws-role-arn`, `aws-sts-session-token`) that are not part of GitHub's default partner pattern set.
+
+If this repo (or any `spark-match/*` consumer) ever moves to **private** visibility, re-check `security_and_analysis`: the free tier for `secret_scanning` and `secret_scanning_push_protection` only applies to public repos — a private repo needs a GHAS license for all four toggles.
 
 ## Acknowledgements
 
