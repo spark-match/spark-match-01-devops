@@ -1,0 +1,205 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# Reusable Workflow: SonarCloud - Python
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs sonar-cloud analysis on a Python
+# caller project. Symmetric to reusable-sonar-typescript.yml but tuned for
+# Python sources and Cobertura-style coverage XML (produced by `coverage
+# xml` from the reusable-python-ci workflow or equivalent).
+#
+# Pin: callers cross-repo usan `@main` per docs/VERSIONING.md.
+# =============================================================================
+
+name: sonar-python
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'sonar-cloud project key'
+        type: string
+        required: true
+      project-name:
+        description: 'sonar-cloud project display name'
+        type: string
+        required: true
+      organization:
+        description: 'sonar-cloud organization key'
+        type: string
+        required: true
+      sources:
+        description: 'Comma-separated source paths (relative to working-directory)'
+        type: string
+        required: true
+      tests:
+        description: 'Comma-separated test paths (relative to working-directory). Empty disables test analysis.'
+        type: string
+        required: true
+      working-directory:
+        description: 'Directory containing pyproject.toml and source code'
+        type: string
+        required: true
+      env:
+        description: 'Environment identifier (used in job name and logs)'
+        type: string
+        required: true
+      python-version:
+        description: 'Python version to install via uv (default 3.14)'
+        type: string
+        required: false
+        default: '3.14'
+      sync-groups:
+        description: 'Space-separated dependency groups for uv sync (e.g. "dev test")'
+        type: string
+        required: true
+      pytest-targets:
+        description: 'Path passed to pytest'
+        type: string
+        required: true
+      pytest-args:
+        description: 'Extra pytest args (e.g. "--cov=src --cov-report=xml:coverage.xml")'
+        type: string
+        required: true
+      coverage-paths:
+        description: 'Comma-separated coverage report paths (Cobertura XML) for sonar-cloud'
+        type: string
+        required: true
+      fail-on-quality-gate:
+        description: 'Fail the job if the quality gate status is ERROR ("true" or "false")'
+        type: string
+        required: true
+    secrets:
+      SONAR_TOKEN:
+        description: 'sonar-cloud authentication token. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls).'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sonar:
+    name: "sonar-python-${{ inputs.env }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+        shell: bash
+
+    steps:
+      - name: validate-inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        with:
+          values: |
+            {
+              "project-key": "${{ inputs.project-key }}",
+              "project-name": "${{ inputs.project-name }}",
+              "organization": "${{ inputs.organization }}",
+              "sources": "${{ inputs.sources }}",
+              "tests": "${{ inputs.tests }}",
+              "working-directory": "${{ inputs.working-directory }}",
+              "env": "${{ inputs.env }}",
+              "python-version": "${{ inputs.python-version }}",
+              "sync-groups": "${{ inputs.sync-groups }}",
+              "pytest-targets": "${{ inputs.pytest-targets }}",
+              "pytest-args": "${{ inputs.pytest-args }}",
+              "coverage-paths": "${{ inputs.coverage-paths }}",
+              "fail-on-quality-gate": "${{ inputs.fail-on-quality-gate }}"
+            }
+          required: project-key|project-name|organization|sources|tests|working-directory|env|python-version|sync-groups|pytest-targets|pytest-args|coverage-paths|fail-on-quality-gate
+          patterns: |
+            {
+              "python-version": "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?$"
+            }
+
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: setup-uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: |
+            ${{ inputs.working-directory }}/pyproject.toml
+            ${{ inputs.working-directory }}/uv.lock
+
+      - name: setup-python-${{ inputs.python-version }}
+        env:
+          INPUTS_PYTHON_VERSION: ${{ inputs.python-version }}
+        run: uv python install "${INPUTS_PYTHON_VERSION}"
+
+      - name: sync-dependencies
+        env:
+          INPUTS_SYNC_GROUPS: ${{ inputs.sync-groups }}
+        run: |
+          set -euo pipefail
+          args=()
+          for g in ${INPUTS_SYNC_GROUPS}; do
+            args+=(--group "$g")
+          done
+          if [ "${#args[@]}" -eq 0 ]; then
+            uv sync
+          else
+            uv sync "${args[@]}"
+          fi
+
+      - name: run-tests-with-coverage
+        uses: spark-match/spark-match-01-devops/.github/actions/run-pytest-with-args@main
+        with:
+          pytest-targets: ${{ inputs.pytest-targets }}
+          pytest-args: ${{ inputs.pytest-args }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: cache-sonar-tools
+        uses: actions/cache@v6
+        with:
+          path: ~/.sonar
+          key: sonar-tools-v8.2.1-${{ runner.os }}
+          restore-keys: |
+            sonar-tools-v8.2.1-${{ runner.os }}
+
+      - name: sonar-cloud-scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        uses: sonarsource/sonarqube-scan-action@v8
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.organization=${{ inputs.organization }}
+            -Dsonar.sources=${{ inputs.sources }}
+            -Dsonar.tests=${{ inputs.tests }}
+            -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-paths }}
+            -Dsonar.python.version=${{ inputs.python-version }}
+            -Dsonar.architecture.sensor.skip=true
+            -Dsonar.scanner.dumpToFile=true
+
+      - name: sonar-cloud-quality-gate
+        id: qg
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: sonarsource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        with:
+          pollingTimeoutSec: 300
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
+      - name: enforce-quality-gate
+        if: ${{ always() && (steps.qg.outputs.quality-gate-status == 'FAILED' || (steps.qg.outcome == 'failure' && steps.qg.outputs.quality-gate-status == '')) && inputs.fail-on-quality-gate == 'true' }}
+        env:
+          STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS: ${{ steps.qg.outputs.quality-gate-status }}
+        run: |
+          if [ -z "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
+            echo "::error::sonar-cloud Quality Gate polling timed out (>300s). sonar-cloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
+          else
+            echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
+          fi
+          exit 1

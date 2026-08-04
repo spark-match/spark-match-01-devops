@@ -15,14 +15,15 @@ Pick the path that matches what you need:
 
 ## Architecture
 
-The catalog has **six layers**, each defined by what it inspects or mutates:
+The catalog has **seven layers**, each defined by what it inspects or mutates:
 
 | Layer | Path | Caller secrets | Purpose |
 |---|---|---|---|
 | **composite actions** | `.github/actions/<name>/action.yml` | varies | Atomic, single-purpose primitives reusable across many recipes (input validators, runners) |
-| **ecosystem workflows** | `.github/workflows/reusable-<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, yamllint, terraform-*, sonar-*, etc.) |
+| **ecosystem workflows** | `.github/workflows/reusable-<ecosystem>.yml` | none | Read-only checks against caller code (actionlint, gitleaks, trivy, yamllint, terraform-*, sonar-*, etc.) |
 | **node workflows** | `.github/workflows/reusable-<node>.yml` | none | npm-based quality gates (eslint, typecheck, test, build) |
-| **deploy workflows** | `.github/workflows/reusable-<deploy>.yml` | OIDC role per GH Environment | Production deploys (Terraform) |
+| **python workflows** | `.github/workflows/reusable-<python>.yml` | none | uv + ruff + mypy + pytest, sonar-python quality gate |
+| **deploy workflows** | `.github/workflows/reusable-<deploy>.yml` | OIDC role per GH Environment | Production deploys (Terraform, container push to ECR) |
 | **governance** | `governance/` + `scripts/configure-repo-rulesets.sh` | `gh` admin scope | Declarative state for the org ruleset + idempotent reconciler |
 
 Every recipe (workflow and composite action) accepts an `environment-name` input. It is informational in ecosystem, node, python, and composite layers (used in job name and step logs), and gates the job on a GitHub Environment in deploy recipes (caller must define the environment and put the OIDC role secret there).
@@ -33,7 +34,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 266 bats tests + 18 pytest tests, all running on every PR via `.github/workflows/reusable-quality.yml`.
+- **`tests/`** — 442 bats tests, all running on every PR via `.github/workflows/reusable-quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -74,11 +75,13 @@ spark-match-01-devops/
 │       │ ─── catalog: ecosystem (read-only, no caller secrets) ──────────
 │       ├── reusable-actionlint.yml          syntax check on Actions workflows
 │       ├── reusable-gitleaks.yml            secret scan (needs GITLEAKS_LICENSE)
+│       ├── reusable-trivy.yml               filesystem / image / IaC vuln scan (aquasecurity/trivy-action)
 │       ├── reusable-yamllint.yml            YAML files (uses caller's .yamllint.yml)
 │       ├── reusable-terraform-validate.yml  per-module init+validate (no backend)
 │       ├── reusable-tflint.yml              recursive tflint
 │       ├── reusable-sonar-terraform.yml     sonar-cloud terraform analysis
 │       ├── reusable-sonar-typescript.yml    sonar-cloud typescript analysis
+│       ├── reusable-sonar-python.yml        sonar-cloud python analysis (Cobertura coverage)
 │       ├── reusable-quality.yml             shellcheck + manifest schema + bats
 │       ├── reusable-codeql.yml              codeql for JS/TS caller repos
 │       │
@@ -88,6 +91,9 @@ spark-match-01-devops/
 │       ├── reusable-node-typecheck.yml      `npm run <typecheck-script>` with cache
 │       ├── reusable-node-build.yml          `npm run <build-script>` with cache
 │       │
+│       │ ─── catalog: python (uv, no caller secrets) ─────────────────────
+│       ├── reusable-python-ci.yml           uv sync + ruff + mypy + pytest + coverage report
+│       │
 │       │ ─── catalog: deploy (AWS OIDC, caller-scoped secrets) ──────────
 │       ├── reusable-migrations-dry-run.yml  migration dry-run against ephemeral Postgres (read-only)
 │       ├── reusable-terraform-plan.yml      `terraform plan` per env + sticky PR comment
@@ -96,6 +102,7 @@ spark-match-01-devops/
 │       │                                   confirm-destroy-token (DESTROY-<ENV>) and
 │       │                                   optional GH Environment approval + post-destroy
 │       │                                   cleanup job (CLEANUP-<ENV>)
+│       ├── reusable-container-deploy-ecr.yml docker buildx + ECR push via OIDC (linux/arm64 by default)
 │       │
 │       │ ─── catalog: article (latex, kept for 07-article's toolchain) ────
 │       ├── reusable-latex-build.yml         compile latex -> PDF artifact
@@ -184,9 +191,13 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 |---|---|---|
 | `reusable-actionlint.yml` | Validate GitHub Actions syntax | — |
 | `reusable-gitleaks.yml`   | Scan git history for accidentally committed secrets (pinned to `gitleaks/gitleaks-action@v3`) | `GITLEAKS_LICENSE` (required for org-scoped repos under v3) |
+| `reusable-trivy.yml`      | Filesystem / image / IaC vulnerability scan via Aqua Trivy (default: fail on CRITICAL; HIGH configurable) | — |
 | `reusable-yamllint.yml`   | Lint non-workflow YAML files (SAM templates, Terraform configs, etc.); pinned to yamllint 1.35.1 | — |
 | `reusable-terraform-validate.yml` | `terraform init -backend=false` + `terraform validate` for every auto-discovered module | — |
 | `reusable-tflint.yml`            | `tflint --recursive` using caller's `.tflint.hcl` config | — |
+| `reusable-sonar-terraform.yml`   | sonar-cloud Terraform analysis | `SONAR_TOKEN` |
+| `reusable-sonar-typescript.yml`  | sonar-cloud TypeScript analysis (LCOV) | `SONAR_TOKEN` |
+| `reusable-sonar-python.yml`      | sonar-cloud Python analysis (Cobertura XML coverage) | `SONAR_TOKEN` |
 | `reusable-quality.yml`           | shellcheck + manifest schema + bats | — |
 | `reusable-codeql.yml`            | codeql JS/TS caller-repo scan | — |
 
@@ -456,6 +467,100 @@ jobs:
       # pre-build-script optional (Angular: 'prebuild')
 ```
 
+### python
+
+#### `reusable-python-ci.yml`
+
+Single-call Python QA pipeline driven by a `commands:` CSV input. Supports
+`lint:ruff-format`, `lint:ruff-check`, `lint:bandit`, `typecheck:mypy`,
+`test:pytest`, `coverage:report`, `coverage:upload`, `security:pip-audit`,
+`lock:check`, and `none`. Default Python version is `3.14` (overridable
+via `python-version` input for multi-version testing). Uses `uv` for
+dependency management and `ruff` + `mypy` + `pytest` for the QA matrix.
+Cobertura-style `coverage.xml` is the canonical artifact (consumed by
+`reusable-sonar-python.yml`).
+
+Designed for the first Python consumer in the org, `spark-match-08-deep-agent`,
+which has a multi-stage ARM64 Dockerfile on port 8080 (non-root). Pre-deletion
+context: PRs #202 / #203 (2026-08-02) removed the original Python reusables
+(`python-ci.yml`, `sonar-python.yml`, `trivy.yml`, `container-deploy-ecr.yml`)
+and no Python repo in the org could consume CI from the catalog since then.
+This PR restores them with the post-cleanup governance applied (floating
+action tags, no SHA pins, no `concurrency:` block, env-isolated inputs in
+all `run:` blocks).
+
+Inputs (highlights; full list in the file header):
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string (required) | — | Used in job name; informational. |
+| `working-directory` | string | `.` | Where `pyproject.toml` lives. |
+| `commands` | string (CSV) | full QA | Pipeline steps to run, comma-separated. |
+| `python-version` | string | `3.14` | `uv python install` target. |
+| `dependency-groups` | string | `dev` | Space-separated `uv sync --group` names. |
+| `sync-mode` | choice | `full` | `full` \| `runtime-only` \| `lint-only`. |
+| `coverage-threshold` | string | `80` | `coverage report --fail-under`; empty disables. |
+| `coverage-output` | string | `coverage.xml` | Cobertura XML path. |
+| `lock-check` | bool | `false` | Run `uv lock --check` before sync. |
+| `frozen` | bool | `false` | Pass `--frozen` to `uv sync`. |
+| `setup-uv-version` | string | `latest` | uv version pin. |
+| `cache-suffix` | string | `''` | Falls back to `environment-name` when empty. |
+| `permissions-write` | bool | `false` | Opt-in sticky PR coverage comment. |
+| `timeout-minutes` | number | `20` | Job-level timeout. |
+| `fail-fast` | bool | `false` | Matrix `fail-fast`. |
+
+#### `reusable-sonar-python.yml`
+
+sonar-cloud Python analysis. Symmetric to `reusable-sonar-typescript.yml`
+but adapted for Python sources and Cobertura-style coverage XML. Sets
+`sonar.python.version=${{ inputs.python-version }}` so SonarCloud can
+resolve Python types during analysis.
+
+Inputs (highlights):
+
+| Input | Type | Notes |
+|---|---|---|
+| `project-key` | string (required) | sonar-cloud project key. |
+| `organization` | string (required) | sonar-cloud organization key. |
+| `sources` | string (required) | Comma-separated source paths (relative to `working-directory`). |
+| `tests` | string (required) | Comma-separated test paths; empty disables test analysis. |
+| `working-directory` | string (required) | Where `pyproject.toml` lives. |
+| `env` | string (required) | Job-name suffix. |
+| `python-version` | string | `3.14` default. |
+| `sync-groups` | string (required) | Space-separated `uv sync --group` names. |
+| `pytest-targets` | string (required) | Path passed to pytest. |
+| `pytest-args` | string (required) | Pass `--cov=<pkg> --cov-report=xml:coverage.xml` to emit Cobertura XML. |
+| `coverage-paths` | string (required) | Comma-separated Cobertura report paths for sonar-cloud. |
+| `fail-on-quality-gate` | string (required) | `"true"` to fail when quality gate is ERROR. |
+
+Required secrets: `SONAR_TOKEN`.
+
+#### `reusable-trivy.yml`
+
+Filesystem / image / IaC vulnerability scan via Aqua Trivy. Three modes:
+`fs` (default; scans the repo filesystem for misconfig + dependency CVEs),
+`image` (requires `image-ref`), `config` (Terraform, Kubernetes, Dockerfile).
+Default fails on any CRITICAL finding; HIGH configurable via the `severity:`
+input. SARIF output (when `format: sarif`) is uploaded to the GitHub
+Security tab via `github/codeql-action/upload-sarif`.
+
+Pin: `aquasecurity/trivy-action@0.36.0` (minor-pinned because the 0.x line
+has breaking changes between minors, per AGENTS.md §5.1 exception pattern).
+
+Inputs (highlights):
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `scan-type` | choice | `fs` | `fs` \| `image` \| `config`. |
+| `scan-ref` | string | `.` | Path to scan (fs / config). |
+| `image-ref` | string | `''` | Container image reference (image mode). |
+| `severity` | string | `CRITICAL` | Comma-separated severity list (CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN). |
+| `format` | choice | `table` | `table` \| `sarif` (uploads to Security tab). |
+| `exit-code` | string | `1` | Trivy exit code when vulns match severity. |
+| `ignore-unfixed` | bool | `true` | Skip CVEs without released fix. |
+| `timeout` | string | `5m0s` | Trivy scan timeout. |
+| `scanners` | string (CSV) | `vuln,secret,misconfig` | Activated scanner list. |
+
 ### deploy
 
 #### `reusable-terraform-plan.yml`
@@ -591,6 +696,46 @@ terraform init -migrate-state -force-copy -input=false \
 
 After destroy you can `rm backend-override.hcl tfstate.tfstate.local*` and run the normal init to re-attach S3 if you only needed a partial destroy.
 
+#### `reusable-container-deploy-ecr.yml`
+
+Build a Dockerfile via `docker buildx`, push the result to an ECR
+repository (already provisioned via Terraform), and tag it `latest`
+plus `<sha>` by default. Designed for ARM64 Bedrock AgentCore workloads
+(default `platforms: linux/arm64`); override to `linux/amd64` for x86.
+Supports optional `provenance` + SPDX `sbom` attestations (SLSA Build
+Level 3) and Sigstore `cosign` keyless signing via Fulcio + OIDC.
+
+Caller supplies the ECR repository name and the OIDC role ARN that has
+IAM permission to call the `ecr:*` push permissions plus
+`sts:GetCallerIdentity`. The recipe does NOT create the ECR repository
+itself.
+
+Pin pattern follows the terraform recipes (PR #241 / #242): the OIDC
+role ARN can be passed either as a string input (`deploy-role-arn`,
+preferred for cross-owner) or via a secret (`deploy-role-arn-secret`,
+fallback). Identifiers are not credentials.
+
+Inputs (highlights):
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string (required) | — | GH Environment gate + job-name suffix. |
+| `ecr-repository` | string (required) | — | ECR repo name (without registry prefix). |
+| `aws-region` | string | `us-east-1` | |
+| `dockerfile-path` | string | `Dockerfile` | |
+| `context-path` | string | `.` | |
+| `platforms` | string | `linux/arm64` | Comma-separated. |
+| `image-tags-input` | string | `latest,__GITHUB_SHA_SHORT__` | `__GITHUB_SHA_SHORT__` placeholder gets expanded. |
+| `cache-scope` | string | `container-dev` | GHA `cache-from type=gha,scope=...` scope. |
+| `provenance` | bool | `true` | SLSA Build Level 3 provenance attestation. |
+| `sbom` | bool | `true` | SPDX SBOM attestation. |
+| `cosign-sign` | bool | `false` | Sigstore keyless signing via Fulcio. |
+| `deploy-role-arn` | string | `''` | Preferred over secret. |
+| `deploy-role-arn-secret` | string | `AWS_DEPLOY_ROLE_ARN` | Fallback secret name. |
+
+Required secrets: `AWS_DEPLOY_ROLE_ARN` (passed explicitly; cross-owner
+inheritance blocked by GitHub).
+
 #### `reusable-migrations-dry-run.yml`
 
 Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `spark-match-03-backend` for every PR (Sprint 2 — see ADR-016).
@@ -623,7 +768,7 @@ These workflows are **not** part of the consumer-facing catalog; they only run o
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
 
-The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`), which target the sonar-cloud org's Terraform/TypeScript projects; and to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR.
+The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`, `reusable-sonar-python.yml`), which target the sonar-cloud org's Terraform/TypeScript/Python projects; to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR; and to `reusable-container-deploy-ecr.yml`, which targets ECR push workflows for ARM64 Bedrock AgentCore consumers (currently `spark-match-08-deep-agent`).
 
 ## Versioning
 
