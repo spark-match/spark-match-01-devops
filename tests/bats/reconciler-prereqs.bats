@@ -98,6 +98,54 @@ EOF
   [[ "$output" == *"[ERROR] Manifiesto invalido o version no soportada"* ]]
 }
 
+@test "prereqs: manifest with version 3 -> accepted" {
+  cat > "$BATS_TEST_TMPDIR/fixtures/manifest.json" <<'EOF'
+{
+  "version": 3,
+  "schema": "spark-match.repository-governance/v3",
+  "defaults": {
+    "approvals": 1,
+    "requireCodeOwnerReview": true,
+    "allowedMergeMethods": ["squash"],
+    "adminBypassMode": "pull_request",
+    "blockDeletion": true,
+    "blockForcePush": true,
+    "requireLinearHistory": true,
+    "rulesetName": "spark-match-default-branch-protection",
+    "rulesetTarget": "branch",
+    "rulesetEnforcement": "active"
+  },
+  "repositories": {
+    "demo-repo": {
+      "refs": ["~DEFAULT_BRANCH"],
+      "reviewerTeam": "devops",
+      "filePatterns": ["**"],
+      "statusChecks": ["ci / ci"]
+    }
+  }
+}
+EOF
+  # The script exits 1 because --check detects no GH auth in sandbox, but
+  # validation must pass first (exit 2 would mean format invalid, exit 1 means
+  # any other failure). Use a stub gh to control auth status.
+  gh() {
+    echo "gh $*" >> "$BATS_TEST_TMPDIR/gh.log"
+    if [[ "$1" == "auth" && "$2" == "status" ]]; then
+      return 0
+    fi
+    # stub team lookup to return deterministic id
+    if [[ "$1" == "api" && "$2" == "orgs/"*"/teams/"* ]]; then
+      echo "12345"
+      return 0
+    fi
+    return 0
+  }
+  export -f gh
+  run bash "$SCRIPT" --check --repos demo-repo --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json"
+  # v3 manifest is accepted: must NOT print the "version no soportada" error.
+  [[ "$output" != *"[ERROR] Manifiesto invalido o version no soportada"* ]]
+}
+
 @test "prereqs: manifest missing defaults.allowedMergeMethods -> exit 2" {
   cat > "$BATS_TEST_TMPDIR/fixtures/manifest.json" <<'EOF'
 {
