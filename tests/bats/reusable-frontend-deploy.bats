@@ -108,6 +108,28 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/reusable-frontend-deploy.ym
   [[ "$output" == *"type: string"* ]]
 }
 
+@test "reusable-frontend-deploy: distribution-id regex pattern is locked" {
+  # Drift detector: locks the actual regex string in the workflow so a
+  # future relax/tighten is intentional and reviewed.
+  run grep -oE '"distribution-id": "[^"]+"' "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"distribution-id": "^[A-Z0-9-]{10,14}$"'* ]]
+}
+
+@test "reusable-frontend-deploy: distribution-id regex accepts valid IDs (10, 13, 14 chars)" {
+  REGEX='^[A-Z0-9-]{10,14}$'
+  [[ "E1ABCDEFGH" =~ $REGEX ]]        # 10 chars
+  [[ "E1ABCDEFGHIJK" =~ $REGEX ]]     # 13 chars
+  [[ "E1ABCDEFGHIJKL" =~ $REGEX ]]    # 14 chars
+}
+
+@test "reusable-frontend-deploy: distribution-id regex rejects invalid IDs (lowercase, 9-char, 15-char)" {
+  REGEX='^[A-Z0-9-]{10,14}$'
+  [[ ! "e1abcdefghijkl" =~ $REGEX ]]    # lowercase
+  [[ ! "E1ABCDEFG" =~ $REGEX ]]         # 9 chars (too short)
+  [[ ! "E1ABCDEFGHIJKLM" =~ $REGEX ]]   # 15 chars (too long)
+}
+
 @test "reusable-frontend-deploy: input source-dir (string, default 'dist')" {
   run grep -B1 -A5 "source-dir:" "$WORKFLOW"
   [ "$status" -eq 0 ]
