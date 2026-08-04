@@ -123,7 +123,8 @@ gh pr create \
 | `quality / bats` | tests bats en `tests/bats/` |
 | `quality / manifest schema` | `governance/repository-governance.json` contra schema |
 | `quality / shellcheck` | bash scripts en `scripts/` + `.github/actions/` |
-| `commitlint` | convención de commits en cada pull request |
+| `commitlint` | convención de commits en cada pull request (PR-side) |
+| `commitlint-main` | convención de commits en el push a main (post-merge, required desde #276) |
 | `codeql-actions` | vulnerabilidades en YAML de Actions |
 | `Code scanning` | resultados agregados de CodeQL sobre Actions |
 
@@ -160,6 +161,29 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/spark-match/spark-match-01-
   -Headers @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json"; User-Agent = "opencode" } `
   -Body $payload -ContentType "application/json" -UseBasicParsing
 ```
+
+> **Pitfall crítico REST API merge**: cuando el body de la solicitud PUT
+> solo contiene `commit_message`, GitHub usa el **PR title como
+> `commit_title`** del merge commit. El PR-side commitlint check
+> (`lint-commits / commitlint-{branch}`) solo valida los mensajes de los
+> git commits del PR, **no el PR title**. Resultado: si el PR title
+> tiene `camelCase` (e.g. `statusChecks`) o viola otras reglas
+> (`subject-case` lower-case, etc.), el commit del merge squash las hereda
+> y falla `lint-commits / commitlint-main` en el push a main. El check
+> PR-side pasó pero el check post-merge falló.
+>
+> **Solución operativa**: enviar `commit_title` Y `commit_message` por
+> separado. `commit_title` lower-case explícito, `commit_message`
+> multi-line (body). Ambos campos en el mismo payload JSON:
+>
+> ```powershell
+> $payload = '{"merge_method":"squash","commit_title":"fix(scope): subject (#NN)","commit_message":"\n\nBody line 1.\nBody line 2.","sha":"' + $sha + '"}'
+> ```
+>
+> Adicionalmente, `lint-commits / commitlint-main` es **required
+> status check** en el ruleset de este repo (agregado en PR #276). Si
+> un merge produce un commit con subject que viola commitlint, el push
+> a main queda pegado en rojo hasta que se arregle.
 
 > **Reglas activas de longitud de línea** (`.commitlintrc.json` + defaults de `@commitlint/config-conventional`):
 >
@@ -441,7 +465,7 @@ Consumidores activos (verificado en `main` + `dev` de cada repo):
 - `spark-match-04-frontend` (dev): actionlint, gitleaks, eslint, node-{test,typecheck,build}, sonar-typescript, yamllint
 - `spark-match-07-article`: latex-{build,release}
 
-21 bats tests en `tests/bats/`, 313/313 verde en último CI run.
+22 bats tests en `tests/bats/`, 331/331 verde en último CI run.
 
 **Secrets cross-repo (org-level, visibility=all)**: `RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY`, `GITLEAKS_LICENSE`, `SONAR_TOKEN` viven a nivel organización para evitar duplicación por consumer. Los nuevos repos que añadan reusables de 01-devops solo necesitan instalar la GitHub App `spark-match-bot` (no bootstrap manual de secrets).
 
