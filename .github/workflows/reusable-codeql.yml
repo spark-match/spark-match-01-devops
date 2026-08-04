@@ -96,6 +96,15 @@ on:
         type: string
         default: 'warning'
         required: false
+      config-file:
+        description: >-
+          Optional path to a CodeQL config YAML in the caller repo
+          (e.g. .github/codeql/codeql-config.yml). When set, the value
+          is forwarded to `github/codeql-action/init`'s `config-file`
+          input. Leave empty to use CodeQL defaults.
+        required: false
+        type: string
+        default: ''
     secrets:
       # No external secrets needed; security-events: write on GITHUB_TOKEN.
       pass:
@@ -156,6 +165,7 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ inputs.build-mode }}
           queries: ${{ inputs.queries-pack }}
+          config-file: ${{ inputs.config-file }}
 
       - name: perform-codeql-analysis
         uses: github/codeql-action/analyze@v4.37.4
