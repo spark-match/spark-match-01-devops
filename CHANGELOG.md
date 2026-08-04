@@ -22,18 +22,15 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.2.3](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.2...v1.2.3) (2026-08-04)
 
-
 ### Bug Fixes
 
 * **workflows:** declare aws_apply_role_arn in reusable-apply workflow_call secrets ([#301](https://github.com/spark-match/spark-match-01-devops/issues/301)) ([990a242](https://github.com/spark-match/spark-match-01-devops/commit/990a242f26f44d03d7a968e9d40aa278d9ad3da5))
-
 
 ### Documentation
 
 * align agents section 5.2 with versioning governance pin ([#304](https://github.com/spark-match/spark-match-01-devops/issues/304)) ([addacf8](https://github.com/spark-match/spark-match-01-devops/commit/addacf8e83b75b729a5e82ee972589619106ed63))
 
 ## [1.2.2](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.1...v1.2.2) (2026-08-04)
-
 
 ### Bug Fixes
 
@@ -42,13 +39,11 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.2.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.0...v1.2.1) (2026-08-04)
 
-
 ### Bug Fixes
 
 * **frontend:** relax distribution-id regex and document main pin ([#295](https://github.com/spark-match/spark-match-01-devops/issues/295)) ([9c68c56](https://github.com/spark-match/spark-match-01-devops/commit/9c68c563e7f06b5bc42b2e6c010ea73bb889c699))
 
 ## [1.2.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.1.0...v1.2.0) (2026-08-04)
-
 
 ### Features
 
@@ -56,13 +51,11 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.1.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.7...v1.1.0) (2026-08-04)
 
-
 ### Features
 
 * **ci:** expose config-file input on reusable-codeql ([#290](https://github.com/spark-match/spark-match-01-devops/issues/290)) ([d93cc73](https://github.com/spark-match/spark-match-01-devops/commit/d93cc73e5a5882f27d84fa9f7847e3710159d638))
 
 ## [1.0.7](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.6...v1.0.7) (2026-08-04)
-
 
 ### Documentation
 
@@ -70,13 +63,11 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.0.6](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.5...v1.0.6) (2026-08-04)
 
-
 ### Documentation
 
 * enable native secret scanning, correct paid-plan claims ([#286](https://github.com/spark-match/spark-match-01-devops/issues/286)) ([4c70e54](https://github.com/spark-match/spark-match-01-devops/commit/4c70e54dab9df8029df7edcecede7f5ff902fe8f))
 
 ## [1.0.5](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.4...v1.0.5) (2026-08-04)
-
 
 ### Documentation
 
@@ -84,13 +75,11 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.0.4](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.3...v1.0.4) (2026-08-04)
 
-
 ### Documentation
 
 * harden post-rewrite lessons into sections 4.5, 5.7, and 13 ([#282](https://github.com/spark-match/spark-match-01-devops/issues/282)) ([7ad0df8](https://github.com/spark-match/spark-match-01-devops/commit/7ad0df82a5361e624f5fe793a9ff886a185a53ab))
 
 ## [1.0.3](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.2...v1.0.3) (2026-08-04)
-
 
 ### Documentation
 
@@ -98,11 +87,9 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.0.2](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.1...v1.0.2) (2026-08-04)
 
-
 ### Bug Fixes
 
 * **governance:** require commitlint-main check to gate squash merges ([#276](https://github.com/spark-match/spark-match-01-devops/issues/276))
-
 
 ### Documentation
 
@@ -110,71 +97,52 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [1.0.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.0...v1.0.1) (2026-08-04)
 
-
 ### Bug Fixes
 
-* **governance:** reconcile 02-infrastructure status-checks vs reported
 * **governance:** reconcile 02-infrastructure statusChecks vs reported contexts ([#274](https://github.com/spark-match/spark-match-01-devops/issues/274))
 
 ## [1.0.0](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.18...v1.0.0) (2026-08-04)
 
-
 ### ⚠ BREAKING CHANGES
 
 * AGENTS.md v1 contract.
-* refresh agents.md for v1.0.0 release. All checks green. Documents REST API workaround for EMU accounts in section 4.4. Merged via REST API direct.
 * refresh agents.md for v1.0.0 release ([#264](https://github.com/spark-match/spark-match-01-devops/issues/264))
 
 ### Features
 
 * refresh agents.md for v1.0.0 release ([#264](https://github.com/spark-match/spark-match-01-devops/issues/264))
 * refresh agents.md for v1.0.0 release ([#271](https://github.com/spark-match/spark-match-01-devops/issues/271))
-* refresh agents.md for v1.0.0 release. All checks green. Documents REST API workaround for EMU accounts in section 4.4. Merged via REST API direct.
-
 
 ### Bug Fixes
 
-* **governance:** align status check names with reported job names
 * **governance:** align status check names with reported job names ([#273](https://github.com/spark-match/spark-match-01-devops/issues/273))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#266](https://github.com/spark-match/spark-match-01-devops/issues/266))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#272](https://github.com/spark-match/spark-match-01-devops/issues/272))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex. All checks green. Required to merge release PR [#265](https://github.com/spark-match/spark-match-01-devops/issues/265) for v1.0.0. Merged via REST API direct.
-
+* **quality:** allow x.y.z major >=1 in release-please manifest bats regex ([#266](https://github.com/spark-match/spark-match-01-devops/issues/266))
+* **quality:** allow x.y.z major >=1 in release-please manifest bats regex ([#272](https://github.com/spark-match/spark-match-01-devops/issues/272))
 
 ### Reverts
 
-* **docs:** refresh agents.md for v1.0.0 to undo pull request 264
 * **docs:** refresh agents.md for v1.0.0 to undo pull request 264 ([#270](https://github.com/spark-match/spark-match-01-devops/issues/270))
-* **quality:** bats regex v1 allow to undo pull request 266
 * **quality:** bats regex v1 allow to undo pull request 266 ([#269](https://github.com/spark-match/spark-match-01-devops/issues/269))
-* **repo:** release 1.0.0 to undo pull request 265
 * **repo:** release 1.0.0 to undo pull request 265 ([#267](https://github.com/spark-match/spark-match-01-devops/issues/267))
 
 ## [0.1.18](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.17...v0.1.18) (2026-08-03)
 
-
 ### Bug Fixes
 
 * **repo:** split sbom generation from release upload (anchore v0.24.0 regression) ([#260](https://github.com/spark-match/spark-match-01-devops/issues/260)) ([cc96f19](https://github.com/spark-match/spark-match-01-devops/commit/cc96f196e83b5e28f67368bf9362e620d1c7eccc))
-* **repo:** split sbom generation from release upload (anchore v0.24.0 regression). All 9 checks green. Merged via REST API direct. ([cc96f19](https://github.com/spark-match/spark-match-01-devops/commit/cc96f196e83b5e28f67368bf9362e620d1c7eccc))
 * **workflows:** simplify reusable-terraform-plan env binding to single input ([#262](https://github.com/spark-match/spark-match-01-devops/issues/262)) ([1dc78c0](https://github.com/spark-match/spark-match-01-devops/commit/1dc78c0209ad3ba611f2edc2a4eac62393a44641))
 
 ## [0.1.17](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.16...v0.1.17) (2026-08-03)
 
-
 ### Documentation
 
 * **repo:** refresh §11 catalog state and document reusable pattern ([#258](https://github.com/spark-match/spark-match-01-devops/issues/258)) ([180c4f2](https://github.com/spark-match/spark-match-01-devops/commit/180c4f2d3e448c3a9dea0e09618d10bdfcc6bce1))
-* **repo:** refresh catalog state and document reusable pattern. All 9 checks green. ([180c4f2](https://github.com/spark-match/spark-match-01-devops/commit/180c4f2d3e448c3a9dea0e09618d10bdfcc6bce1))
 
 ## [0.1.16](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.15...v0.1.16) (2026-08-03)
-
 
 ### Features
 
 * **workflows:** extract commitlint + release-please into shared reusables ([#254](https://github.com/spark-match/spark-match-01-devops/issues/254)) ([e7618a7](https://github.com/spark-match/spark-match-01-devops/commit/e7618a71e995d7da2bdcd9eb641f897fe2ea6f89))
-
 
 ### Bug Fixes
 
@@ -183,11 +151,9 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.15](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.14...v0.1.15) (2026-08-03)
 
-
 ### Bug Fixes
 
 * **repo:** align commit-msg hook with header-max-length ci rule ([#253](https://github.com/spark-match/spark-match-01-devops/issues/253)) ([5405471](https://github.com/spark-match/spark-match-01-devops/commit/5405471ea88709ba8c87cd25e5e24cd2f06c38e2))
-
 
 ### Documentation
 
@@ -195,20 +161,17 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.14](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.13...v0.1.14) (2026-08-03)
 
-
 ### Bug Fixes
 
 * **composite:** kebab-case name and align step ids with step names ([#248](https://github.com/spark-match/spark-match-01-devops/issues/248)) ([df58942](https://github.com/spark-match/spark-match-01-devops/commit/df58942e45e3af36fb5ffa1a62181927a9cefc50))
 
 ## [0.1.13](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.12...v0.1.13) (2026-08-03)
 
-
 ### Bug Fixes
 
 * **ci:** allow deps scope in commitlint (dependabot) ([#247](https://github.com/spark-match/spark-match-01-devops/issues/247)) ([40e8361](https://github.com/spark-match/spark-match-01-devops/commit/40e836122960a22c41f213df41baa408266d68c9))
 * **ci:** disable body-max-line-length so dependabot bumps pass ([#244](https://github.com/spark-match/spark-match-01-devops/issues/244)) ([98243cd](https://github.com/spark-match/spark-match-01-devops/commit/98243cd54e0d4a7dd6ced9a7a1946032c3d7bd8e))
 * **ci:** disable body-max-line-length so dependabot bumps pass ([#246](https://github.com/spark-match/spark-match-01-devops/issues/246)) ([47baeff](https://github.com/spark-match/spark-match-01-devops/commit/47baeffd7520f52fb304cf810b44082baa77aa93))
-
 
 ### CI/CD
 
@@ -218,11 +181,9 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.12](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.11...v0.1.12) (2026-08-03)
 
-
 ### Features
 
 * **workflows:** real pnpm/yarn/bun support across node reusables ([#226](https://github.com/spark-match/spark-match-01-devops/issues/226)) ([df4e515](https://github.com/spark-match/spark-match-01-devops/commit/df4e515cb8becf063ceed9eac3ca3dc3685037eb))
-
 
 ### Bug Fixes
 
@@ -239,13 +200,11 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.11](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.10...v0.1.11) (2026-08-02)
 
-
 ### Bug Fixes
 
 * **ci:** skip commitlint on push when head commit is a release ([#222](https://github.com/spark-match/spark-match-01-devops/issues/222)) ([5cc015b](https://github.com/spark-match/spark-match-01-devops/commit/5cc015bfb553aceb7b74a9283ecb175f1cab9cdf))
 
 ## [0.1.10](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.9...v0.1.10) (2026-08-02)
-
 
 ### Features
 
@@ -253,23 +212,19 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.9](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.8...v0.1.9) (2026-08-02)
 
-
 ### Bug Fixes
 
 * **ci:** commitlint commit-depth=2 + short merge body template ([#216](https://github.com/spark-match/spark-match-01-devops/issues/216)) ([03c9ba9](https://github.com/spark-match/spark-match-01-devops/commit/03c9ba93ed4ce6d7b7fc326bf197ff78d4cd1e41))
 
 ## [0.1.8](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.7...v0.1.8) (2026-08-02)
 
-
 ### Bug Fixes
 
 * **ci:** skip commitlint for release-please branches ([#214](https://github.com/spark-match/spark-match-01-devops/issues/214)) ([befbb4b](https://github.com/spark-match/spark-match-01-devops/commit/befbb4b58f130c68ce2f04f38c1750a599103e6c))
 
-
 ### Documentation
 
 * **docs:** redesign agents-md section 1 - purpose and structure ([#213](https://github.com/spark-match/spark-match-01-devops/issues/213)) ([d2c5795](https://github.com/spark-match/spark-match-01-devops/commit/d2c5795c87cdf2b76a0d04dcb95ab72affac94fd))
-
 
 ### CI/CD
 
@@ -277,13 +232,11 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.7](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.6...v0.1.7) (2026-07-30)
 
-
 ### Bug Fixes
 
 * **sbom:** download SBOM artifact for verify step + drop redundant gh release upload ([#198](https://github.com/spark-match/spark-match-01-devops/issues/198)) ([900b70f](https://github.com/spark-match/spark-match-01-devops/commit/900b70f317ac26c45384a884c9c58362f04d4452))
 
 ## [0.1.6](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.5...v0.1.6) (2026-07-30)
-
 
 ### Documentation
 
@@ -291,11 +244,9 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.4](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.3...v0.1.4) (2026-07-30)
 
-
 ### Bug Fixes
 
 * **trivy:** env-isolate inputs in Trivy summary step (closes 10 CodeQL alerts) ([#183](https://github.com/spark-match/spark-match-01-devops/issues/183)) ([04f4997](https://github.com/spark-match/spark-match-01-devops/commit/04f4997d8e93c9435f7c172f52a73694c8af73f5))
-
 
 ### CI/CD
 
@@ -305,18 +256,15 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ## [0.1.3](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.2...v0.1.3) (2026-07-30)
 
-
 ### Documentation
 
 * batch fixes — broken links, outdated counts, wrong versions, unverified PR refs ([#175](https://github.com/spark-match/spark-match-01-devops/issues/175)) ([9d43254](https://github.com/spark-match/spark-match-01-devops/commit/9d43254c06b41517998b35f740b29d3b6cd999b0))
-
 
 ### Tests
 
 * **quality:** add multi-offender SAM fixture + scan tests/bats/helpers ([#178](https://github.com/spark-match/spark-match-01-devops/issues/178)) ([800b4b7](https://github.com/spark-match/spark-match-01-devops/commit/800b4b7cc3e7e00d0a339500f096770f590f9d49))
 
 ## [0.1.2](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.1...v0.1.2) (2026-07-29)
-
 
 ### Bug Fixes
 
@@ -325,7 +273,6 @@ Merging the release PR creates the git tag + GitHub Release.
 * **release-please:** use release-type 'simple' (not 'default') ([#171](https://github.com/spark-match/spark-match-01-devops/issues/171)) ([5be42b1](https://github.com/spark-match/spark-match-01-devops/commit/5be42b1a5cd1ead14c0a793cacbbd11b1f6dbb06))
 
 ## [0.1.1](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.0...v0.1.1) (2026-07-29)
-
 
 ### Fixed
 
