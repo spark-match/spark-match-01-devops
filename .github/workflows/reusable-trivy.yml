@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# Reusable Workflow: Trivy - filesystem / image / IaC scan
+# =============================================================================
+# Atomic recipe (ecosystem layer). Runs Aqua Trivy against the caller's
+# repository. Supports three scan types:
+#   - fs     : scan the repo filesystem (Dockerfile misconfig, secrets,
+#              lockfile dependency CVEs, IaC misconfig).
+#   - image  : scan a container image (OS pkg vulns, library vulns).
+#              `image-ref` MUST be set when scan-type=image.
+#   - config : IaC config scan (Terraform, Kubernetes, Dockerfile, ...).
+#
+# Severity threshold is configurable via `severity:` (default CRITICAL).
+# Default fail on any CRITICAL finding; HIGH configurable via input.
+#
+# Pin: callers cross-repo usan `@main` per docs/VERSIONING.md.
+# =============================================================================
+
+name: trivy
+
+on:
+  workflow_call:
+    inputs:
+      scan-type:
+        description: 'Trivy scan type. One of: fs (filesystem), image (container image), config (IaC config). Default fs.'
+        type: string
+        required: false
+        default: 'fs'
+      scan-ref:
+        description: 'Path to scan when scan-type is fs or config. Default "." (repo root). Ignored when scan-type is image.'
+        type: string
+        required: false
+        default: '.'
+      image-ref:
+        description: 'Container image reference when scan-type is image (e.g. "my-org/my-app:latest" or full ECR URI). Required when scan-type=image.'
+        type: string
+        required: false
+        default: ''
+      severity:
+        description: 'Comma-separated severity list. Trivy fails when issues at or above these levels are found. Default CRITICAL.'
+        type: string
+        required: false
+        default: 'CRITICAL'
+      format:
+        description: 'Output format. table for human-readable, sarif for upload to GitHub Security tab. Default table.'
+        type: string
+        required: false
+        default: 'table'
+      exit-code:
+        description: 'Trivy exit code when vulnerabilities matching severity are found. Default 1 (fail the workflow).'
+        type: string
+        required: false
+        default: '1'
+      ignore-unfixed:
+        description: 'Skip vulnerabilities that have no released fix. Default true to reduce noise from upstream-pending CVEs.'
+        type: boolean
+        required: false
+        default: true
+      timeout:
+        description: 'Trivy scan timeout. Default 5m0s.'
+        type: string
+        required: false
+        default: '5m0s'
+      scanners:
+        description: 'Comma-separated scanner list: vuln, secret, misconfig, license. Default vuln,secret,misconfig.'
+        type: string
+        required: false
+        default: 'vuln,secret,misconfig'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy:
+    name: "trivy-${{ inputs.scan-type }}-${{ inputs.image-ref || inputs.scan-ref }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: validate-inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        with:
+          values: |
+            {
+              "scan-type": "${{ inputs.scan-type }}",
+              "scan-ref": "${{ inputs.scan-ref }}",
+              "image-ref": "${{ inputs.image-ref }}",
+              "severity": "${{ inputs.severity }}",
+              "format": "${{ inputs.format }}"
+            }
+          enums: |
+            {
+              "scan-type": ["fs", "image", "config"],
+              "format": ["table", "sarif"]
+            }
+          patterns: |
+            {
+              "scan-ref": "^.{1,1024}$",
+              "image-ref": "^.{0,1024}$",
+              "severity": "^[A-Z]+(,[A-Z]+)*$"
+            }
+
+      - name: checkout-caller-repository
+        uses: actions/checkout@v7
+
+      - name: run-trivy-fs-or-config
+        if: ${{ inputs.scan-type != 'image' }}
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: ${{ inputs.scan-type }}
+          scan-ref: ${{ inputs.scan-ref }}
+          format: ${{ inputs.format }}
+          exit-code: ${{ inputs.exit-code }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed }}
+          severity: ${{ inputs.severity }}
+          timeout: ${{ inputs.timeout }}
+          scanners: ${{ inputs.scanners }}
+          hide-progress: 'true'
+
+      - name: run-trivy-image
+        if: ${{ inputs.scan-type == 'image' }}
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ inputs.image-ref }}
+          format: ${{ inputs.format }}
+          exit-code: ${{ inputs.exit-code }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed }}
+          severity: ${{ inputs.severity }}
+          timeout: ${{ inputs.timeout }}
+          scanners: ${{ inputs.scanners }}
+          hide-progress: 'true'
+
+      - name: upload-sarif-to-github-security
+        if: ${{ inputs.format == 'sarif' && always() }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ inputs.scan-type }}
+
+      - name: summary
+        if: always()
+        env:
+          INPUTS_SCAN_TYPE: ${{ inputs.scan-type }}
+          INPUTS_SCAN_REF: ${{ inputs.scan-ref }}
+          INPUTS_IMAGE_REF: ${{ inputs.image-ref }}
+          INPUTS_SEVERITY: ${{ inputs.severity }}
+          INPUTS_FORMAT: ${{ inputs.format }}
+          INPUTS_IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+          INPUTS_TIMEOUT: ${{ inputs.timeout }}
+          INPUTS_SCANNERS: ${{ inputs.scanners }}
+        run: |
+          {
+            echo "## Trivy Scan - \`${INPUTS_SCAN_TYPE}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Scan type | \`${INPUTS_SCAN_TYPE}\` |"
+            if [ "${INPUTS_SCAN_TYPE}" = "image" ]; then
+              echo "| Image ref | \`${INPUTS_IMAGE_REF}\` |"
+            else
+              echo "| Scan ref | \`${INPUTS_SCAN_REF}\` |"
+            fi
+            echo "| Severity threshold | \`${INPUTS_SEVERITY}\` |"
+            echo "| Format | \`${INPUTS_FORMAT}\` |"
+            echo "| Scanners | \`${INPUTS_SCANNERS}\` |"
+            echo "| Ignore unfixed | \`${INPUTS_IGNORE_UNFIXED}\` |"
+            echo "| Timeout | \`${INPUTS_TIMEOUT}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
