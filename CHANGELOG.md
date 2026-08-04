@@ -20,6 +20,25 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.0.0](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.18...v1.0.0) (2026-08-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* refresh agents.md for v1.0.0 release. All checks green. Documents REST API workaround for EMU accounts in section 4.4. Merged via REST API direct.
+* refresh agents.md for v1.0.0 release ([#264](https://github.com/spark-match/spark-match-01-devops/issues/264))
+
+### Features
+
+* refresh agents.md for v1.0.0 release ([#264](https://github.com/spark-match/spark-match-01-devops/issues/264)) ([b1bbd59](https://github.com/spark-match/spark-match-01-devops/commit/b1bbd593942640554a73d0b1e54a49b70514ba38))
+* refresh agents.md for v1.0.0 release. All checks green. Documents REST API workaround for EMU accounts in section 4.4. Merged via REST API direct. ([b1bbd59](https://github.com/spark-match/spark-match-01-devops/commit/b1bbd593942640554a73d0b1e54a49b70514ba38))
+
+
+### Bug Fixes
+
+* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#266](https://github.com/spark-match/spark-match-01-devops/issues/266)) ([20d4582](https://github.com/spark-match/spark-match-01-devops/commit/20d45827f4afa6d1b87bc8bbd90f6687151c17ec))
+* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex. All checks green. Required to merge release PR [#265](https://github.com/spark-match/spark-match-01-devops/issues/265) for v1.0.0. Merged via REST API direct. ([20d4582](https://github.com/spark-match/spark-match-01-devops/commit/20d45827f4afa6d1b87bc8bbd90f6687151c17ec))
+
 ## [0.1.18](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.17...v0.1.18) (2026-08-03)
 
 
