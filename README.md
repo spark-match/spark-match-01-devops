@@ -837,8 +837,8 @@ and weekly.
 | **codeql** | `actions/*` rules (code-injection, unpinned-tag, envvar-injection) | every PR + push + weekly | informational | `.github/workflows/codeql-actions.yml` |
 | **Dependabot** | weekly bump PRs for GitHub Actions | Mon 06:00 UTC | enabled | `.github/dependabot.yml` |
 | **Dependabot security updates** | auto-PR for known-vulnerable dependencies | on alert | enabled | repo-level (set via `PATCH .../dependabot_security_updates`) |
-| **Secret scanning** | native GH secret detection | always | **disabled** (requires GHAS paid plan) | n/a |
-| **Push protection** | block pushes that contain secrets | always | **disabled** (requires GHAS paid plan) | n/a |
+| **Secret scanning** | native GH secret detection (~200 partner patterns) | always | **enabled** (free, public repo) | repo Settings -> Code security and analysis |
+| **Push protection** | block pushes that contain detected secrets | always | **enabled** (free, public repo) | repo Settings -> Code security and analysis |
 
 ### codeql posture (snapshot 2026-07-29)
 
@@ -851,27 +851,33 @@ After Sprint A + B + C (PRs #148-#157):
 | `actions/envvar-injection/medium` | 6 | 6 (newline strip + `$GITHUB_ENV` write pattern) |
 | **Total** | **502** | **502 (100%)** |
 
-### Secret scanning: paid-plan limitation
+### Secret scanning: current state (enabled 2026-08-04)
 
-The `spark-match` organization is on **GitHub Free**. The following
-features require **GitHub Advanced Security** (paid, per-user):
+`spark-match` is on **GitHub Free**, and this repo is **public**.
+GitHub makes native secret scanning and push protection free for
+public repositories, so both are enabled at the repo level
+(`security_and_analysis`):
 
-- `secret_scanning` (provider patterns + non-provider patterns)
-- `secret_scanning_push_protection`
-- `secret_scanning_validity_checks`
+- `secret_scanning`: **enabled** — detects ~200 partner token formats
+  (GitHub PATs, Slack tokens, Stripe keys, AWS keys, etc.).
+- `secret_scanning_push_protection`: **enabled** — blocks a `git push`
+  that contains a detected secret before it lands on the remote.
 
-These are configured off at the repo level (`security_and_analysis`
-shows `disabled`). We work around this with:
+Two sub-features remain **GitHub Advanced Security-only**, confirmed
+by a live `PATCH` attempt on 2026-08-04 that returned HTTP 200 but
+silently left both `disabled` (no purchase, no error — GitHub just
+ignores the field for a repo without a GHAS license):
 
-1. **`reusable-gitleaks.yml`** runs on every PR + push, scanning the full
-   git history. This catches the same set of secrets as native
-   secret scanning plus custom patterns.
-2. **CODEOWNERS** + `require_code_owner_review: true` ensures a
-   human reviews every line before merge.
-3. **Strict secrets policy**: no `.env` files in the repo, all
-   secrets in `gh secret set` or GitHub Actions secrets, never
-   echoed in `run:` blocks (see `.github/workflows/release-please.yml`
-   for the template).
+- `secret_scanning_non_provider_patterns` (generic/heuristic secret
+  detection beyond the partner list).
+- `secret_scanning_validity_checks` (calls the credential issuer to
+  confirm a detected secret is still active).
+
+`reusable-gitleaks.yml` stays in the catalog as defense-in-depth
+regardless: it runs on every PR + push over the full git history and
+covers the custom AWS patterns (`aws-account-id`, `aws-role-arn`,
+`aws-sts-session-token`) that are not part of GitHub's default
+partner set.
 
 If you find a leaked secret in git history:
 
@@ -880,19 +886,16 @@ If you find a leaked secret in git history:
 3. The team will coordinate history rewriting (`git filter-repo`) and
    key rotation across all consumers.
 
-### If you fork or upgrade to GitHub Team / Enterprise
+### If this repo (or a consumer) goes private
 
-Upgrading `spark-match` to GitHub Team ($4/user/month) unlocks:
-
-- **Secret scanning** with provider patterns (AWS keys, GitHub PATs, etc.)
-- **Push protection** (block `git push` containing a secret)
-- **Validity checks** (alert only if the leaked credential is still active)
-
-To enable after upgrade:
+The free tier above only applies to **public** repositories. A
+private repo needs **GitHub Advanced Security** (paid, per active
+committer) to unlock any of the four `security_and_analysis` toggles —
+including the two (`secret_scanning`, `secret_scanning_push_protection`)
+that are free here. To enable all four after a GHAS purchase:
 
 ```bash
-gh api -X PATCH /repos/spark-match/spark-match-01-devops \
-  --input enable-ghas.json
+gh api -X PATCH /repos/<owner>/<repo> --input enable-ghas.json
 ```
 
 `enable-ghas.json`:
@@ -902,13 +905,14 @@ gh api -X PATCH /repos/spark-match/spark-match-01-devops \
   "security_and_analysis": {
     "secret_scanning": {"status": "enabled"},
     "secret_scanning_push_protection": {"status": "enabled"},
+    "secret_scanning_non_provider_patterns": {"status": "enabled"},
     "secret_scanning_validity_checks": {"status": "enabled"}
   }
 }
 ```
 
-Then remove the gitleaks workaround from the catalog or keep it as
-defense-in-depth (recommended).
+Keep `reusable-gitleaks.yml` regardless (recommended): it is the only
+scanner that understands the org's custom AWS patterns.
 
 ## License
 
