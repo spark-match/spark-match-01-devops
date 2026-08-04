@@ -201,13 +201,31 @@ jobs:
           # so raw terraform exit codes pass through to the script.
           terraform_wrapper: false
 
+      - name: resolve-apply-role-arn
+        id: resolve-apply-role-arn
+        env:
+          INPUT_APPLY_ROLE_ARN: ${{ inputs.apply-role-arn }}
+          INPUT_APPLY_ROLE_ARN_SECRET: ${{ inputs.apply-role-arn-secret }}
+          ENV_NAME: ${{ steps.env.outputs.environment }}
+        run: |
+          if [ -n "${INPUT_APPLY_ROLE_ARN}" ]; then
+            echo "role-arn=${INPUT_APPLY_ROLE_ARN}" >> "${GITHUB_OUTPUT}"
+          else
+            SECRET_VALUE=$(gh secret get "${INPUT_APPLY_ROLE_ARN_SECRET}" --repo "${GITHUB_REPOSITORY}" --env "${ENV_NAME}" 2>/dev/null || echo "")
+            if [ -z "${SECRET_VALUE}" ]; then
+              echo "::error::Could not resolve apply-role-arn from inputs.apply-role-arn or inputs.apply-role-arn-secret (${INPUT_APPLY_ROLE_ARN_SECRET} in env ${ENV_NAME})"
+              exit 1
+            fi
+            echo "role-arn=${SECRET_VALUE}" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: configure-aws-credentials-oidc-apply-role
         # Resolve role ARN from two paths (string input preferred to avoid
         # cross-owner secret masking). See reusable-terraform-plan.yml for
         # the full rationale.
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ inputs.apply-role-arn != '' && inputs.apply-role-arn || secrets[inputs.apply-role-arn-secret] }}
+          role-to-assume: ${{ steps.resolve-apply-role-arn.outputs.role-arn }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
