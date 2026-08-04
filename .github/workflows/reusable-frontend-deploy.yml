@@ -1,3 +1,26 @@
+# Callable example (per docs/VERSIONING.md, single-main-branch model):
+#
+#   jobs:
+#     deploy-dev:
+#       uses: spark-match/spark-match-01-devops/.github/workflows/reusable-frontend-deploy.yml@main
+#       with:
+#         environment-name: dev
+#         gh-environment: dev
+#         aws-region: us-east-1
+#         role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+#         bucket-name: ${{ vars.SPARK_MATCH_FRONTEND_BUCKET }}
+#         distribution-id: ${{ vars.SPARK_MATCH_FRONTEND_DISTRIBUTION }}
+#         build-script: build:ci
+#
+# Pin: callers cross-repo usan `@main` per docs/VERSIONING.md. La version
+# v1.2.0+ existe por trazabilidad de release-please pero NO es el pin
+# requerido para callers internos.
+#
+# NOTE: AGENTS.md §5.2 recomienda pin-by-version (`@vX.Y.Z`). Esa guia
+# contradice docs/VERSIONING.md (decision 2026-07) y queda pendiente de
+# alineacion. Mientras tanto, el patron canónico para callers internos
+# es `@main` per VERSIONING.
+
 name: frontend-deploy
 
 on:
@@ -44,7 +67,7 @@ on:
         required: false
         default: ''
       distribution-id:
-        description: 'CloudFront distribution ID (14 uppercase alphanumeric chars, starts with E).'
+        description: 'CloudFront distribution ID (10 to 14 uppercase alphanumeric chars; starts with E).'
         type: string
         required: false
         default: ''
@@ -104,7 +127,7 @@ jobs:
             {"aws-region": "${{ inputs.aws-region }}","role-arn": "${{ inputs.role-arn }}","bucket-name": "${{ inputs.bucket-name }}","distribution-id": "${{ inputs.distribution-id }}","source-dir": "${{ inputs.source-dir }}","node-version": "${{ inputs.node-version }}","build-script": "${{ inputs.build-script }}","invalidation-paths": "${{ inputs.invalidation-paths }}"}
           required: role-arn|bucket-name|distribution-id
           patterns: |
-            {"aws-region": "^[a-z0-9-]+$","role-arn": "^arn:[a-z0-9-]+:[a-z0-9-]+:[a-z0-9-]*:[0-9]*:.+$","bucket-name": "^[a-z0-9.\\-]{3,63}$","distribution-id": "^[A-Z0-9]{14}$","source-dir": "^[a-z0-9][a-z0-9./_-]*$","invalidation-paths": "^\\*?[/a-zA-Z0-9*.,-]*$","node-version": "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?$","build-script": "^[a-zA-Z0-9_:-]+$"}
+            {"aws-region": "^[a-z0-9-]+$","role-arn": "^arn:[a-z0-9-]+:[a-z0-9-]+:[a-z0-9-]*:[0-9]*:.+$","bucket-name": "^[a-z0-9.\\-]{3,63}$","distribution-id": "^[A-Z0-9-]{10,14}$","source-dir": "^[a-z0-9][a-z0-9./_-]*$","invalidation-paths": "^\\*?[/a-zA-Z0-9*.,-]*$","node-version": "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?$","build-script": "^[a-zA-Z0-9_:-]+$"}
       - name: checkout-caller-repository
         uses: actions/checkout@v7
       - name: configure-aws-credentials-oidc
@@ -193,6 +216,10 @@ jobs:
         run: |
           {
             echo "::group::frontend-deploy -- \`${INPUTS_ENVIRONMENT_NAME}\`"
+            echo "## Deploy URL"
+            echo ""
+            echo "${STEPS_DEPLOY_OUTPUTS_URL}"
+            echo ""
             if [ "${INPUTS_DRY_RUN}" = "true" ]; then
               echo "Mode: dry-run (s3 sync + cloudfront invalidation skipped)"
             else
@@ -205,6 +232,5 @@ jobs:
             echo "| Bucket | \`${INPUTS_BUCKET_NAME}\` |"
             echo "| Distribution ID | \`${INPUTS_DISTRIBUTION_ID}\` |"
             echo "| Build script | \`${INPUTS_BUILD_SCRIPT}\` |"
-            echo "| URL | ${STEPS_DEPLOY_OUTPUTS_URL} |"
             echo "::endgroup::"
           } >> "${GITHUB_STEP_SUMMARY}"
