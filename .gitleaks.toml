@@ -45,6 +45,7 @@ regexes = [
   'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
   # Documentation ARN placeholders.
   'arn:aws:iam::123456789012:role/ExampleRole',
+  'arn:aws:iam::123456789012:role/spark-match-terraform-apply-(dev|prod)',
   'arn:aws:sts::123456789012:assumed-role/ExampleRole/session',
 ]
 # Stopwords: words that, when adjacent to a candidate secret, cause
