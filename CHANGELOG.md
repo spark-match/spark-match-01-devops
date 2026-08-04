@@ -53,20 +53,20 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ### Bug Fixes
 
-* **governance:** require commitlint-main check to gate squash merges ([#276](https://github.com/spark-match/spark-match-01-devops/issues/276)) ([0955132](https://github.com/spark-match/spark-match-01-devops/commit/09551327a246653bdc5fcc357b65fb2fd5ade926))
+* **governance:** require commitlint-main check to gate squash merges ([#276](https://github.com/spark-match/spark-match-01-devops/issues/276))
 
 
 ### Documentation
 
-* document commitlint-main requirement and rest-api merge pitfall ([#278](https://github.com/spark-match/spark-match-01-devops/issues/278)) ([0624417](https://github.com/spark-match/spark-match-01-devops/commit/0624417b5a6d0b34c8855018c0d7fd9b1930096b))
+* document commitlint-main requirement and rest-api merge pitfall ([#278](https://github.com/spark-match/spark-match-01-devops/issues/278))
 
 ## [1.0.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.0...v1.0.1) (2026-08-04)
 
 
 ### Bug Fixes
 
-* **governance:** reconcile 02-infrastructure status-checks vs reported ([7913515](https://github.com/spark-match/spark-match-01-devops/commit/7913515d0b2c24cc3f3b5f8189dc2428262d7876))
-* **governance:** reconcile 02-infrastructure statusChecks vs reported contexts ([#274](https://github.com/spark-match/spark-match-01-devops/issues/274)) ([7913515](https://github.com/spark-match/spark-match-01-devops/commit/7913515d0b2c24cc3f3b5f8189dc2428262d7876))
+* **governance:** reconcile 02-infrastructure status-checks vs reported
+* **governance:** reconcile 02-infrastructure statusChecks vs reported contexts ([#274](https://github.com/spark-match/spark-match-01-devops/issues/274))
 
 ## [1.0.0](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.18...v1.0.0) (2026-08-04)
 
@@ -79,29 +79,29 @@ Merging the release PR creates the git tag + GitHub Release.
 
 ### Features
 
-* refresh agents.md for v1.0.0 release ([#264](https://github.com/spark-match/spark-match-01-devops/issues/264)) ([b1bbd59](https://github.com/spark-match/spark-match-01-devops/commit/b1bbd593942640554a73d0b1e54a49b70514ba38))
-* refresh agents.md for v1.0.0 release ([#271](https://github.com/spark-match/spark-match-01-devops/issues/271)) ([bed75ea](https://github.com/spark-match/spark-match-01-devops/commit/bed75ea240c9f5cd5181547af943efee41de6974))
-* refresh agents.md for v1.0.0 release. All checks green. Documents REST API workaround for EMU accounts in section 4.4. Merged via REST API direct. ([b1bbd59](https://github.com/spark-match/spark-match-01-devops/commit/b1bbd593942640554a73d0b1e54a49b70514ba38))
+* refresh agents.md for v1.0.0 release ([#264](https://github.com/spark-match/spark-match-01-devops/issues/264))
+* refresh agents.md for v1.0.0 release ([#271](https://github.com/spark-match/spark-match-01-devops/issues/271))
+* refresh agents.md for v1.0.0 release. All checks green. Documents REST API workaround for EMU accounts in section 4.4. Merged via REST API direct.
 
 
 ### Bug Fixes
 
-* **governance:** align status check names with reported job names ([0e73e2e](https://github.com/spark-match/spark-match-01-devops/commit/0e73e2e46791cfb82c41c5f65a887741ad526b0c))
-* **governance:** align status check names with reported job names ([#273](https://github.com/spark-match/spark-match-01-devops/issues/273)) ([0e73e2e](https://github.com/spark-match/spark-match-01-devops/commit/0e73e2e46791cfb82c41c5f65a887741ad526b0c))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([dbbbe82](https://github.com/spark-match/spark-match-01-devops/commit/dbbbe824e136e44737d1f58d81d9c245e1687ac5))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#266](https://github.com/spark-match/spark-match-01-devops/issues/266)) ([20d4582](https://github.com/spark-match/spark-match-01-devops/commit/20d45827f4afa6d1b87bc8bbd90f6687151c17ec))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#272](https://github.com/spark-match/spark-match-01-devops/issues/272)) ([dbbbe82](https://github.com/spark-match/spark-match-01-devops/commit/dbbbe824e136e44737d1f58d81d9c245e1687ac5))
-* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex. All checks green. Required to merge release PR [#265](https://github.com/spark-match/spark-match-01-devops/issues/265) for v1.0.0. Merged via REST API direct. ([20d4582](https://github.com/spark-match/spark-match-01-devops/commit/20d45827f4afa6d1b87bc8bbd90f6687151c17ec))
+* **governance:** align status check names with reported job names
+* **governance:** align status check names with reported job names ([#273](https://github.com/spark-match/spark-match-01-devops/issues/273))
+* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex
+* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#266](https://github.com/spark-match/spark-match-01-devops/issues/266))
+* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex ([#272](https://github.com/spark-match/spark-match-01-devops/issues/272))
+* **quality:** allow x.y.z major &gt;=1 in release-please manifest bats regex. All checks green. Required to merge release PR [#265](https://github.com/spark-match/spark-match-01-devops/issues/265) for v1.0.0. Merged via REST API direct.
 
 
 ### Reverts
 
-* **docs:** refresh agents.md for v1.0.0 to undo pull request 264 ([552525f](https://github.com/spark-match/spark-match-01-devops/commit/552525f45b2bc89c15fdb98944dc754f1f74f947))
-* **docs:** refresh agents.md for v1.0.0 to undo pull request 264 ([#270](https://github.com/spark-match/spark-match-01-devops/issues/270)) ([552525f](https://github.com/spark-match/spark-match-01-devops/commit/552525f45b2bc89c15fdb98944dc754f1f74f947))
-* **quality:** bats regex v1 allow to undo pull request 266 ([f22ccaa](https://github.com/spark-match/spark-match-01-devops/commit/f22ccaaca9bce0cc4ccb38a891fabcb9ca1620f5))
-* **quality:** bats regex v1 allow to undo pull request 266 ([#269](https://github.com/spark-match/spark-match-01-devops/issues/269)) ([f22ccaa](https://github.com/spark-match/spark-match-01-devops/commit/f22ccaaca9bce0cc4ccb38a891fabcb9ca1620f5))
-* **repo:** release 1.0.0 to undo pull request 265 ([3948a80](https://github.com/spark-match/spark-match-01-devops/commit/3948a80135ea0a8646c0f21cd0848b4149ff95a4))
-* **repo:** release 1.0.0 to undo pull request 265 ([#267](https://github.com/spark-match/spark-match-01-devops/issues/267)) ([3948a80](https://github.com/spark-match/spark-match-01-devops/commit/3948a80135ea0a8646c0f21cd0848b4149ff95a4))
+* **docs:** refresh agents.md for v1.0.0 to undo pull request 264
+* **docs:** refresh agents.md for v1.0.0 to undo pull request 264 ([#270](https://github.com/spark-match/spark-match-01-devops/issues/270))
+* **quality:** bats regex v1 allow to undo pull request 266
+* **quality:** bats regex v1 allow to undo pull request 266 ([#269](https://github.com/spark-match/spark-match-01-devops/issues/269))
+* **repo:** release 1.0.0 to undo pull request 265
+* **repo:** release 1.0.0 to undo pull request 265 ([#267](https://github.com/spark-match/spark-match-01-devops/issues/267))
 
 ## [0.1.18](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.17...v0.1.18) (2026-08-03)
 
