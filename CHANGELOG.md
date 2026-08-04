@@ -20,6 +20,14 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.0.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.0...v1.0.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **governance:** reconcile 02-infrastructure status-checks vs reported ([7913515](https://github.com/spark-match/spark-match-01-devops/commit/7913515d0b2c24cc3f3b5f8189dc2428262d7876))
+* **governance:** reconcile 02-infrastructure statusChecks vs reported contexts ([#274](https://github.com/spark-match/spark-match-01-devops/issues/274)) ([7913515](https://github.com/spark-match/spark-match-01-devops/commit/7913515d0b2c24cc3f3b5f8189dc2428262d7876))
+
 ## [1.0.0](https://github.com/spark-match/spark-match-01-devops/compare/v0.1.18...v1.0.0) (2026-08-04)
 
 
