@@ -36,7 +36,10 @@ on:
   workflow_call:
     secrets:
       AWS_APPLY_ROLE_ARN:
-        description: 'OIDC role ARN for terraform apply. Optional when caller passes inputs.apply-role-arn instead (preferred for cross-owner).'
+        description: 'OIDC role ARN for terraform apply. The caller passes the value via workflow_call secrets: mapping (e.g. AWS_APPLY_ROLE_ARN: secrets.AWS_APPLY_ROLE_ARN_DEV).'
+        required: false
+      apply-role-arn-secret:
+        description: 'DEPRECATED: kept for backward compatibility but ignored. The reusable now reads directly from secrets.AWS_APPLY_ROLE_ARN (mapped by the caller via the workflow_call secrets: block).'
         required: false
     inputs:
       environment:
