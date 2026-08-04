@@ -46,6 +46,8 @@ regexes = [
   # Documentation ARN placeholders.
   'arn:aws:iam::123456789012:role/ExampleRole',
   'arn:aws:iam::123456789012:role/spark-match-terraform-apply-(dev|prod)',
+  # aws-account-id rule returns 12-digit number, must be allowlisted separately.
+  '123456789012',
   'arn:aws:sts::123456789012:assumed-role/ExampleRole/session',
 ]
 # Stopwords: words that, when adjacent to a candidate secret, cause
