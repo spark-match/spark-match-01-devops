@@ -1,0 +1,210 @@
+name: frontend-deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Environment identifier (e.g. "dev", "staging", "prod"). Logged in job name and step output. Default "dev".'
+        type: string
+        required: false
+        default: 'dev'
+      gh-environment:
+        description: 'GitHub Environment name (binds as approval gate). Empty = no binding (recommended for PR-triggered deploys).'
+        type: string
+        required: false
+        default: ''
+      aws-region:
+        description: 'AWS region for S3 and CloudFront operations.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      role-arn:
+        description: 'OIDC role ARN to assume. Caller MUST pass this via vars (not secrets) because secrets are not available in the with: block of a reusable call. Identifiers are not credentials.'
+        type: string
+        required: false
+        default: ''
+      working-directory:
+        description: 'Directory containing the frontend package.json.'
+        type: string
+        required: false
+        default: '.'
+      build-script:
+        description: 'NPM script name that produces the dist (e.g. "build:ci"). Encapsulate flags inside the script - do NOT pass inline flags.'
+        type: string
+        required: false
+        default: 'build'
+      node-version:
+        description: 'Node.js version for setup-node (accepts "24", "24.0", "24.0.0").'
+        type: string
+        required: false
+        default: '24'
+      bucket-name:
+        description: 'Destination S3 bucket name (must satisfy S3 naming rules).'
+        type: string
+        required: false
+        default: ''
+      distribution-id:
+        description: 'CloudFront distribution ID (14 uppercase alphanumeric chars, starts with E).'
+        type: string
+        required: false
+        default: ''
+      source-dir:
+        description: 'Path relative to working-directory containing the build output.'
+        type: string
+        required: false
+        default: 'dist'
+      cache-control-hashed:
+        description: 'Cache-Control header for hashed assets (CSS/JS with content hash in filename).'
+        type: string
+        required: false
+        default: 'public, max-age=31536000, immutable'
+      cache-control-html:
+        description: 'Cache-Control header for HTML and other non-hashed files.'
+        type: string
+        required: false
+        default: 'no-cache, no-store, must-revalidate'
+      invalidation-paths:
+        description: 'CloudFront invalidation paths (default "/*" invalidates everything).'
+        type: string
+        required: false
+        default: '/*'
+      dry-run:
+        description: 'If "true", skip s3 sync and cloudfront invalidation (still validates inputs, builds, fetches distribution URL). Useful for PR previews.'
+        type: string
+        required: false
+        default: ''
+    outputs:
+      url:
+        description: 'Public CloudFront domain of the deployed distribution (always populated, even in dry-run).'
+        value: ${{ jobs.deploy.outputs.url }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: frontend-deploy-${{ inputs.environment-name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.gh-environment && inputs.gh-environment || '' }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+        shell: bash
+
+    steps:
+      - name: validate-workflow-inputs
+        id: validate
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        with:
+          values: |
+            {"aws-region": "${{ inputs.aws-region }}","role-arn": "${{ inputs.role-arn }}","bucket-name": "${{ inputs.bucket-name }}","distribution-id": "${{ inputs.distribution-id }}","source-dir": "${{ inputs.source-dir }}","node-version": "${{ inputs.node-version }}","build-script": "${{ inputs.build-script }}","invalidation-paths": "${{ inputs.invalidation-paths }}"}
+          required: role-arn|bucket-name|distribution-id
+          patterns: |
+            {"aws-region": "^[a-z0-9-]+$","role-arn": "^arn:[a-z0-9-]+:[a-z0-9-]+:[a-z0-9-]*:[0-9]*:.+$","bucket-name": "^[a-z0-9.\\-]{3,63}$","distribution-id": "^[A-Z0-9]{14}$","source-dir": "^[a-z0-9][a-z0-9./_-]*$","invalidation-paths": "^\\*?[/a-zA-Z0-9*.,-]*$","node-version": "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?$","build-script": "^[a-zA-Z0-9_:-]+$"}
+      - name: checkout-caller-repository
+        uses: actions/checkout@v7
+      - name: configure-aws-credentials-oidc
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ inputs.role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+      - name: setup-node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: install-dependencies
+        run: npm ci
+      - name: run-build
+        env:
+          INPUTS_BUILD_SCRIPT: ${{ inputs.build-script }}
+        run: npm run "$INPUTS_BUILD_SCRIPT"
+      - name: resolve-cache-control-flags
+        env:
+          INPUTS_SOURCE_DIR: ${{ inputs.source-dir }}
+        run: |
+          HASHED_PATTERN='*-[a-zA-Z0-9_-]*.[jc]ss'
+          HTML_PATTERN='*.html'
+          {
+            echo "HASHED_PATTERN=${HASHED_PATTERN}"
+            echo "HTML_PATTERN=${HTML_PATTERN}"
+            echo "SOURCE_DIR=${INPUTS_SOURCE_DIR}"
+          } >> "$GITHUB_ENV"
+          echo "Resolved cache-control flags: HASHED=${HASHED_PATTERN} HTML=${HTML_PATTERN} SRC=${INPUTS_SOURCE_DIR}"
+      - name: sync-to-s3
+        if: inputs.dry-run != 'true'
+        env:
+          INPUTS_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          INPUTS_BUCKET_NAME: ${{ inputs.bucket-name }}
+          INPUTS_CACHE_CONTROL_HASHED: ${{ inputs.cache-control-hashed }}
+          INPUTS_CACHE_CONTROL_HTML: ${{ inputs.cache-control-html }}
+        run: |
+          set -euo pipefail
+          SRC="${INPUTS_WORKING_DIRECTORY}/${SOURCE_DIR}/"
+          DEST="s3://${INPUTS_BUCKET_NAME}/"
+          echo "Sync pass 1: hashed assets, --delete, long cache"
+          aws s3 sync "${SRC}" "${DEST}" \
+            --delete \
+            --cache-control "${INPUTS_CACHE_CONTROL_HASHED}" \
+            --exclude "*" \
+            --include "${HASHED_PATTERN}" \
+            --content-type "auto"
+          echo "Sync pass 2: HTML + others, short cache, no delete, exclude maps"
+          aws s3 sync "${SRC}" "${DEST}" \
+            --cache-control "${INPUTS_CACHE_CONTROL_HTML}" \
+            --exclude "${HASHED_PATTERN}" \
+            --exclude "*.map" \
+            --content-type "auto"
+      - name: create-invalidation
+        if: inputs.dry-run != 'true'
+        env:
+          INPUTS_DISTRIBUTION_ID: ${{ inputs.distribution-id }}
+          INPUTS_INVALIDATION_PATHS: ${{ inputs.invalidation-paths }}
+        run: |
+          set -euo pipefail
+          aws cloudfront create-invalidation \
+            --distribution-id "${INPUTS_DISTRIBUTION_ID}" \
+            --paths "${INPUTS_INVALIDATION_PATHS}"
+      - name: get-distribution-url
+        id: deploy
+        env:
+          INPUTS_DISTRIBUTION_ID: ${{ inputs.distribution-id }}
+        run: |
+          set -euo pipefail
+          DOMAIN=$(aws cloudfront get-distribution \
+            --id "${INPUTS_DISTRIBUTION_ID}" \
+            --query 'Distribution.DomainName' \
+            --output text)
+          echo "url=https://${DOMAIN}" >> "${GITHUB_OUTPUT}"
+          echo "Distribution domain: https://${DOMAIN}"
+      - name: summary
+        if: always()
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_BUCKET_NAME: ${{ inputs.bucket-name }}
+          INPUTS_DISTRIBUTION_ID: ${{ inputs.distribution-id }}
+          INPUTS_DRY_RUN: ${{ inputs.dry-run }}
+          INPUTS_BUILD_SCRIPT: ${{ inputs.build-script }}
+          STEPS_DEPLOY_OUTPUTS_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "::group::frontend-deploy -- \`${INPUTS_ENVIRONMENT_NAME}\`"
+            if [ "${INPUTS_DRY_RUN}" = "true" ]; then
+              echo "Mode: dry-run (s3 sync + cloudfront invalidation skipped)"
+            else
+              echo "Mode: live (s3 sync + cloudfront invalidation executed)"
+            fi
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
+            echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
+            echo "| Bucket | \`${INPUTS_BUCKET_NAME}\` |"
+            echo "| Distribution ID | \`${INPUTS_DISTRIBUTION_ID}\` |"
+            echo "| Build script | \`${INPUTS_BUILD_SCRIPT}\` |"
+            echo "| URL | ${STEPS_DEPLOY_OUTPUTS_URL} |"
+            echo "::endgroup::"
+          } >> "${GITHUB_STEP_SUMMARY}"
