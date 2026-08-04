@@ -76,7 +76,7 @@ Scopes usados en este repo:
 | `repo` | cambios estructurales del repo (no catalog) |
 | `deps` | bumps de dependabot (pull requests automatizados) |
 
-Tipos: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`.
+Tipos: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `revert`. `perf` y `revert` se añadieron al set base — heredados de `@commitlint/config-conventional`.
 
 ## 4. Pull Request workflow
 
@@ -113,7 +113,7 @@ gh pr create \
 
 ### 4.3 Checks requeridos — todos deben pasar
 
-9 checks corren en cada pull request vía `.github/workflows/ci.yml`:
+9 checks corren en cada pull request vía `.github/workflows/ci.yml` + `codeql-actions.yml`:
 
 | Check | Qué valida |
 |---|---|
@@ -125,7 +125,7 @@ gh pr create \
 | `quality / shellcheck` | bash scripts en `scripts/` + `.github/actions/` |
 | `commitlint` | convención de commits en cada pull request |
 | `codeql-actions` | vulnerabilidades en YAML de Actions |
-| `codeql` | sin language (reused workflow) |
+| `Code scanning` | resultados agregados de CodeQL sobre Actions |
 
 Si un check falla, **arregla el código** antes de pedir review. No marques `Resolve conversation` ni `--admin` para saltar un check rojo.
 
@@ -133,17 +133,77 @@ Si un check falla, **arregla el código** antes de pedir review. No marques `Res
 
 CODEOWNERS reviewers suelen no estar disponibles. Cuando CI está verde:
 
+**Para cuentas con scope `admin:org` (usuarios normales):**
+
 ```bash
 gh pr merge <num> --repo spark-match/spark-match-01-devops \
   --squash --admin --delete-branch \
   --body "All 9 checks green. [resumen]. Merged via admin bypass."
 ```
 
-El body del merge commit está limitado a 100 chars por línea (regla
-`body-max-line-length` heredada de `@commitlint/config-conventional`).
-Si el resumen excede ese límite, partirlo en varias líneas con
-`\n` o usar `--body-file` apuntando a un archivo con el texto
-pre-formateado.
+**Para cuentas Enterprise Managed Users (EMU):**
+
+`gh pr merge --admin` falla con `GraphQL: Unauthorized: As an
+Enterprise Managed User, you cannot access this content
+(mergePullRequest)`. Workaround directo via REST API con el token de
+`gh auth token` y PowerShell nativo (sin `--admin`):
+
+```powershell
+$token = (gh auth token).Trim()
+$sha = (gh pr view <num> --repo spark-match/spark-match-01-devops --json headRefOid -q .headRefOid)
+$msg = Get-Content C:\path\to\merge-msg.txt -Raw  # multi-line, cada linea <=100 chars
+$payload = @"
+{"merge_method":"squash","commit_message":$(($msg | ConvertTo-Json -Compress)),"sha":"$sha"}
+"@
+Invoke-WebRequest -Uri "https://api.github.com/repos/spark-match/spark-match-01-devops/pulls/<num>/merge" `
+  -Method PUT `
+  -Headers @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json"; User-Agent = "opencode" } `
+  -Body $payload -ContentType "application/json" -UseBasicParsing
+```
+
+> **Reglas activas de longitud de línea** (`.commitlintrc.json` + defaults de `@commitlint/config-conventional`):
+>
+> | Regla | Límite | Aplica a | Estado |
+> |---|---|---|---|
+> | `header-max-length` | 100 chars | Subject (`type(scope)!: subject`) | Activo (`[2, always, 100]`) |
+> | `body-max-line-length` | — | Body | **Deshabilitado** (`[0]` en `.commitlintrc.json`) |
+> | `footer-max-line-length` | 100 chars | Footer | Activo (default heredado) |
+>
+> **Implicancia operativa**: el parser de commitlint
+> (`@commitlint/parse` + `conventional-commits-parser`) clasifica
+> oportunísticamente el contenido post-header como body o footer.
+> Una línea larga que en una corrida pasa como body puede ser
+> clasificada como footer en otra y disparar `footer-max-line-length`.
+> **Mantener TODAS las líneas del commit message ≤100 chars** para
+> comportamiento determinístico. La regla `body-max-line-length`
+> está explícitamente deshabilitada en este repo porque queremos
+> libertad en el body, pero el parser no garantiza que el contenido
+> post-header sea tratado como body en todas las corridas.
+
+**Ejemplos de mensajes válidos** (cada línea ≤100 chars, separar con `\n` literal en el JSON o con líneas reales en un archivo):
+
+```
+fix(quality): allow x.y.z major >=1 in release-please manifest bats regex
+
+Required for release-please to cut 1.x.y release PRs.
+Test now accepts both 0.x.y and 1.x.y patterns.
+```
+
+```
+feat!: refresh agents.md for v1.0.0 release
+
+Documents REST API workaround for EMU accounts.
+Adds commitlint line-limit rules reference.
+
+BREAKING CHANGE: AGENTS.md v1 contract.
+```
+
+**Regla práctica para merges vía REST API**: escribir el mensaje en
+un archivo de texto plano (cada línea ≤100 chars) y leerlo con
+`Get-Content -Raw`. Nunca concatenar strings con `+` porque
+PowerShell tokeniza `"..."` con caracteres especiales de forma
+impredecible. Lo mismo aplica a `gh pr create --body "..."` —
+usar siempre `--body-file` (ver §4.1).
 
 `--admin` se autoriza **solo** después de confirmar CI verde. No usar para skippear checks fallidos.
 
@@ -230,8 +290,8 @@ cross-repo. Para añadir uno:
    - Para reusables con secrets: caller forwardea ambos secrets via
      `secrets:` block, reusable los consume via `${{ secrets.<name> }}`.
 8. **Pin cross-repo**: `uses: spark-match/spark-match-01-devops/.github/
-   workflows/reusable-<name>.yml@v0.1.16` (NO `@main`). Da control de
-   upgrades. Bumpear `@v0.1.17` cuando se libere una nueva versión con
+   workflows/reusable-<name>.yml@v0.1.18` (NO `@main`). Da control de
+   upgrades. Bumpear `@v0.1.19` cuando se libere una nueva versión con
    cambios compatibles.
 9. **Documentar en §11**: añadir a la tabla de reusables, contar
    correctamente. Bumpear el `package-name` en `.github/release-please-
@@ -376,12 +436,16 @@ Verificar:
 4 composite actions (en `.github/actions/`): `bats-runner`, `codeql-fail-on-alerts`, `setup-actionlint`, `validate-workflow-inputs`.
 
 Consumidores activos (verificado en `main` + `dev` de cada repo):
-- `spark-match-02-infrastructure`: terraform-{plan,apply}, tflint, gitleaks, sonar-terraform, terraform-validate, **commitlint, release-please (Tier 3, post-#104/#105)**
+- `spark-match-02-infrastructure`: terraform-{plan,apply}, tflint, gitleaks, sonar-terraform, terraform-validate, **commitlint, release-please (Tier 3, post-#104/#105)**, v1.0.0 publicado
 - `spark-match-03-backend`: sonar-typescript, migrations-dry-run, codeql
 - `spark-match-04-frontend` (dev): actionlint, gitleaks, eslint, node-{test,typecheck,build}, sonar-typescript, yamllint
 - `spark-match-07-article`: latex-{build,release}
 
-20 bats tests en `tests/bats/`, 312/312 verde en último CI run.
+21 bats tests en `tests/bats/`, 313/313 verde en último CI run.
+
+**Secrets cross-repo (org-level, visibility=all)**: `RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY`, `GITLEAKS_LICENSE`, `SONAR_TOKEN` viven a nivel organización para evitar duplicación por consumer. Los nuevos repos que añadan reusables de 01-devops solo necesitan instalar la GitHub App `spark-match-bot` (no bootstrap manual de secrets).
+
+**CodeQL exclusion**: `.github/codeql/codeql-config.yml` excluye `js/actions/unpinned-3rd-party-action` (legacy) y `actions/unpinned-tag` (activa en `actions` mode). Ambas reglas alientan SHA-pinning que el repo prohíbe deliberadamente (ver §5.1). El guard `tests/bats/codeql-config.bats` previene regresión.
 
 Nota: los counts se desactualizan rápido. Para inventario en tiempo real:
 
@@ -404,4 +468,4 @@ ls tests/bats/*.bats
 
 ---
 
-**Mantenido por**: opencode + el org owner de `spark-match`. Última revisión: 2026-08-03.
+**Mantenido por**: opencode + el org owner de `spark-match`. Última revisión: 2026-08-04.
