@@ -492,4 +492,19 @@ ls tests/bats/*.bats
 
 ---
 
+## 13. Post-rewrite note (2026-08-04)
+
+La rama `main` fue reescrita con `git rebase -i aa52bf7` + 5 amend manuales + force-push para limpiar 4 commits históricos con `commitlint` violatorio (3 con body >100 chars, 1 con `statusChecks` camelCase). Política AGENTS.md §10 fue ignorada por decisión explícita del org owner. Consecuencias:
+
+- **Tags `v1.0.0`, `v1.0.1`, `v1.0.2`** re-creados en los SHAs post-rewrite. Las releases de GitHub correspondientes también se re-crearon con SBOM. Las versiones anteriores apuntaban a commits eliminados.
+- **Archive branch `archive/pre-rewrite-2026-08-04`** preserva el estado pre-rewrite en origin, accesible vía `git checkout archive/pre-rewrite-2026-08-04`.
+- **Ruleset fue deshabilitado temporalmente** durante el force-push (`enforcement: disabled`), re-aplicado con `--apply` post-push. Todo el flujo quedó in-sync (1-devops + 2-infra).
+- **PR #279** (`release 2.0.0`) auto-generado por release-please al ver el force-push como "nuevos commits" — cerrado como duplicado (manifest sigue en 1.0.2, contenido sin cambios).
+- **CHANGELOG.md** todavía referencia SHAs antiguos tipo `b1bbd59`, `20d4582`, etc. — no regenerado en este ciclo. Pendiente de un PR de cleanup.
+- **Defense**: el fix de governance de PR #276 (`commitlint-main` required + bats test 3 en `reconciler-status-checks.bats`) sigue válido. No es posible que un squash merge con subject-case violatorio vuelva a fail-closed en silencio.
+
+No repetir sin aprobación explícita del org owner. El rewrite costó múltiples pasos manuales (rebase interactivo, amend por commit, force-push, re-tag, re-crear releases con SBOM, re-aplicar ruleset). El valor pragmático (cosmético en UI) no justifica el esfuerzo recurrente.
+
+---
+
 **Mantenido por**: opencode + el org owner de `spark-match`. Última revisión: 2026-08-04.
