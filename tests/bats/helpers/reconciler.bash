@@ -23,6 +23,7 @@
 
 REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME:-}")/../.." && pwd)"
 SCRIPT="$REPO_ROOT/scripts/configure-repo-rulesets.sh"
+MANIFEST="$REPO_ROOT/governance/repository-governance.json"
 
 # --- Default manifest (tests override per-case) ----------------------------
 DEFAULT_MANIFEST='{
