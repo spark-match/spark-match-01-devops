@@ -50,17 +50,21 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
   done
 }
 
-@test "commitlint-config: scope-enum contains the 14 org-approved scopes (incl. deps, frontend)" {
-  # 14 = composite, workflows, ecosystem, node, deploy, frontend, governance,
+@test "commitlint-config: scope-enum contains the 15 org-approved scopes (incl. deps, frontend, python)" {
+  # 15 = composite, workflows, ecosystem, node, deploy, frontend, python, governance,
   #      scripts, docs, ci, quality, reconciler, repo, deps
   # `deps` was added for Dependabot-generated commits which use the
   # `ci(deps):` prefix.
   # `frontend` was added for the reusable-frontend-deploy workflow
   # introduced in PR adding reusable-frontend-deploy.yml.
+  # `python` was added for the python-layer reusables (reusable-python-ci,
+  # reusable-sonar-python) restored in PR #297 (closes #294). AGENTS.md §3
+  # already documents `python` as a valid scope; this commit closes the
+  # drift between AGENTS.md and the commitlint enum.
   COUNT=$(jq -r '.rules["scope-enum"][2] | length' "$CONFIG")
-  [ "$COUNT" -eq 14 ]
+  [ "$COUNT" -eq 15 ]
 
-  for s in composite workflows ecosystem node deploy frontend governance scripts docs ci quality reconciler repo deps; do
+  for s in composite workflows ecosystem node deploy frontend python governance scripts docs ci quality reconciler repo deps; do
     jq -e --arg s "$s" '.rules["scope-enum"][2] | index($s) != null' "$CONFIG" >/dev/null \
       || { echo "missing scope: $s"; return 1; }
   done
@@ -129,9 +133,9 @@ HOOK="$BATS_TEST_DIRNAME/../../.githooks/commit-msg"
   [ "$status" -eq 0 ]
 }
 
-@test "commitlint-config: hook header lists the same 14 scopes as commitlintrc" {
+@test "commitlint-config: hook header lists the same 15 scopes as commitlintrc" {
   run bash -c '
-    for s in composite workflows ecosystem node deploy frontend governance scripts docs ci quality reconciler repo deps; do
+    for s in composite workflows ecosystem node deploy frontend python governance scripts docs ci quality reconciler repo deps; do
       echo -e "chore($s): subject" | "'"$HOOK"'" /dev/stdin >/dev/null 2>&1 \
         || { echo "hook rejected scope: $s"; exit 1; }
     done

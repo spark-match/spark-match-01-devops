@@ -89,8 +89,8 @@ esac
 # we just don't fire if no scope was given.
 if [[ -n "$SCOPE" ]]; then
   case "$SCOPE" in
-    composite|workflows|ecosystem|node|deploy|frontend|governance|scripts|docs|ci|quality|reconciler|repo|deps) : ;;
-    *) err "scope '$SCOPE' not in allowlist (composite|workflows|ecosystem|node|deploy|frontend|governance|scripts|docs|ci|quality|reconciler|repo|deps)";;
+    composite|workflows|ecosystem|node|deploy|frontend|python|governance|scripts|docs|ci|quality|reconciler|repo|deps) : ;;
+    *) err "scope '$SCOPE' not in allowlist (composite|workflows|ecosystem|node|deploy|frontend|python|governance|scripts|docs|ci|quality|reconciler|repo|deps)";;
   esac
 fi
 

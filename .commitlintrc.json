@@ -28,6 +28,7 @@
         "node",
         "deploy",
         "frontend",
+        "python",
         "governance",
         "scripts",
         "docs",
