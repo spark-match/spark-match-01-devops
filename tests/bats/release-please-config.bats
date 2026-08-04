@@ -123,11 +123,10 @@ setup() {
   fi
 }
 
-@test "release-please manifest has a SemVer x.y.z version pinned (0.x.y pre-stable or >=1.0.0)" {
+@test "release-please manifest has a SemVer 0.x.y version pinned" {
   run jq -r '.["."]' .release-please-manifest.json
   [ "$status" -eq 0 ]
-  # Pre-1.0 development: 0.x.y. Post-1.0 stable: x.y.z with major >= 1.
-  [[ "$output" =~ ^(0\.[0-9]+\.[0-9]+|[1-9][0-9]*\.[0-9]+\.[0-9]+)$ ]]
+  [[ "$output" =~ ^0\.[0-9]+\.[0-9]+$ ]]
 }
 
 @test "release-please workflow points at config-file .github/release-please-config.json" {
