@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.2.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.0...v1.2.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **frontend:** relax distribution-id regex and document main pin ([#295](https://github.com/spark-match/spark-match-01-devops/issues/295)) ([9c68c56](https://github.com/spark-match/spark-match-01-devops/commit/9c68c563e7f06b5bc42b2e6c010ea73bb889c699))
+
 ## [1.2.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.1.0...v1.2.0) (2026-08-04)
 
 
