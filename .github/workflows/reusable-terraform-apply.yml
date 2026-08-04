@@ -15,8 +15,11 @@
 #       with:
 #         environment: prod
 #         working-directory: live/prod
-#         apply-role-arn-secret: AWS_APPLY_ROLE_ARN_PROD
 #         gh-environment: production
+#         apply-role-arn: arn:aws:iam::123456789012:role/spark-match-terraform-apply-prod   # optional (cross-owner)
+#       secrets:
+#         AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN_PROD }}   # default path (single-owner)
+# Required GitHub Secret in caller repo: AWS_APPLY_ROLE_ARN (per env, value = role ARN)
 #
 # Required GitHub Secret in caller repo: <apply-role-arn-secret>
 # Required GH Environment: <gh-environment> (configured by repo admin)
@@ -57,12 +60,12 @@ on:
         required: false
         default: 'us-east-1'
       apply-role-arn-secret:
-        description: 'Name of the GitHub Secret containing the OIDC role ARN for apply (e.g. AWS_APPLY_ROLE_ARN_DEV).'
+        description: 'DEPRECATED: kept for backward compatibility but ignored. The reusable now reads directly from secrets.AWS_APPLY_ROLE_ARN (mapped by the caller via the workflow_call secrets: block).'
         type: string
         required: false
         default: 'AWS_APPLY_ROLE_ARN'
       apply-role-arn:
-        description: 'OIDC role ARN value passed directly as a string input. Use this instead of apply-role-arn-secret when calling cross-owner to avoid GitHub masking the value. Identifiers are not credentials.'
+        description: 'OIDC role ARN value passed directly as a string input. Preferred over secrets mapping when calling cross-owner to avoid GitHub masking the value.'
         type: string
         required: false
         default: ''
@@ -201,31 +204,17 @@ jobs:
           # so raw terraform exit codes pass through to the script.
           terraform_wrapper: false
 
-      - name: resolve-apply-role-arn
-        id: resolve-apply-role-arn
-        env:
-          INPUT_APPLY_ROLE_ARN: ${{ inputs.apply-role-arn }}
-          INPUT_APPLY_ROLE_ARN_SECRET: ${{ inputs.apply-role-arn-secret }}
-          ENV_NAME: ${{ steps.env.outputs.environment }}
-        run: |
-          if [ -n "${INPUT_APPLY_ROLE_ARN}" ]; then
-            echo "role-arn=${INPUT_APPLY_ROLE_ARN}" >> "${GITHUB_OUTPUT}"
-          else
-            SECRET_VALUE=$(gh secret get "${INPUT_APPLY_ROLE_ARN_SECRET}" --repo "${GITHUB_REPOSITORY}" --env "${ENV_NAME}" 2>/dev/null || echo "")
-            if [ -z "${SECRET_VALUE}" ]; then
-              echo "::error::Could not resolve apply-role-arn from inputs.apply-role-arn or inputs.apply-role-arn-secret (${INPUT_APPLY_ROLE_ARN_SECRET} in env ${ENV_NAME})"
-              exit 1
-            fi
-            echo "role-arn=${SECRET_VALUE}" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: configure-aws-credentials-oidc-apply-role
-        # Resolve role ARN from two paths (string input preferred to avoid
-        # cross-owner secret masking). See reusable-terraform-plan.yml for
-        # the full rationale.
+        # Resolve role ARN from two paths:
+        # 1. inputs.apply-role-arn (string, preferred to avoid cross-owner
+        #    secret masking via the secrets: mapping).
+        # 2. secrets.AWS_APPLY_ROLE_ARN (the value the caller passes through
+        #    the workflow_call secrets: block, which has access via the
+        #    reusable's workflow_call declaration -- not subject to GITHUB_TOKEN
+        #    secrets: read scope limitations).
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ steps.resolve-apply-role-arn.outputs.role-arn }}
+          role-to-assume: ${{ inputs.apply-role-arn != '' && inputs.apply-role-arn || secrets.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: terraform-fmt
