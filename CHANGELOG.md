@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.1.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.7...v1.1.0) (2026-08-04)
+
+
+### Features
+
+* **ci:** expose config-file input on reusable-codeql ([#290](https://github.com/spark-match/spark-match-01-devops/issues/290)) ([d93cc73](https://github.com/spark-match/spark-match-01-devops/commit/d93cc73e5a5882f27d84fa9f7847e3710159d638))
+
 ## [1.0.7](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.6...v1.0.7) (2026-08-04)
 
 
