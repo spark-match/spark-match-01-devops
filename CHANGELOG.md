@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.0.6](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.5...v1.0.6) (2026-08-04)
+
+
+### Documentation
+
+* enable native secret scanning, correct paid-plan claims ([#286](https://github.com/spark-match/spark-match-01-devops/issues/286)) ([4c70e54](https://github.com/spark-match/spark-match-01-devops/commit/4c70e54dab9df8029df7edcecede7f5ff902fe8f))
+
 ## [1.0.5](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.4...v1.0.5) (2026-08-04)
 
 
