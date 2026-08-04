@@ -231,6 +231,42 @@ usar siempre `--body-file` (ver §4.1).
 
 `--admin` se autoriza **solo** después de confirmar CI verde. No usar para skippear checks fallidos.
 
+### 4.5 Squash-merge REST API checklist (EMU workaround)
+
+Para evitar el pitfall documentado en §4.4 (PR title → commit subject), ejecutar este checklist **antes** de hacer el PUT:
+
+```powershell
+# 1. Validar PR title contra las reglas que commitlint-main va a aplicar
+$title = gh pr view <N> --repo <owner>/<repo> --json title -q .title
+if ($title -cmatch '[A-Z]') { Write-Error "title has uppercase (commitlint subject-case)"; exit 1 }
+if ($title.Length -gt 100) { Write-Error "title >100 chars (commitlint header-max-length)"; exit 1 }
+if ($title -match '\(#\d+\)\s*$') { Write-Error "title has trailing (#NN) (commitlint no acepta en subject)"; exit 1 }
+
+# 2. Construir payload con commit_title Y commit_message SEPARADOS
+$sha = (gh pr view <N> --repo <owner>/<repo> --json headRefOid -q .headRefOid)
+$msg = Get-Content C:\path\to\merge-msg.txt -Raw   # multi-line, cada linea <=100 chars
+$payload = @"
+{"merge_method":"squash","commit_title":"$title","commit_message":$(($msg | ConvertTo-Json -Compress)),"sha":"$sha"}
+"@
+
+# 3. PUT
+Invoke-WebRequest -Uri "https://api.github.com/repos/<owner>/<repo>/pulls/<N>/merge" `
+  -Method PUT `
+  -Headers @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json"; User-Agent = "opencode"; "X-GitHub-Api-Version" = "2022-11-28" } `
+  -Body $payload -ContentType "application/json" -UseBasicParsing
+```
+
+**Errores específicos a evitar**:
+
+| Falla | Síntoma | Fix |
+|---|---|---|
+| `commit_message` solo (sin `commit_title`) | El merge commit subject = PR title. Si PR title tiene `camelCase`, falla `commitlint-main` en push a main | Enviar `commit_title` + `commit_message` separados |
+| PR title con `(#NN)` al final | En §4.4 el subject heredado termina con `(#NN)^{1,2}` que es BODY char límite | Agregar `(#NN)` solo en `commit_title`, no en `commit_message` |
+| `commit_message` con una sola línea larga (>100 chars) | Falla `header-max-length` o `footer-max-line-length` en commitlint-main | Dividir en múltiples líneas, cada una ≤100 chars |
+| Usar `git commit -m` con strings concatenadas (`+`) | PowerShell tokeniza `"..."` con caracteres especiales de forma impredecible | Usar `Get-Content -Raw` desde un archivo |
+
+**Pre-flight obligatorio para squash-merge de PR de release-please** (PR #275, #277, #281, etc.): el PR title es `release X.Y.Z` que pasa todos los checks. No requiere edición. Pero el `commit_message` debe ser multi-line (no una línea concatenada de 200+ chars).
+
 ## 5. Convenciones de estilo
 
 ### 5.1 General
@@ -372,6 +408,28 @@ primeros consumers cross-repo.
   shellcheck scripts/*.sh .github/actions/*/action.sh
   ```
 
+### 5.7 Pre-commit hook vs CI commitlint
+
+El hook local `.githooks/commit-msg` y el CI commitlint **no son idénticos**. El hook local es un proxy aproximado; el CI es canónico. Conocer las diferencias evita dos errores opuestos: (1) usar `--no-verify` cuando NO se debe, (2) confiar en `--no-verify` cuando sí se debe.
+
+| Caso | Pre-commit local | CI commitlint | Acción |
+|---|---|---|---|
+| `feat!:` (bang después de type/scope) | **FALLA** (regex no soporta `!`) | OK | `--no-verify` (es seguro) |
+| `(#NN)` al final del subject | **FALLA** (regex no lo incluye) | OK | `--no-verify` (es seguro) |
+| `camelCase` en subject (e.g. `statusChecks`) | OK (no chequea lowercase) | **FALLA** (`subject-case`) | NO usar `--no-verify`; confiar en CI para catch + arreglar |
+| Body o footer con líneas >100 chars | OK (header-only check) | **FALLA** (`footer-max-line-length`) | NO usar `--no-verify`; confiar en CI para catch + arreglar |
+| Scope fuera de enum | **FALLA** | **FALLA** | NO usar `--no-verify`; cambiar el scope |
+| `subject-empty` | **FALLA** | OK (`scope-empty: [0]`) | `--no-verify` (es seguro) |
+| Type fuera de enum (`feat`, `fix`, etc.) | **FALLA** | **FALLA** | NO usar `--no-verify`; cambiar el type |
+
+**Regla operativa**:
+
+- Si el pre-commit rechaza por **bang `!`** o **`(#NN)`**: usar `git commit --no-verify` con confianza. El CI commitlint SÍ soporta ambos y va a pasar.
+- Si el pre-commit rechaza por **cualquier otra razón**: NO usar `--no-verify`. El pre-commit y el CI están de acuerdo; el commit es genuinamente inválido. Arreglar el commit.
+- Si el CI rechaza pero el pre-commit pasó: el CI es canónico. Confiar en el CI. Mirar el log para entender qué falló (probablemente `body-max-line-length` o `header-max-length` que el pre-commit no chequea con la misma precisión).
+
+**Workaround de un solo paso para bang y (#NN)**: usar `git commit --no-verify -F <message-file>` con un archivo de texto plano (cada línea ≤100 chars). El archivo evita la tokenización impredecible de PowerShell.
+
 ## 6. CODEOWNERS y paths
 
 Este repo **NO usa catch-all `*`** porque GitHub acumula code owners de todas las reglas que matchean. Cada path está listado explícitamente en `.github/CODEOWNERS`.
@@ -492,7 +550,11 @@ ls tests/bats/*.bats
 
 ---
 
-## 13. Post-rewrite note (2026-08-04)
+## 13. Lessons learned (2026-08-04)
+
+**Cosmético NO requiere rewrite.** El fix de `commitlint-main` required (PR #276) es la defensa real. Lo que sigue es la bitácora del rewrite de 2026-08-04 (one-off, no repetir) y las lecciones reutilizables que dejó.
+
+### 13.1 Bitácora del rewrite
 
 La rama `main` fue reescrita con `git rebase -i aa52bf7` + 5 amend manuales + force-push para limpiar 4 commits históricos con `commitlint` violatorio (3 con body >100 chars, 1 con `statusChecks` camelCase). Política AGENTS.md §10 fue ignorada por decisión explícita del org owner. Consecuencias:
 
@@ -500,10 +562,38 @@ La rama `main` fue reescrita con `git rebase -i aa52bf7` + 5 amend manuales + fo
 - **Archive branch `archive/pre-rewrite-2026-08-04`** preserva el estado pre-rewrite en origin, accesible vía `git checkout archive/pre-rewrite-2026-08-04`.
 - **Ruleset fue deshabilitado temporalmente** durante el force-push (`enforcement: disabled`), re-aplicado con `--apply` post-push. Todo el flujo quedó in-sync (1-devops + 2-infra).
 - **PR #279** (`release 2.0.0`) auto-generado por release-please al ver el force-push como "nuevos commits" — cerrado como duplicado (manifest sigue en 1.0.2, contenido sin cambios).
+- **PR #281** (`release 1.0.3`) auto-generado por release-please tras el primer push legítimo post-rewrite — mergado legitimamente con SBOM.
 - **CHANGELOG.md** todavía referencia SHAs antiguos tipo `b1bbd59`, `20d4582`, etc. — no regenerado en este ciclo. Pendiente de un PR de cleanup.
-- **Defense**: el fix de governance de PR #276 (`commitlint-main` required + bats test 3 en `reconciler-status-checks.bats`) sigue válido. No es posible que un squash merge con subject-case violatorio vuelva a fail-closed en silencio.
 
-No repetir sin aprobación explícita del org owner. El rewrite costó múltiples pasos manuales (rebase interactivo, amend por commit, force-push, re-tag, re-crear releases con SBOM, re-aplicar ruleset). El valor pragmático (cosmético en UI) no justifica el esfuerzo recurrente.
+**No repetir sin aprobación explícita del org owner.** El rewrite costó múltiples pasos manuales (rebase interactivo, amend por commit, force-push, re-tag, re-crear releases con SBOM, re-aplicar ruleset). El valor pragmático (cosmético en UI) no justifica el esfuerzo recurrente.
+
+### 13.2 Lecciones reutilizables (lo que SÍ vale la pena recordar)
+
+**1. Status check name mismatch** (causante original de las PRs #273, #274): el manifest tenía nombres que no correspondían a los que los workflows reportan. Antes de mergear un cambio al manifest, validar contra `gh api /repos/$REPO/actions/runs?per_page=10` + `/jobs`. Los 8 bats tests en `reconciler-status-checks.bats` lockean los nombres reales para que el próximo agente no pueda sobrescribirlos con placeholders.
+
+**2. REST API merge pitfall** (causante del cosmético): documentado en §4.4 + §4.5. SIEMPRE enviar `commit_title` + `commit_message` separados en `PUT /pulls/N/merge`. Si solo envías `commit_message`, GitHub usa el PR title como commit subject y hereda cualquier `camelCase`. El fix de PR #276 (`commitlint-main` required + bats test 3) hace fail-closed el sistema.
+
+**3. Pre-commit hook vs CI commitlint**: el pre-commit es un proxy aproximado. Documentado en §5.7. Si pre-commit rechaza por **bang `!`** o **`(#NN)`**: `--no-verify` es seguro. Cualquier otra razón: NO usar `--no-verify`, el commit es genuinamente inválido.
+
+**4. Release-please después de rebase**: tras un force-push, release-please ve las nuevas SHAs como "commits nuevos" y puede auto-cutear un PR de release incorrecto (PR #279 ejemplo). El diff entre el último tag y HEAD está vacío pero release-please usa `git log` que incluye todas las SHAs. Mitigación: mantener el manifest actualizado ANTES del rewrite, o cerrar el PR auto-cut inmediatamente.
+
+**5. CHANGELOG.md post-rewrite queda con SHAs muertos**: los links de CHANGELOG.md (`https://github.com/.../commit/<SHA>`) siguen apuntando a SHAs que ya no existen en historia. Trabajo de cleanup pendiente: regenerar CHANGELOG.md o aceptar los links rotos.
+
+### 13.3 Defense in depth ya implementada
+
+| Defensa | Origen | Bloquea |
+|---|---|---|
+| `commitlint-main` required | PR #276 | squash merge con subject malo en push a main |
+| 8 bats tests en `reconciler-status-checks.bats` | PR #274 | regresión de governance (manifest con placeholder names) |
+| §4.4 doc del REST API pitfall | PR #278 | próximo agente sabe el pitfall |
+| §4.5 checklist pre-merge | PR #282 | script de validación antes del PUT |
+| §5.7 tabla pre-commit vs CI | PR #282 | tentación de `--no-verify` mal usada |
+| §13 este archivo | PR #282 | ciclar a través de los mismos errores |
+
+**Defense adicional recomendada** (no implementada, baja prioridad):
+
+- Pre-commit hook local podría validar `commit_title` antes de push de un PR (no solo el commit msg local).
+- `release-please.yml` podría tener `release-type: simple` para evitar bumps incorrectos en force-push scenarios.
 
 ---
 
