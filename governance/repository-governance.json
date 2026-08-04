@@ -32,9 +32,9 @@
       "reviewerTeam": "devops",
       "filePatterns": ["**"],
       "statusChecks": [
-        "actionlint / actionlint (env=ci)",
-        "gitleaks / gitleaks (env=ci)",
-        "yamllint / yamllint (env=ci)"
+        "actionlint / actionlint-ci",
+        "gitleaks / gitleaks-ci",
+        "yamllint / yamllint-ci"
       ]
     },
     "spark-match-07-article": {
