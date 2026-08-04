@@ -20,6 +20,18 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.0.2](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.1...v1.0.2) (2026-08-04)
+
+
+### Bug Fixes
+
+* **governance:** require commitlint-main check to gate squash merges ([#276](https://github.com/spark-match/spark-match-01-devops/issues/276)) ([0955132](https://github.com/spark-match/spark-match-01-devops/commit/09551327a246653bdc5fcc357b65fb2fd5ade926))
+
+
+### Documentation
+
+* document commitlint-main requirement and rest-api merge pitfall ([#278](https://github.com/spark-match/spark-match-01-devops/issues/278)) ([0624417](https://github.com/spark-match/spark-match-01-devops/commit/0624417b5a6d0b34c8855018c0d7fd9b1930096b))
+
 ## [1.0.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.0.0...v1.0.1) (2026-08-04)
 
 
