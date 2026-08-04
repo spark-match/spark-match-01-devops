@@ -20,6 +20,18 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.2.3](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.2...v1.2.3) (2026-08-04)
+
+
+### Bug Fixes
+
+* **workflows:** declare aws_apply_role_arn in reusable-apply workflow_call secrets ([#301](https://github.com/spark-match/spark-match-01-devops/issues/301)) ([990a242](https://github.com/spark-match/spark-match-01-devops/commit/990a242f26f44d03d7a968e9d40aa278d9ad3da5))
+
+
+### Documentation
+
+* align agents section 5.2 with versioning governance pin ([#304](https://github.com/spark-match/spark-match-01-devops/issues/304)) ([addacf8](https://github.com/spark-match/spark-match-01-devops/commit/addacf8e83b75b729a5e82ee972589619106ed63))
+
 ## [1.2.2](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.1...v1.2.2) (2026-08-04)
 
 
