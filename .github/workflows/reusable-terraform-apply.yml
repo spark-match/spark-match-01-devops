@@ -16,7 +16,7 @@
 #         environment: prod
 #         working-directory: live/prod
 #         gh-environment: production
-#         apply-role-arn: <role-arn>   # optional (cross-owner)
+#         apply-role-arn: arn:aws:iam::123456789012:role/ExampleRole   # optional (cross-owner)
 #       secrets:
 #         AWS_APPLY_ROLE_ARN: ${{ secrets.AWS_APPLY_ROLE_ARN_PROD }}   # default path (single-owner)
 # Required GitHub Secret in caller repo: AWS_APPLY_ROLE_ARN (per env, value = role ARN)
