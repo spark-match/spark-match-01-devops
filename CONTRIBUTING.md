@@ -56,7 +56,7 @@ See [`README.md`](README.md) § Architecture for the full picture and [`docs/VER
 | `jq` | 1.6+ | manifest validation, fixture generation |
 | `bats` | 1.11.1 | bats tests under `tests/bats/` |
 | `pytest` | 9.1.1 | (reserved) bats tests are the only Python-runnable suite today |
-| `python` | 3.12 | (reserved) no Python scripts in `scripts/` at the moment |
+| `python` | 3.14 | Required only for running `reusable-python-ci.yml` against a sample caller; not needed to develop this repo |
 | `uv` | latest | (optional) caller recipes; not needed to develop this repo |
 
 ### One-time install
