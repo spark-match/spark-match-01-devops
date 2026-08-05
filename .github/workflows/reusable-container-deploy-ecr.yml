@@ -98,6 +98,10 @@ on:
 permissions:
   id-token: write
   contents: read
+  # Requerido por el step `notify-deploy-failure` (sticky PR comment). Sin
+  # esto la unica senal de un push fallido moria con un 403 y el job
+  # terminaba en rojo por el comentario, no por el deploy.
+  pull-requests: write
 
 jobs:
   deploy:
@@ -263,7 +267,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: notify-deploy-failure
-        if: failure()
+        # Solo tiene sentido en contexto de PR: en un push a dev/main no hay
+        # PR donde dejar el comentario y la action fallaria por eso, no por
+        # el deploy.
+        if: ${{ failure() && github.event_name == 'pull_request' }}
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: container-deploy-ecr-failed-${{ inputs.environment-name }}
