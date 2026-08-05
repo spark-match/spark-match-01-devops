@@ -358,7 +358,15 @@ jobs:
             echo "apply-success=true" >> "$GITHUB_OUTPUT"
           else
             echo "apply-success=false" >> "$GITHUB_OUTPUT"
+            echo "::error::terraform apply fallo con exit code ${EXIT_CODE}. Los errores concretos (AccessDenied, recursos que ya existen, conflictos de dependencias) estan mas arriba en este log. El state puede haber quedado parcialmente aplicado."
           fi
+          # El exit code TIENE que propagarse. Escribirlo solo en el output dejaba
+          # el step (y el job entero) en verde aunque terraform hubiera fallado:
+          # `notify-on-apply-failure` usa `failure()`, que nunca podia ser true, y
+          # el unico rastro del fallo quedaba enterrado en el log. Un apply roto se
+          # veia exactamente igual que uno exitoso. Mismo razonamiento que el case
+          # del step `terraform-plan` de mas arriba.
+          exit "${EXIT_CODE}"
 
       - name: apply-result-summary
         if: always()
@@ -396,7 +404,10 @@ jobs:
           STEPS_PLAN_OUTPUTS_HAS_CHANGES: ${{ steps.plan.outputs.has-changes }}
           STEPS_APPLY_OUTPUTS_APPLY_SUCCESS: ${{ steps.apply.outputs.apply-success }}
       - name: notify-on-apply-failure
-        if: failure() && steps.apply.outputs.apply-success != 'true' && inputs.drift-only != 'true'
+        # `apply-success == 'false'` (no `!= 'true'`): cuando el step `apply` se
+        # salta por no haber cambios, el output queda vacio y `!= 'true'` daba
+        # true. Con `== 'false'` solo entra si el apply corrio y fallo de verdad.
+        if: failure() && steps.apply.outputs.apply-success == 'false' && inputs.drift-only != 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-apply-failed-${{ steps.env.outputs.environment }}

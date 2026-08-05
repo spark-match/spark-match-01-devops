@@ -527,7 +527,13 @@ jobs:
             echo "destroy-success=true" >> "$GITHUB_OUTPUT"
           else
             echo "destroy-success=false" >> "$GITHUB_OUTPUT"
+            echo "::error::terraform destroy fallo con exit code ${EXIT_CODE}. Los errores concretos estan mas arriba en este log. Pueden quedar recursos sin destruir, facturando."
           fi
+          # Mismo bug que tenia el step de apply: escribir el exit code solo en el
+          # output dejaba el job en verde con un destroy fallido. En un destroy eso
+          # es peor todavia, porque los recursos que no se borraron siguen
+          # facturando y nadie se entera.
+          exit "${EXIT_CODE}"
 
       - name: apply-result-summary
         if: always()
@@ -562,7 +568,10 @@ jobs:
           STEPS_APPLY_OUTPUTS_DESTROY_SUCCESS: ${{ steps.apply.outputs.destroy-success }}
           STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
       - name: notify-on-destroy-failure
-        if: failure() && steps.apply.outputs.destroy-success != 'true' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
+        # `destroy-success == 'false'` (no `!= 'true'`): si el step `apply` se salta,
+        # el output queda vacio y `!= 'true'` daba true. Con `== 'false'` solo entra
+        # si el destroy corrio y fallo de verdad.
+        if: failure() && steps.apply.outputs.destroy-success == 'false' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-destroy-failed-${{ steps.env.outputs.environment }}
