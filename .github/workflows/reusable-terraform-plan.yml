@@ -366,17 +366,23 @@ jobs:
           EXIT_CODE=$?
           set -e
           echo "plan-exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
-          # Terraform exit codes:
-          #   0 = plan succeeded with no changes
+          # Exit codes de terraform plan con -detailed-exitcode:
+          #   0 = ok, sin cambios
           #   1 = error
-          #   2 = plan succeeded with changes
-          if [ "${EXIT_CODE}" = "2" ]; then
-            echo "has-changes=true" >> "$GITHUB_OUTPUT"
-          elif [ "${EXIT_CODE}" = "0" ]; then
-            echo "has-changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-changes=false" >> "$GITHUB_OUTPUT"
-          fi
+          #   2 = ok, con cambios
+          # El caso 1 TIENE que romper el job. Colapsarlo en has-changes=false hacia
+          # que un plan fallido fuera indistinguible de "no hay nada que hacer":
+          # el paso siguiente se saltaba y el job quedaba en verde. Eso mantuvo
+          # el apply de dev como no-op silencioso durante mucho tiempo, con
+          # errores de AccessDenied en el refresh que nadie veia.
+          case "${EXIT_CODE}" in
+            0) echo "has-changes=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "has-changes=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::terraform plan fallo con exit code ${EXIT_CODE}. Los errores concretos (AccessDenied en el refresh, recursos borrados fuera de Terraform, backend inaccesible) estan mas arriba en este log."
+              exit "${EXIT_CODE}"
+              ;;
+          esac
 
         env:
           INPUTS_TFVARS_FILE: ${{ inputs.tfvars-file }}
