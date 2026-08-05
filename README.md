@@ -103,6 +103,8 @@ spark-match-01-devops/
 │       │                                   optional GH Environment approval + post-destroy
 │       │                                   cleanup job (CLEANUP-<ENV>)
 │       ├── reusable-container-deploy-ecr.yml docker buildx + ECR push via OIDC (linux/arm64 by default)
+│       ├── reusable-ecs-deploy.yml         register task definition revision + roll the ECS
+│       │                                   service onto an image already in ECR
 │       │
 │       │ ─── catalog: article (latex, kept for 07-article's toolchain) ────
 │       ├── reusable-latex-build.yml         compile latex -> PDF artifact
@@ -736,6 +738,60 @@ Inputs (highlights):
 Required secrets: `AWS_DEPLOY_ROLE_ARN` (passed explicitly; cross-owner
 inheritance blocked by GitHub).
 
+#### `reusable-ecs-deploy.yml`
+
+Roll an ECS service onto an image that is **already** in ECR: registers a
+new task definition revision pointing at the image and updates the
+service. Pairs with `reusable-container-deploy-ecr.yml` — that recipe
+builds and pushes, this one puts the result in front of traffic. Neither
+creates infrastructure; the cluster, service, task definition family and
+ALB come from `spark-match-02-infrastructure` (`modules/agent-service`).
+
+The recipe reads the task definition the service is running **right now**
+instead of a file in the caller repo. That is deliberate:
+`modules/agent-service` declares `lifecycle { ignore_changes =
+[task_definition] }` on the service precisely so this pipeline owns the
+active revision, and rendering on top of the live one preserves every
+field Terraform set (execution role, ARM64 runtime platform, env vars,
+log configuration) while changing only the image. The read-only fields
+that `DescribeTaskDefinition` returns and `RegisterTaskDefinition`
+rejects are stripped with `jq` before rendering.
+
+`wait-for-service-stability` defaults to `true` so a deploy whose tasks
+crash-loop fails the job instead of reporting green.
+
+The OIDC role needs `ecs:DescribeServices`, `ecs:DescribeTaskDefinition`,
+`ecs:RegisterTaskDefinition`, `ecs:UpdateService`, `ecs:DescribeTasks`,
+`ecs:ListTasks`, `ecs:TagResource`, `iam:PassRole` (execution + task
+role) and `sts:GetCallerIdentity`.
+
+Inputs (highlights):
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string (required) | — | GH Environment gate + job-name suffix. |
+| `cluster-name` | string (required) | — | Terraform output `agent_cluster_name`. |
+| `service-name` | string (required) | — | Terraform output `agent_service_name`. |
+| `container-name` | string (required) | — | Terraform output `agent_container_name`. |
+| `image-uri` | string (required) | — | Full URI incl. tag or digest; normally the output of a preceding ECR push job. |
+| `aws-region` | string | `us-east-1` | |
+| `task-definition-family` | string | `''` | Empty resolves the live revision (what you want for a rolling deploy). |
+| `wait-for-service-stability` | bool | `true` | |
+| `wait-for-minutes` | number | `10` | |
+| `force-new-deployment` | bool | `false` | Restart the service without changing the image. |
+| `deploy-role-arn` | string | `''` | Preferred over secret. |
+| `deploy-role-arn-secret` | string | `AWS_DEPLOY_ROLE_ARN` | Fallback secret name. |
+
+Outputs: `task-definition-arn` (the revision that was registered and
+deployed) and `service-url` (ECS console link).
+
+Required secrets: `AWS_DEPLOY_ROLE_ARN` (passed explicitly; cross-owner
+inheritance blocked by GitHub).
+
+Caller permissions: `id-token: write` and `contents: read` are mandatory;
+`pull-requests: write` only matters if the caller runs this on a
+`pull_request` event and wants the failure comment.
+
 #### `reusable-migrations-dry-run.yml`
 
 Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `spark-match-03-backend` for every PR (Sprint 2 — see ADR-016).
@@ -768,7 +824,7 @@ These workflows are **not** part of the consumer-facing catalog; they only run o
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
 
-The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`, `reusable-sonar-python.yml`), which target the sonar-cloud org's Terraform/TypeScript/Python projects; to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR; and to `reusable-container-deploy-ecr.yml`, which targets ECR push workflows for ARM64 Bedrock AgentCore consumers (currently `spark-match-08-deep-agent`).
+The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`, `reusable-sonar-python.yml`), which target the sonar-cloud org's Terraform/TypeScript/Python projects; to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR; and to `reusable-container-deploy-ecr.yml` + `reusable-ecs-deploy.yml`, which together cover the build/push and the rollout half of the ARM64 container deploy path (currently `spark-match-08-deep-agent`).
 
 ## Versioning
 
