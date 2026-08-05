@@ -168,21 +168,25 @@ jobs:
           set -euo pipefail
           SRC="${INPUTS_WORKING_DIRECTORY}/${SOURCE_DIR}/"
           DEST="s3://${INPUTS_BUCKET_NAME}/"
+          # Sin `--content-type`: la CLI adivina el MIME por extension
+          # (mimetypes.guess_type). NO existe un valor "auto" -- pasarlo
+          # escribe la cadena literal en la metadata del objeto, y entonces
+          # CloudFront sirve todo con `Content-Type: auto`, que no es un MIME
+          # valido: el navegador no renderiza el HTML y rechaza los modulos
+          # JS por MIME check estricto.
           echo "Sync pass 1: hashed assets, --delete, long cache"
           aws s3 sync "${SRC}" "${DEST}" \
             --delete \
             --cache-control "${INPUTS_CACHE_CONTROL_HASHED}" \
             --exclude "*" \
             --include "${HASHED_JS_PATTERN}" \
-            --include "${HASHED_CSS_PATTERN}" \
-            --content-type "auto"
+            --include "${HASHED_CSS_PATTERN}"
           echo "Sync pass 2: HTML + others, short cache, no delete, exclude maps"
           aws s3 sync "${SRC}" "${DEST}" \
             --cache-control "${INPUTS_CACHE_CONTROL_HTML}" \
             --exclude "${HASHED_JS_PATTERN}" \
             --exclude "${HASHED_CSS_PATTERN}" \
-            --exclude "*.map" \
-            --content-type "auto"
+            --exclude "*.map"
       - name: create-invalidation
         if: inputs.dry-run != 'true'
         env:
