@@ -144,14 +144,19 @@ jobs:
         env:
           INPUTS_SOURCE_DIR: ${{ inputs.source-dir }}
         run: |
-          HASHED_PATTERN='*-[a-zA-Z0-9_-]*.[jc]ss'
+          # Dos patrones: [jc]ss solo casaba ".jss"/".css", dejando los
+          # chunks .js con hash fuera de la pasada immutable (recibian
+          # el cache-control de HTML: no-cache en cada visita).
+          HASHED_JS_PATTERN='*-[a-zA-Z0-9_-]*.js'
+          HASHED_CSS_PATTERN='*-[a-zA-Z0-9_-]*.css'
           HTML_PATTERN='*.html'
           {
-            echo "HASHED_PATTERN=${HASHED_PATTERN}"
+            echo "HASHED_JS_PATTERN=${HASHED_JS_PATTERN}"
+            echo "HASHED_CSS_PATTERN=${HASHED_CSS_PATTERN}"
             echo "HTML_PATTERN=${HTML_PATTERN}"
             echo "SOURCE_DIR=${INPUTS_SOURCE_DIR}"
           } >> "$GITHUB_ENV"
-          echo "Resolved cache-control flags: HASHED=${HASHED_PATTERN} HTML=${HTML_PATTERN} SRC=${INPUTS_SOURCE_DIR}"
+          echo "Resolved cache-control flags: HASHED_JS=${HASHED_JS_PATTERN} HASHED_CSS=${HASHED_CSS_PATTERN} HTML=${HTML_PATTERN} SRC=${INPUTS_SOURCE_DIR}"
       - name: sync-to-s3
         if: inputs.dry-run != 'true'
         env:
@@ -168,12 +173,14 @@ jobs:
             --delete \
             --cache-control "${INPUTS_CACHE_CONTROL_HASHED}" \
             --exclude "*" \
-            --include "${HASHED_PATTERN}" \
+            --include "${HASHED_JS_PATTERN}" \
+            --include "${HASHED_CSS_PATTERN}" \
             --content-type "auto"
           echo "Sync pass 2: HTML + others, short cache, no delete, exclude maps"
           aws s3 sync "${SRC}" "${DEST}" \
             --cache-control "${INPUTS_CACHE_CONTROL_HTML}" \
-            --exclude "${HASHED_PATTERN}" \
+            --exclude "${HASHED_JS_PATTERN}" \
+            --exclude "${HASHED_CSS_PATTERN}" \
             --exclude "*.map" \
             --content-type "auto"
       - name: create-invalidation
