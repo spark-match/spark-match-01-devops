@@ -1,0 +1,278 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# Reusable Workflow: ECS Deploy (rolling update on Fargate via OIDC)
+# =============================================================================
+# Atomic recipe (deploy layer). Takes an image URI that is ALREADY in ECR,
+# registers a new task definition revision pointing at it, and rolls the ECS
+# service onto that revision.
+#
+# Pairs with `reusable-container-deploy-ecr.yml`: that recipe builds and
+# pushes the image, this one puts it in front of traffic. Neither creates
+# infrastructure -- the cluster, service, task definition family and ALB are
+# provisioned by Terraform in spark-match-02-infrastructure
+# (`modules/agent-service`).
+#
+# Why the recipe reads the CURRENT task definition instead of a file in the
+# caller repo: `modules/agent-service` declares
+# `lifecycle { ignore_changes = [task_definition] }` on the service precisely
+# so this pipeline owns the active revision. Rendering on top of whatever the
+# service is running today keeps every field Terraform set (execution role,
+# ARM64 runtime platform, env vars, log config) and changes only the image.
+#
+# The OIDC role needs: ecs:DescribeServices, ecs:DescribeTaskDefinition,
+# ecs:RegisterTaskDefinition, ecs:UpdateService, ecs:DescribeTasks,
+# ecs:ListTasks, ecs:TagResource, iam:PassRole (execution + task role) and
+# sts:GetCallerIdentity. Those statements live in
+# `modules/oidc-github/policies/{env}/spark-match-bedrock-agentcore-deploy.json`.
+#
+# Caller permissions: `id-token: write` and `contents: read` are mandatory.
+# `pull-requests: write` is only needed if the caller runs this on a
+# pull_request event and wants the failure comment -- the notify step is
+# skipped outside PR context.
+#
+# Pin: callers cross-repo usan `@main` per docs/VERSIONING.md.
+# =============================================================================
+
+name: reusable-ecs-deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        description: 'Target GH Environment identifier (dev, production, etc). Used as the GH Environment gate and in the job name.'
+        type: string
+        required: true
+      cluster-name:
+        description: 'ECS cluster name (Terraform output `agent_cluster_name`, e.g. spark-match-prod).'
+        type: string
+        required: true
+      service-name:
+        description: 'ECS service name (Terraform output `agent_service_name`, e.g. spark-match-agent-prod).'
+        type: string
+        required: true
+      container-name:
+        description: 'Container name inside the task definition to swap the image on (Terraform output `agent_container_name`, e.g. agent).'
+        type: string
+        required: true
+      image-uri:
+        description: 'Full image URI to deploy, including tag or digest (e.g. <account-id>.dkr.ecr.us-east-1.amazonaws.com/spark-match-agent-advisor-prod:abc1234). Normally the output of a preceding reusable-container-deploy-ecr job.'
+        type: string
+        required: true
+      aws-region:
+        description: 'AWS region of the ECS cluster.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      task-definition-family:
+        description: 'Task definition family to render on top of. Empty (default) resolves the revision the service is running right now, which is what you want for a rolling deploy. Set it only to pin a specific family.'
+        type: string
+        required: false
+        default: ''
+      wait-for-service-stability:
+        description: 'Block until ECS reports the service stable (all tasks healthy behind the load balancer). true by default so a red deploy fails the job instead of passing silently.'
+        type: boolean
+        required: false
+        default: true
+      wait-for-minutes:
+        description: 'How long to wait for stability before failing. 10 minutes covers a Fargate rolling deploy with a 60s health check grace period.'
+        type: number
+        required: false
+        default: 10
+      force-new-deployment:
+        description: 'Pass `--force-new-deployment` semantics so ECS replaces tasks even when the rendered task definition is byte-identical. Useful to restart the service without changing the image.'
+        type: boolean
+        required: false
+        default: false
+      deploy-role-arn:
+        description: 'OIDC role ARN passed directly as a string input. Preferred over `deploy-role-arn-secret` to avoid GitHub secret masking for cross-owner calls. Identifiers are not credentials.'
+        type: string
+        required: false
+        default: ''
+      deploy-role-arn-secret:
+        description: 'Name of the GitHub Secret holding the OIDC role ARN for deploy (e.g. AWS_DEPLOY_ROLE_ARN_DEV). Used as fallback when `deploy-role-arn` is empty.'
+        type: string
+        required: false
+        default: 'AWS_DEPLOY_ROLE_ARN'
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        description: 'OIDC role ARN for the deploy job. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls). Optional when caller passes `deploy-role-arn` string input instead.'
+        required: false
+    outputs:
+      task-definition-arn:
+        description: 'ARN of the task definition revision that was registered and deployed.'
+        value: ${{ jobs.deploy.outputs.task-definition-arn }}
+      service-url:
+        description: 'Console URL of the ECS service, for quick navigation from the caller summary.'
+        value: ${{ jobs.deploy.outputs.service-url }}
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    name: "ecs-deploy-${{ inputs.environment-name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment-name }}
+    outputs:
+      task-definition-arn: ${{ steps.deploy.outputs.task-definition-arn }}
+      service-url: ${{ steps.resolve.outputs.service-url }}
+    steps:
+      - name: validate-inputs
+        uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
+        with:
+          values: |
+            {
+              "environment-name": "${{ inputs.environment-name }}",
+              "cluster-name": "${{ inputs.cluster-name }}",
+              "service-name": "${{ inputs.service-name }}",
+              "container-name": "${{ inputs.container-name }}",
+              "image-uri": "${{ inputs.image-uri }}",
+              "aws-region": "${{ inputs.aws-region }}"
+            }
+          required: environment-name|cluster-name|service-name|container-name|image-uri|aws-region
+          patterns: |
+            {
+              "cluster-name": "^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$",
+              "service-name": "^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$",
+              "container-name": "^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$",
+              "image-uri": "^[A-Za-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$",
+              "aws-region": "^[a-z]{2}(-gov)?-[a-z]+-[0-9]$"
+            }
+
+      - name: configure-aws-credentials-oidc-deploy-role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ inputs.deploy-role-arn != '' && inputs.deploy-role-arn || secrets[inputs.deploy-role-arn-secret] }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: verify-sts-identity
+        env:
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query 'Account' --output text)"
+          echo "Authenticated as AWS account: ${ACCOUNT} (region: ${INPUTS_AWS_REGION})"
+
+      - name: resolve-current-task-definition
+        id: resolve
+        env:
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_CLUSTER_NAME: ${{ inputs.cluster-name }}
+          INPUTS_SERVICE_NAME: ${{ inputs.service-name }}
+          INPUTS_TASK_DEFINITION_FAMILY: ${{ inputs.task-definition-family }}
+        run: |
+          set -euo pipefail
+
+          # Empty family (the default) means "whatever the service runs right
+          # now". That is the correct base for a rolling deploy: it preserves
+          # every field Terraform set on the revision instead of resurrecting
+          # a stale one.
+          TARGET="${INPUTS_TASK_DEFINITION_FAMILY}"
+          if [ -z "${TARGET}" ]; then
+            TARGET="$(aws ecs describe-services \
+              --cluster "${INPUTS_CLUSTER_NAME}" \
+              --services "${INPUTS_SERVICE_NAME}" \
+              --query 'services[0].taskDefinition' \
+              --output text)"
+            if [ -z "${TARGET}" ] || [ "${TARGET}" = "None" ]; then
+              echo "::error::service '${INPUTS_SERVICE_NAME}' not found in cluster '${INPUTS_CLUSTER_NAME}', or it has no task definition. Has terraform applied modules/agent-service yet?"
+              exit 1
+            fi
+          fi
+          echo "Base task definition: ${TARGET}"
+
+          # RegisterTaskDefinition rejects the read-only fields that
+          # DescribeTaskDefinition returns, so they are stripped here rather
+          # than relying on the render/deploy actions to do it.
+          aws ecs describe-task-definition \
+            --task-definition "${TARGET}" \
+            --query 'taskDefinition' \
+            --output json \
+            | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
+            > task-definition.json
+
+          FAMILY="$(jq -r '.family' task-definition.json)"
+          echo "family=${FAMILY}" >> "${GITHUB_OUTPUT}"
+          echo "service-url=https://${INPUTS_AWS_REGION}.console.aws.amazon.com/ecs/v2/clusters/${INPUTS_CLUSTER_NAME}/services/${INPUTS_SERVICE_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: render-task-definition-with-new-image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ inputs.container-name }}
+          image: ${{ inputs.image-uri }}
+
+      - name: deploy-task-definition
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ inputs.cluster-name }}
+          service: ${{ inputs.service-name }}
+          force-new-deployment: ${{ inputs.force-new-deployment }}
+          wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
+          wait-for-minutes: ${{ inputs.wait-for-minutes }}
+
+      - name: summary
+        if: always()
+        env:
+          INPUTS_ENVIRONMENT_NAME: ${{ inputs.environment-name }}
+          INPUTS_AWS_REGION: ${{ inputs.aws-region }}
+          INPUTS_CLUSTER_NAME: ${{ inputs.cluster-name }}
+          INPUTS_SERVICE_NAME: ${{ inputs.service-name }}
+          INPUTS_CONTAINER_NAME: ${{ inputs.container-name }}
+          INPUTS_IMAGE_URI: ${{ inputs.image-uri }}
+          INPUTS_WAIT_FOR_STABILITY: ${{ inputs.wait-for-service-stability }}
+          INPUTS_WAIT_FOR_MINUTES: ${{ inputs.wait-for-minutes }}
+          INPUTS_FORCE_NEW_DEPLOYMENT: ${{ inputs.force-new-deployment }}
+          STEPS_RESOLVE_OUTPUTS_FAMILY: ${{ steps.resolve.outputs.family }}
+          STEPS_RESOLVE_OUTPUTS_SERVICE_URL: ${{ steps.resolve.outputs.service-url }}
+          STEPS_DEPLOY_OUTPUTS_TASK_DEFINITION_ARN: ${{ steps.deploy.outputs.task-definition-arn }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          {
+            echo "## ECS Deploy - \`${INPUTS_ENVIRONMENT_NAME}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|:---|:---|"
+            echo "| Environment | \`${INPUTS_ENVIRONMENT_NAME}\` |"
+            echo "| AWS region | \`${INPUTS_AWS_REGION}\` |"
+            echo "| Cluster | \`${INPUTS_CLUSTER_NAME}\` |"
+            echo "| Service | \`${INPUTS_SERVICE_NAME}\` |"
+            echo "| Container | \`${INPUTS_CONTAINER_NAME}\` |"
+            echo "| Image | \`${INPUTS_IMAGE_URI}\` |"
+            echo "| Task definition family | \`${STEPS_RESOLVE_OUTPUTS_FAMILY}\` |"
+            echo "| Registered revision | \`${STEPS_DEPLOY_OUTPUTS_TASK_DEFINITION_ARN}\` |"
+            echo "| Waited for stability | \`${INPUTS_WAIT_FOR_STABILITY}\` (${INPUTS_WAIT_FOR_MINUTES} min) |"
+            echo "| Forced new deployment | \`${INPUTS_FORCE_NEW_DEPLOYMENT}\` |"
+            echo ""
+            echo "Service console: ${STEPS_RESOLVE_OUTPUTS_SERVICE_URL}"
+            echo ""
+            echo "Commit: \`${GITHUB_SHA}\`"
+            echo "Triggered by: @${GITHUB_ACTOR}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: notify-deploy-failure
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: ecs-deploy-failed-${{ inputs.environment-name }}
+          message: |
+            ## ECS Deploy Failed - `${{ inputs.environment-name }}`
+
+            Cluster: `${{ inputs.cluster-name }}`
+            Service: `${{ inputs.service-name }}`
+            Image attempted: `${{ inputs.image-uri }}`
+            Commit: `${{ github.sha }}`
+            Author: @${{ github.actor }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            The service has a deployment circuit breaker with rollback enabled, so
+            ECS should have reverted to the previous revision on its own. Check the
+            service events and the task logs before retrying.
