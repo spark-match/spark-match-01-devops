@@ -14,6 +14,19 @@
 # The recipe assumes the caller has already created the ECR repository via
 # Terraform. It does NOT create the repository itself.
 #
+# Pushing is only half of a deploy: the image sits in ECR until something puts
+# it in front of traffic. That something is `reusable-ecs-deploy.yml`, which
+# needs to be told WHICH image. Hence the `image-uri` output -- pinned by
+# digest so the deploy job lands on the exact image this run built:
+#
+#   push:
+#     uses: .../reusable-container-deploy-ecr.yml@main
+#   roll:
+#     needs: push
+#     uses: .../reusable-ecs-deploy.yml@main
+#     with:
+#       image-uri: ${{ needs.push.outputs.image-uri }}
+#
 # Pin: callers cross-repo usan `@main` per docs/VERSIONING.md.
 # =============================================================================
 
@@ -94,6 +107,19 @@ on:
       AWS_DEPLOY_ROLE_ARN:
         description: 'OIDC role ARN for the deploy job. Caller passes this explicitly (cross-owner inheritance is blocked by GitHub for cross-owner calls). Optional when caller passes `deploy-role-arn` string input instead.'
         required: false
+    outputs:
+      image-uri:
+        description: 'Image URI pinned by digest (`<registry>/<repo>@sha256:...`). This is what you feed to `reusable-ecs-deploy.yml`: a digest is immutable, so the revision ECS registers is the exact image this run built, not whatever `latest` points at by the time the deploy step runs.'
+        value: ${{ jobs.deploy.outputs.image-uri }}
+      image-digest:
+        description: 'Bare `sha256:...` digest of the pushed image (manifest index when the build is multi-platform).'
+        value: ${{ jobs.deploy.outputs.image-digest }}
+      image-tags:
+        description: 'Comma-separated list of every fully-qualified tag pushed, as resolved from `image-tags-input`.'
+        value: ${{ jobs.deploy.outputs.image-tags }}
+      registry:
+        description: 'ECR registry host (`<account-id>.dkr.ecr.<region>.amazonaws.com`), resolved from the OIDC identity.'
+        value: ${{ jobs.deploy.outputs.registry }}
 
 permissions:
   id-token: write
@@ -109,6 +135,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: ${{ inputs.environment-name }}
+    outputs:
+      image-uri: ${{ steps.image.outputs.image-uri }}
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.tags.outputs.tags }}
+      registry: ${{ steps.registry.outputs.registry }}
     steps:
       - name: validate-inputs
         uses: spark-match/spark-match-01-devops/.github/actions/validate-workflow-inputs@main
@@ -195,6 +226,7 @@ jobs:
           echo "Will push tags: ${TAGS}"
 
       - name: build-and-push-image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ${{ inputs.context-path }}
@@ -206,6 +238,34 @@ jobs:
           cache-to: type=gha,scope=${{ inputs.cache-scope }},mode=max
           provenance: ${{ inputs.provenance }}
           sbom: ${{ inputs.sbom }}
+
+      - name: resolve-image-uri
+        id: image
+        env:
+          INPUTS_ECR_REPOSITORY: ${{ inputs.ecr-repository }}
+          STEPS_REGISTRY_OUTPUTS_REGISTRY: ${{ steps.registry.outputs.registry }}
+          STEPS_BUILD_OUTPUTS_DIGEST: ${{ steps.build.outputs.digest }}
+          STEPS_TAGS_OUTPUTS_TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+
+          # Deploy layers downstream (reusable-ecs-deploy.yml) need a single
+          # unambiguous reference to what this run just pushed. A tag is not
+          # that: `latest` is mutable, so a deploy that resolves it later can
+          # land on a different image than the one built here. The digest is.
+          DIGEST="${STEPS_BUILD_OUTPUTS_DIGEST}"
+          if [ -n "${DIGEST}" ]; then
+            IMAGE_URI="${STEPS_REGISTRY_OUTPUTS_REGISTRY}/${INPUTS_ECR_REPOSITORY}@${DIGEST}"
+          else
+            # The image is already in ECR at this point -- failing here would
+            # reject a push that actually succeeded. Fall back to the first tag
+            # and make the loss of immutability loud instead.
+            IMAGE_URI="${STEPS_TAGS_OUTPUTS_TAGS%%,*}"
+            echo "::warning::docker/build-push-action returned no digest; falling back to the mutable tag ${IMAGE_URI}. Any downstream deploy resolves that tag at ITS run time, not this one."
+          fi
+
+          echo "image-uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "Image URI: ${IMAGE_URI}"
 
       - name: install-cosign
         if: ${{ inputs.cosign-sign }}
@@ -244,6 +304,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
           STEPS_TAGS_OUTPUTS_TAGS: ${{ steps.tags.outputs.tags }}
+          STEPS_IMAGE_OUTPUTS_IMAGE_URI: ${{ steps.image.outputs.image-uri }}
         run: |
           {
             echo "## Container Deploy (ECR) - \`${INPUTS_ENVIRONMENT_NAME}\`"
@@ -257,6 +318,7 @@ jobs:
             echo "| Build context | \`${INPUTS_CONTEXT_PATH}\` |"
             echo "| Platforms | \`${INPUTS_PLATFORMS}\` |"
             echo "| Image tags | \`${STEPS_TAGS_OUTPUTS_TAGS}\` |"
+            echo "| Image URI (digest) | \`${STEPS_IMAGE_OUTPUTS_IMAGE_URI}\` |"
             echo "| Cache scope | \`${INPUTS_CACHE_SCOPE}\` |"
             echo "| Provenance (SLSA) | \`${INPUTS_PROVENANCE}\` |"
             echo "| SBOM (SPDX) | \`${INPUTS_SBOM}\` |"
