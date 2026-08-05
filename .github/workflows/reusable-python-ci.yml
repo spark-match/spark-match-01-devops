@@ -55,12 +55,12 @@ on:
         required: false
         default: 'ubuntu-latest'
       ruff-targets:
-        description: 'CSV of paths passed to `ruff format/check/fix`.'
+        description: 'Paths passed to `ruff format/check/fix`, separated by spaces or commas.'
         type: string
         required: false
         default: 'src tests'
       mypy-targets:
-        description: 'CSV of paths passed to `mypy`.'
+        description: 'Paths passed to `mypy`, separated by spaces or commas.'
         type: string
         required: false
         default: 'src'
@@ -248,12 +248,22 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: uv lock --check
 
+      # Los *-targets admiten varias rutas. Como los inputs no pueden
+      # interpolarse dentro de un run:, llegan por variable de entorno, y
+      # entrecomillarlas las pasaba como UN solo argumento: ruff recibia una
+      # ruta literal "src tests evals" y moria con "No such file or directory".
+      # Estaba roto incluso con el default del propio input ('src tests');
+      # nadie lo habia notado porque ningun caller habia migrado todavia.
+      # Se divide con IFS=', ' para aceptar tanto comas como espacios: la
+      # descripcion del input decia CSV y el default usaba espacios.
       - name: lint-ruff-format
         if: ${{ contains(inputs.commands, 'lint:ruff-format') }}
         working-directory: ${{ inputs.working-directory }}
         env:
           INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
-        run: uv run ruff format --check "${INPUTS_RUFF_TARGETS}"
+        run: |
+          IFS=', ' read -ra TARGETS <<< "${INPUTS_RUFF_TARGETS}"
+          uv run ruff format --check "${TARGETS[@]}"
 
       - name: lint-ruff-format-fix
         if: ${{ contains(inputs.commands, 'lint:ruff-format-fix') }}
@@ -262,7 +272,8 @@ jobs:
           INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
         run: |
           echo "::notice::Running 'ruff format' (mutates files; does not commit)"
-          uv run ruff format "${INPUTS_RUFF_TARGETS}"
+          IFS=', ' read -ra TARGETS <<< "${INPUTS_RUFF_TARGETS}"
+          uv run ruff format "${TARGETS[@]}"
           echo "::notice::Files modified; review the diff in PR or in Actions artifacts (uncommitted changes stay in the runner)."
 
       - name: lint-ruff-check
@@ -270,7 +281,9 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
-        run: uv run ruff check "${INPUTS_RUFF_TARGETS}"
+        run: |
+          IFS=', ' read -ra TARGETS <<< "${INPUTS_RUFF_TARGETS}"
+          uv run ruff check "${TARGETS[@]}"
 
       - name: lint-ruff-check-fix
         if: ${{ contains(inputs.commands, 'lint:ruff-check-fix') }}
@@ -279,7 +292,8 @@ jobs:
           INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
         run: |
           echo "::notice::Running 'ruff check --fix' (mutates files; does not commit)"
-          uv run ruff check --fix "${INPUTS_RUFF_TARGETS}"
+          IFS=', ' read -ra TARGETS <<< "${INPUTS_RUFF_TARGETS}"
+          uv run ruff check --fix "${TARGETS[@]}"
           echo "::notice::Files modified; review the diff in PR or in Actions artifacts."
 
       - name: lint-bandit
@@ -289,14 +303,17 @@ jobs:
           INPUTS_RUFF_TARGETS: ${{ inputs.ruff-targets }}
         run: |
           echo "::notice::Running bandit security linter"
-          uv run bandit --recursive "${INPUTS_RUFF_TARGETS}" --skip B101
+          IFS=', ' read -ra TARGETS <<< "${INPUTS_RUFF_TARGETS}"
+          uv run bandit --recursive "${TARGETS[@]}" --skip B101
 
       - name: typecheck-mypy
         if: ${{ contains(inputs.commands, 'typecheck:mypy') }}
         working-directory: ${{ inputs.working-directory }}
         env:
           INPUTS_MYPY_TARGETS: ${{ inputs.mypy-targets }}
-        run: uv run mypy "${INPUTS_MYPY_TARGETS}"
+        run: |
+          IFS=', ' read -ra TARGETS <<< "${INPUTS_MYPY_TARGETS}"
+          uv run mypy "${TARGETS[@]}"
 
       - name: test-pytest
         if: ${{ contains(inputs.commands, 'test:pytest') }}
