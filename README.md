@@ -738,6 +738,42 @@ Inputs (highlights):
 Required secrets: `AWS_DEPLOY_ROLE_ARN` (passed explicitly; cross-owner
 inheritance blocked by GitHub).
 
+Outputs:
+
+| Output | Notes |
+|---|---|
+| `image-uri` | `<registry>/<repo>@sha256:...` — what you feed to `reusable-ecs-deploy.yml`. |
+| `image-digest` | Bare `sha256:...` (manifest index on multi-platform builds). |
+| `image-tags` | Every fully-qualified tag pushed, comma-separated. |
+| `registry` | `<account-id>.dkr.ecr.<region>.amazonaws.com`, resolved from the OIDC identity. |
+
+`image-uri` is pinned by **digest**, not tag, on purpose. A downstream
+deploy job resolves whatever reference it is given at *its* run time, so
+handing it `:latest` would let it land on a different image than the one
+this run built. The digest cannot drift. If `docker/build-push-action`
+returns no digest the recipe falls back to the first tag and emits a
+`::warning::` rather than failing — by that point the image is already in
+ECR, and failing a push that succeeded helps nobody.
+
+Chaining the two recipes is the whole point:
+
+```yaml
+jobs:
+  push:
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-container-deploy-ecr.yml@main
+    with: { environment-name: dev, ecr-repository: my-repo, deploy-role-arn: ... }
+  roll:
+    needs: push
+    uses: spark-match/spark-match-01-devops/.github/workflows/reusable-ecs-deploy.yml@main
+    with:
+      environment-name: dev
+      cluster-name: my-cluster
+      service-name: my-service
+      container-name: agent
+      image-uri: ${{ needs.push.outputs.image-uri }}
+      deploy-role-arn: ...
+```
+
 #### `reusable-ecs-deploy.yml`
 
 Roll an ECS service onto an image that is **already** in ECR: registers a
