@@ -21,6 +21,10 @@
     {
       "date": "2026-08-06",
       "change": "Replaced lint-commits / commitlint-main with lint-commits / commitlint, and made the job name in reusable-commitlint.yml static. The job was named commitlint-${{ head.ref || ref_name }}, so the published check context carried the branch name: commitlint-main only ever appeared on a push to main, never on a pull request. A required check that never reports leaves every PR stuck on 'Expected - Waiting for status to be reported', which forced an admin bypass on every merge - the exact thing the 2026-08-01 entry added strict checks to stop. The 2026-08-04 intent is not reachable this way regardless: required status checks gate the merge and are evaluated against the PR head SHA, so a check that only runs after the merge can never be a merge gate. The defense against the merge-commit-subject pitfall stays where it already worked, in the AGENTS.md section 4.5 checklist (validate the PR title, then pass commit_title and commit_message explicitly). The post-merge run still executes on main and still fails loudly if a bad subject lands."
+    },
+    {
+      "date": "2026-08-06",
+      "change": "Dropped refs/heads/dev from spark-match-07-article. That branch is abandoned: last commit 2026-07-10 against 2026-08-06 on main, no pull request has ever targeted it, and both of its workflows trigger only on main. Its 6 unique commits touch only .github/CODEOWNERS and .gitignore, and comparing those files directly shows .gitignore identical and CODEOWNERS differing only in comment lines, so nothing substantive is lost. Note the three-dot compare (main...dev) misleads here: it diffs against the merge base, not against the tip of main, so it appears to show unique work that main already superseded. Removing the ref is also what makes the branch deletable at all, since blockDeletion is true and the ruleset covered dev. The same abandoned pattern exists in spark-match-06-model-training (dev 2026-07-10, main 2026-07-26) and is left untouched pending that team's decision."
     }
   ],
   "defaults": {
@@ -51,7 +55,7 @@
       ]
     },
     "spark-match-07-article": {
-      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "refs": ["~DEFAULT_BRANCH"],
       "reviewerTeam": "article-authors",
       "filePatterns": ["**"],
       "statusChecks": []
