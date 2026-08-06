@@ -1203,15 +1203,22 @@ The org uses a **single-branch model** (`main`-only) since 2026-Q3. All changes 
 
 ### Admin bypass (rare; use sparingly)
 
-The ruleset blocks direct pushes to `main` for everyone, including org admins, because `bypass_mode: "pull_request"` only covers the PR context. The escape hatch is the **dual-disable + direct push dance**, used for emergency hotfixes and CODE OWNERS migrations:
+The ruleset blocks direct pushes to `main` for everyone, including org admins, because `bypass_mode: "pull_request"` only covers the PR context. The escape hatch, for emergency hotfixes and CODE OWNERS migrations:
 
 1. Temporarily flip the ruleset's `bypass_actors[0].bypass_mode` to `"always"`.
-2. Temporarily DELETE the legacy branch protection's `enforce_admins` flag.
-3. Direct push to `main`.
-4. Restore both flags to their canonical state (`bypass_mode: "pull_request"` and `enforce_admins: true`).
-5. Verify with `./scripts/configure-repo-rulesets.sh --check`.
+2. Direct push to `main`.
+3. Restore `bypass_mode: "pull_request"`.
+4. Verify with `./scripts/configure-repo-rulesets.sh --check`.
 
-The whole window must be < 5 seconds in production. Document the dance (per repo, never in this public repo) and never use it for ordinary PR work. CODE OWNERS review applies even when `bypass_mode: "always"` if the author is itself a CODE OWNER — in that case, push from a non-CODE-OWNER account or temporarily add the path as `* @devops`.
+This used to be a **dual**-disable, where step 2 deleted the legacy branch protection's `enforce_admins` flag and the restore put it back to `true` as its "canonical state". That is no longer correct: branch protection here is rulesets plus CODEOWNERS and nothing else, so a repository that still runs a classic layer has debt to remove rather than a flag to toggle. Restoring it would recreate exactly the problem described in `docs/GOVERNANCE-STANDARD.md` § 2.1.
+
+A direct push still blocked after flipping `bypass_mode` is the symptom of a leftover classic layer. Remove it instead of working around it:
+
+```bash
+./scripts/configure-repo-rulesets.sh --apply --repos <repo> --prune-legacy-protection
+```
+
+The whole window must be < 5 seconds in production. Document the procedure (per repo, never in this public repo) and never use it for ordinary PR work. CODE OWNERS review applies even when `bypass_mode: "always"` if the author is itself a CODE OWNER — in that case, push from a non-CODE-OWNER account or temporarily add the path as `* @devops`.
 
 ### Adding a reusable workflow or composite action
 

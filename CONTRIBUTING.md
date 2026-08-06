@@ -286,13 +286,20 @@ message in the merge form. Never merge a PR with red commitlint.
 
 ## Admin bypass (rare)
 
-The ruleset blocks direct pushes to `main` for everyone, including org admins, because `bypass_mode: "pull_request"` only covers the PR context. The escape hatch is the **dual-disable + direct push dance**, used for emergency hotfixes and CODE OWNERS migrations:
+The ruleset blocks direct pushes to `main` for everyone, including org admins, because `bypass_mode: "pull_request"` only covers the PR context. The escape hatch, for emergency hotfixes and CODE OWNERS migrations:
 
 1. Temporarily flip the ruleset's `bypass_actors[0].bypass_mode` to `"always"`.
-2. Temporarily DELETE the legacy branch protection's `enforce_admins` flag.
-3. Direct push to `main`.
-4. Restore both flags to their canonical state (`bypass_mode: "pull_request"` and `enforce_admins: true`).
-5. Verify with `./scripts/configure-repo-rulesets.sh --check`.
+2. Direct push to `main`.
+3. Restore `bypass_mode: "pull_request"`.
+4. Verify with `./scripts/configure-repo-rulesets.sh --check`.
+
+This used to be a **dual**-disable: the second step was deleting the legacy branch protection's `enforce_admins` flag, and step 4 restored it to `true` as its "canonical state". That is no longer correct, and following it would recreate the problem. Branch protection in this organisation is rulesets plus CODEOWNERS and nothing else, so a repository that still has a classic layer has debt to remove, not a flag to toggle. See `docs/GOVERNANCE-STANDARD.md` § 2.1.
+
+If a direct push is still blocked after flipping `bypass_mode`, that is the symptom of a leftover classic layer. Do not disable it and put it back:
+
+```bash
+./scripts/configure-repo-rulesets.sh --apply --repos <repo> --prune-legacy-protection
+```
 
 The whole window must be **< 5 seconds** in production. Document the dance (per repo, never in this public repo) and never use it for ordinary PR work.
 

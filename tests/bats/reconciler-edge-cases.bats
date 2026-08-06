@@ -115,6 +115,40 @@ EOF
   done
 }
 
+# Este test existe porque el de arriba fallo dos veces por la misma causa y en
+# ninguna de las dos el sintoma senalaba al culpable: usage() imprimia un rango
+# fijo de lineas (`sed -n '2,105p'`) que tenia que llegar hasta el final del
+# `case` del parser, asi que anadir comentarios en la cabecera empujaba los
+# flags fuera del rango y --help dejaba de nombrarlos.
+#
+# Comparar contra el parser convierte "se me olvido mover el numero" en un
+# fallo que dice exactamente que flag falta, y ademas cubre el caso contrario:
+# un flag documentado a mano que ya no existe.
+@test "edge: --help lista EXACTAMENTE los flags que el parser acepta" {
+  run bash "$SCRIPT" --help
+  [ "$status" -eq 0 ]
+
+  # Flags reales, leidos del `case` del arg parser.
+  parser_flags=$(sed -n '/^while \[\[ \$# -gt 0 \]\]; do/,/^  esac/p' "$SCRIPT" \
+    | grep -oE '^[[:space:]]+--[a-z-]+\)' | tr -d ' )' | sort -u)
+
+  [ -n "$parser_flags" ]
+
+  while IFS= read -r flag; do
+    [[ "$output" == *"$flag"* ]] || {
+      echo "El parser acepta $flag pero --help no lo nombra" >&2
+      return 1
+    }
+  done <<< "$parser_flags"
+}
+
+@test "edge: usage() no depende de numeros de linea" {
+  # La causa raiz. Un rango fijo vuelve a romperse en cuanto alguien comenta
+  # algo en la cabecera, y el fallo aparece lejos de la edicion.
+  run grep -nE "sed -n '[0-9]+,[0-9]+p' \"\\\$0\"" "$SCRIPT"
+  [ "$status" -ne 0 ]
+}
+
 # -----------------------------------------------------------------------------
 # Empty repos list (--repos "")
 # -----------------------------------------------------------------------------
@@ -138,4 +172,35 @@ EOF
 EOF
   run bash "$SCRIPT" --check --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos ""
   [ "$status" -eq 0 ]   # nothing to do
+}
+
+# -----------------------------------------------------------------------------
+# El bucle principal no puede quedarse en silencio
+# -----------------------------------------------------------------------------
+# El bucle sobre repositorios leia de `< <(resolve_repos)`. La sustitucion de
+# procesos depende de /dev/fd y bajo Git Bash falla de forma intermitente. Si
+# falla aqui, el reconciliador procesa CERO repositorios, imprime una tabla
+# vacia y sale con 0: dice que toda la organizacion esta en orden sin haber
+# mirado ni uno.
+
+@test "edge: el bucle principal no usa sustitucion de procesos" {
+  run grep -nE 'done < <\(resolve_repos\)' "$SCRIPT"
+  [ "$status" -ne 0 ]
+}
+
+@test "edge: cero resultados con repos que procesar aborta en vez de fingir exito" {
+  # La red de seguridad: aunque el bucle se rompa por otro motivo, una tabla
+  # vacia no puede salir con 0.
+  run grep -F 'no se produjo ningun resultado pese a haber repositorios que procesar' "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
+
+@test "edge: con repos reales SI se produce resultado (la red no salta de mas)" {
+  run bash "$SCRIPT" --check --json \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  # No debe abortar con 2 por la red de seguridad.
+  [ "$status" -ne 2 ]
+  count=$(json_output | jq 'length')
+  [ "$count" -ge 1 ]
 }
