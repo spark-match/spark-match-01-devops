@@ -20,6 +20,18 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.4.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.3.1...v1.4.0) (2026-08-06)
+
+
+### Features
+
+* **governance:** detectar la branch protection clasica en todas las ramas ([#323](https://github.com/spark-match/spark-match-01-devops/issues/323)) ([afd8521](https://github.com/spark-match/spark-match-01-devops/commit/afd85215134f350572f4281c2f47e35b819ec174))
+
+
+### Bug Fixes
+
+* **workflows:** calcular la version del release desde el tag mas alto ([#325](https://github.com/spark-match/spark-match-01-devops/issues/325)) ([5ea2809](https://github.com/spark-match/spark-match-01-devops/commit/5ea2809a2a0ef151e25a598e6a246544725e4f9e))
+
 ## [1.3.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.3.0...v1.3.1) (2026-08-06)
 
 
