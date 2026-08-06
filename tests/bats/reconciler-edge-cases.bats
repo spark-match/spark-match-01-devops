@@ -173,3 +173,34 @@ EOF
   run bash "$SCRIPT" --check --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos ""
   [ "$status" -eq 0 ]   # nothing to do
 }
+
+# -----------------------------------------------------------------------------
+# El bucle principal no puede quedarse en silencio
+# -----------------------------------------------------------------------------
+# El bucle sobre repositorios leia de `< <(resolve_repos)`. La sustitucion de
+# procesos depende de /dev/fd y bajo Git Bash falla de forma intermitente. Si
+# falla aqui, el reconciliador procesa CERO repositorios, imprime una tabla
+# vacia y sale con 0: dice que toda la organizacion esta en orden sin haber
+# mirado ni uno.
+
+@test "edge: el bucle principal no usa sustitucion de procesos" {
+  run grep -nE 'done < <\(resolve_repos\)' "$SCRIPT"
+  [ "$status" -ne 0 ]
+}
+
+@test "edge: cero resultados con repos que procesar aborta en vez de fingir exito" {
+  # La red de seguridad: aunque el bucle se rompa por otro motivo, una tabla
+  # vacia no puede salir con 0.
+  run grep -F 'no se produjo ningun resultado pese a haber repositorios que procesar' "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
+
+@test "edge: con repos reales SI se produce resultado (la red no salta de mas)" {
+  run bash "$SCRIPT" --check --json \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  # No debe abortar con 2 por la red de seguridad.
+  [ "$status" -ne 2 ]
+  count=$(json_output | jq 'length')
+  [ "$count" -ge 1 ]
+}

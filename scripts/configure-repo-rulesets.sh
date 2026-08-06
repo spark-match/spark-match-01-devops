@@ -452,6 +452,11 @@ backup_ruleset() {
 # --- Loop principal ----------------------------------------------------------
 log_info "ORG=$ORG MANIFEST=$MANIFEST MODE=$MODE DRY_RUN=$DRY_RUN"
 
+# Se resuelve ANTES del bucle para poder alimentarlo con un here-string en vez
+# de con `< <(resolve_repos)`, y de paso para saber si habia trabajo que hacer
+# cuando toque comprobar que se produjo algun resultado.
+REPOS_TO_PROCESS=$(resolve_repos)
+
 while IFS=$'\n\r' read -r repo; do
   repo="${repo%$'\r'}"
   [[ -z "$repo" ]] && continue
@@ -603,10 +608,24 @@ while IFS=$'\n\r' read -r repo; do
       fi
     fi
   fi
-done < <(resolve_repos)
+# Here-string y no `< <(resolve_repos)`, por lo mismo que en el bucle de ramas:
+# la sustitucion de procesos depende de /dev/fd y bajo Git Bash falla de forma
+# intermitente. Aqui el fallo es peor, porque este es el bucle principal: el
+# reconciliador procesaria CERO repositorios, imprimiria una tabla vacia y
+# saldria con 0. Es decir, diria que toda la organizacion esta en orden sin
+# haber mirado ni uno.
+done <<< "$REPOS_TO_PROCESS"
 
 # --- Resumen ----------------------------------------------------------------
 echo ""
+
+# Red de seguridad: si habia repos que procesar y no salio ni un resultado, algo
+# se rompio entre medias. Sin esto el script sale con 0 y una tabla vacia, que
+# es indistinguible de "todo en orden".
+if [[ -n "$REPOS_TO_PROCESS" && ${#RESULTS[@]} -eq 0 ]]; then
+  log_err "no se produjo ningun resultado pese a haber repositorios que procesar. Aborta en vez de reportar exito vacio."
+  exit 2
+fi
 if [[ "$JSON_OUTPUT" == true ]]; then
   printf '%s\n' "${RESULTS[@]}" | jq -s '.'
 else
