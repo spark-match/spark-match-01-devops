@@ -31,13 +31,20 @@
 # Esa ultima frase era un aviso que nadie podia verificar: hasta 2026-08-06
 # este script solo miraba /rulesets y jamas consultaba
 # /branches/{branch}/protection, asi que --check daba verde en repositorios que
-# corrian las dos capas. Tres de nueve las tenian, con enforce_admins=true, y
-# eso anulaba el bypass del ruleset y dejaba todo merge esperando a un revisor.
+# corrian las dos capas, con enforce_admins=true anulando el bypass del ruleset
+# y dejando todo merge esperando a un revisor.
 #
-# Ahora la proteccion clasica de la rama por defecto SE DETECTA siempre y sale
-# como `legacy-protection` (drift en --check, fallo con --strict). Borrarla
-# exige --prune-legacy-protection, mismo criterio que --prune-unexpected: no se
-# destruyen reglas que este script no creo sin pedirlo en la linea de comandos.
+# Ahora la proteccion clasica SE DETECTA siempre, en TODAS las ramas del repo y
+# no solo en la de por defecto, y sale como `legacy-protection` (drift en
+# --check, fallo con --strict). Borrarla exige --prune-legacy-protection, mismo
+# criterio que --prune-unexpected: no se destruyen reglas que este script no
+# creo sin pedirlo en la linea de comandos.
+#
+# El alcance ampliado no es teorico. La primera version de esta deteccion solo
+# miraba default_branch y con ese alcance no habria encontrado la capa clasica
+# de la rama dev de spark-match-07-article, la que hubo que retirar a mano. El
+# barrido completo sobre la organizacion devolvio 9 ramas protegidas en 5
+# repos, de las cuales 4 estaban en dev y ninguna la declaraba el manifiesto.
 #
 # Uso:
 #   ./configure-repo-rulesets.sh --check --repos spark-match-01-devops
@@ -230,10 +237,11 @@ fetch_current_ruleset() {
     '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected, unexpected_ids: ($unexpected_ids | split("\n"))}'
 }
 
-# Protección de rama CLASICA (branch protection legacy) sobre la rama por
-# defecto. Es una superficie DISTINTA de los rulesets, con su propio endpoint, y
-# hasta ahora este reconciliador no la miraba: por eso `--check` daba verde en
-# repos que corrian una segunda capa de reglas que nadie declaro.
+# Protección de rama CLASICA (branch protection legacy) sobre CUALQUIER rama del
+# repo, no solo la de por defecto. Es una superficie DISTINTA de los rulesets,
+# con su propio endpoint, y hasta ahora este reconciliador no la miraba: por eso
+# `--check` daba verde en repos que corrian una segunda capa de reglas que nadie
+# declaro.
 #
 # Importa sobre todo por `enforce_admins`. Con true, ni un admin de la
 # organizacion puede saltarsela, asi que el bypass del ruleset (bypass_actors =
@@ -242,30 +250,69 @@ fetch_current_ruleset() {
 # violations found / Waiting on code owner review", identico por CLI y por REST
 # API, en un repo donde el ruleset por si solo lo permitiria.
 #
-# Devuelve siempre un JSON, tambien cuando no hay proteccion (404).
+# Por que TODAS las ramas y no solo la de por defecto: la primera version de
+# esta funcion solo miraba default_branch, y con ese alcance no habria
+# encontrado la proteccion clasica que bloqueaba la rama dev de
+# spark-match-07-article, la que hubo que retirar a mano el 2026-08-06. Un
+# barrido sobre la organizacion confirmo que no era un caso aislado: cuatro
+# repos mas llevaban una capa clasica en dev que nadie declaraba.
+#
+# Como se eligen las ramas candidatas:
+#   1. ?protected=true acota a las ramas con alguna proteccion. OJO: ese filtro
+#      devuelve TAMBIEN las protegidas solo por ruleset, asi que no distingue
+#      por si mismo; sirve para no pedir el endpoint clasico rama por rama.
+#   2. Se le suma la rama por defecto y las refs que el manifiesto declara, por
+#      si el listado falla o se queda corto. La union se deduplica.
+#   3. El endpoint clasico decide: 404 significa que ahi no hay capa clasica.
+#
+# Devuelve siempre un JSON con {count, branches: [...]}, tambien cuando no hay
+# nada (count 0).
 fetch_legacy_protection() {
   local repo="$1"
-  local branch detail
+  local default_branch candidates manifest_refs detail found
 
-  branch=$(gh api "repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
-  if [[ -z "$branch" ]]; then
-    jq -n '{exists: false, branch: null, reason: "default-branch-unresolved"}'
-    return 0
-  fi
+  default_branch=$(gh api "repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
 
-  # 404 = sin proteccion clasica, que es el estado deseado. No es un error.
-  if ! detail=$(gh api "repos/$ORG/$repo/branches/$branch/protection" 2>/dev/null); then
-    jq -n --arg b "$branch" '{exists: false, branch: $b}'
-    return 0
-  fi
+  # Refs declaradas en el manifiesto, traducidas a nombre de rama.
+  # ~DEFAULT_BRANCH se resuelve a la rama por defecto real.
+  manifest_refs=$(jq -r --arg r "$repo" --arg d "$default_branch" '
+    .repositories[$r].refs // []
+    | map(if . == "~DEFAULT_BRANCH" then $d else sub("^refs/heads/"; "") end)
+    | .[]
+  ' "$MANIFEST" 2>/dev/null || true)
 
-  jq -n --arg b "$branch" --argjson d "$detail" '{
-    exists: true,
-    branch: $b,
-    enforce_admins: ($d.enforce_admins.enabled // false),
-    requires_review: ($d.required_pull_request_reviews != null),
-    requires_code_owner: ($d.required_pull_request_reviews.require_code_owner_reviews // false)
-  }'
+  candidates=$(
+    {
+      gh api "repos/$ORG/$repo/branches?protected=true&per_page=100" --paginate \
+        --jq '.[].name' 2>/dev/null || true
+      [[ -n "$default_branch" ]] && echo "$default_branch"
+      echo "$manifest_refs"
+    } | grep -v '^$' | sort -u
+  )
+
+  found="[]"
+  local branch
+  while IFS= read -r branch; do
+    [[ -z "$branch" ]] && continue
+    # 404 = sin proteccion clasica en esa rama, que es el estado deseado.
+    #
+    # El </dev/null NO es decorativo. Sin el, gh hereda el stdin del bucle --
+    # la lista de ramas candidatas -- y se la come entera, asi que solo se
+    # inspecciona la primera rama y las demas desaparecen en silencio.
+    detail=$(gh api "repos/$ORG/$repo/branches/$branch/protection" 2>/dev/null </dev/null) || continue
+    found=$(jq -n --argjson acc "$found" --arg b "$branch" --argjson d "$detail" '
+      $acc + [{
+        branch: $b,
+        is_default: false,
+        enforce_admins: ($d.enforce_admins.enabled // false),
+        requires_review: ($d.required_pull_request_reviews != null),
+        requires_code_owner: ($d.required_pull_request_reviews.require_code_owner_reviews // false)
+      }]')
+  done <<< "$candidates"
+
+  jq -n --argjson f "$found" --arg d "$default_branch" '
+    ($f | map(.is_default = (.branch == $d))) as $b |
+    {count: ($b | length), default_branch: $d, branches: $b}'
 }
 
 # Construye el payload deseado a partir del manifiesto + team_id resuelto.
@@ -422,23 +469,29 @@ while IFS=$'\n\r' read -r repo; do
   # Mismo criterio que --prune-unexpected: el reconciliador no destruye reglas
   # que no creo sin que alguien lo pida en la linea de comandos.
   legacy_json=$(fetch_legacy_protection "$repo")
-  if [[ "$(echo "$legacy_json" | jq -r '.exists')" == "true" ]]; then
-    legacy_branch=$(echo "$legacy_json" | jq -r '.branch')
-    legacy_admins=$(echo "$legacy_json" | jq -r '.enforce_admins')
-    if [[ "$PRUNE_LEGACY_PROTECTION" == true && "$MODE" == "apply" && "$DRY_RUN" == false ]]; then
-      if gh api -X DELETE "repos/$ORG/$repo/branches/$legacy_branch/protection" >/dev/null 2>&1; then
-        log_info "$repo: borrada proteccion clasica en '$legacy_branch' (el ruleset queda como unica fuente)"
-        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection-removed\",\"branch\":\"$legacy_branch\"}")
+  legacy_count=$(echo "$legacy_json" | jq -r '.count')
+  if [[ "$legacy_count" -gt 0 ]]; then
+    # Una rama puede fallar el DELETE sin que las demas lo hagan, asi que cada
+    # una produce su propia entrada en RESULTS en vez de un veredicto por repo.
+    while IFS=$'\t' read -r legacy_branch legacy_admins legacy_default; do
+      [[ -z "$legacy_branch" ]] && continue
+      if [[ "$PRUNE_LEGACY_PROTECTION" == true && "$MODE" == "apply" && "$DRY_RUN" == false ]]; then
+        # </dev/null por el mismo motivo que en fetch_legacy_protection: este
+        # bucle tambien lee ramas por stdin y gh se lo comeria.
+        if gh api -X DELETE "repos/$ORG/$repo/branches/$legacy_branch/protection" >/dev/null 2>&1 </dev/null; then
+          log_info "$repo: borrada proteccion clasica en '$legacy_branch' (el ruleset queda como unica fuente)"
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection-removed\",\"branch\":\"$legacy_branch\"}")
+        else
+          log_err "$repo: fallo el DELETE de la proteccion clasica en '$legacy_branch'"
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"legacy-protection-delete-failed\",\"branch\":\"$legacy_branch\"}")
+          ANY_FAIL=true
+        fi
       else
-        log_err "$repo: fallo el DELETE de la proteccion clasica en '$legacy_branch'"
-        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"legacy-protection-delete-failed\"}")
-        ANY_FAIL=true
+        log_warn "$repo: proteccion clasica activa en '$legacy_branch' (enforce_admins=$legacy_admins, rama_por_defecto=$legacy_default). Convive con el ruleset y no la declara el manifiesto; usa --prune-legacy-protection para retirarla."
+        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection\",\"branch\":\"$legacy_branch\",\"enforce_admins\":$legacy_admins,\"is_default\":$legacy_default}")
+        ANY_DRIFT=true
       fi
-    else
-      log_warn "$repo: proteccion clasica activa en '$legacy_branch' (enforce_admins=$legacy_admins). Convive con el ruleset y no la declara el manifiesto; usa --prune-legacy-protection para retirarla."
-      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection\",\"branch\":\"$legacy_branch\",\"enforce_admins\":$legacy_admins}")
-      ANY_DRIFT=true
-    fi
+    done < <(echo "$legacy_json" | jq -r '.branches[] | [.branch, (.enforce_admins|tostring), (.is_default|tostring)] | @tsv')
   fi
 
   current_json=$(fetch_current_ruleset "$repo")

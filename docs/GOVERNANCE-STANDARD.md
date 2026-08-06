@@ -43,7 +43,7 @@ Waiting on code owner review from spark-match/<team>
 
 Diagnosticarlo cuesta, porque el mensaje habla de *rule violations* y el ruleset por sí solo permitiría el merge. Y llevaba tiempo así sin que nadie lo viera, porque el reconciliador solo consultaba `/rulesets`.
 
-Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protección clásica de la rama por defecto:
+Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protección clásica, y en **todas las ramas** del repositorio, no solo en la de por defecto:
 
 ```bash
 # Ver qué repos la tienen (no modifica nada; sale con 1 si hay drift)
@@ -53,9 +53,24 @@ Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protecci
 ./scripts/configure-repo-rulesets.sh --apply --repos <repo> --prune-legacy-protection
 ```
 
-Aparece como estado `legacy-protection`, cuenta como drift en `--check`, y con `--strict` es fallo duro. Borrarla exige el flag explícito, mismo criterio que `--prune-unexpected`: el reconciliador no destruye reglas que no creó sin que se lo pidan en la línea de comandos.
+Aparece como estado `legacy-protection`, cuenta como drift en `--check`, y con `--strict` es fallo duro. Cada rama produce su propia entrada, así que un repositorio con dos capas sale dos veces. Borrarla exige el flag explícito, mismo criterio que `--prune-unexpected`: el reconciliador no destruye reglas que no creó sin que se lo pidan en la línea de comandos.
 
-**La lección general**: un manifiesto declarativo solo garantiza lo que sabe consultar. Este decía declarar «el estado deseado de branch protection en la organización» mientras ignoraba por completo una de las dos superficies donde vive esa protección.
+### Por qué todas las ramas y no solo la de por defecto
+
+La primera versión de esta detección solo miraba `default_branch`. Con ese alcance no habría encontrado la protección clásica de la rama `dev` de `spark-match-07-article`, que hubo que retirar a mano ese mismo día.
+
+El barrido completo sobre la organización, el 2026-08-06, devolvió esto:
+
+| | |
+|---|---|
+| Ramas con protección clásica | 9, en 5 repositorios |
+| En la rama por defecto | 5 |
+| **En otras ramas** | **4**, todas en `dev` |
+| Con `enforce_admins: true` | 5, todas en la rama por defecto |
+
+El alcance corto se dejaba fuera casi la mitad de los hallazgos. Las candidatas se obtienen de tres fuentes que se unen y deduplican: el listado `?protected=true`, la rama por defecto, y las refs que el manifiesto declara. La primera acota el trabajo pero **no decide**, porque ese filtro devuelve también las ramas protegidas solo por ruleset; quien decide es el endpoint clásico, y un 404 significa que ahí no hay capa clásica.
+
+**La lección general**: un manifiesto declarativo solo garantiza lo que sabe consultar. Este decía declarar «el estado deseado de branch protection en la organización» mientras ignoraba por completo una de las dos superficies donde vive esa protección. Y cuando por fin la consultó, la consultó en un solo sitio.
 
 ## 3. CODEOWNERS canónico
 
