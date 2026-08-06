@@ -36,6 +36,8 @@ El ruleset cubre todo lo que cubría la branch protection clásica, así que un 
 
 El caso concreto, encontrado el 2026-08-06: `04-frontend`, `07-article` y `08-deep-agent` tenían branch protection clásica sobre `main` **además** del ruleset, con `enforce_admins: true`. Ese flag anula el `bypass_actors` del ruleset —ni un admin de la organización puede saltárselo—, así que todo pull request quedaba esperando a un revisor, con este error idéntico por CLI y por REST API:
 
+> Esos tres fueron lo que se vio **mirando solo la rama por defecto**. El barrido completo del mismo día encontró 9 ramas en 5 repositorios; el desglose está más abajo, en «Por qué todas las ramas».
+
 ```
 Repository rule violations found
 Waiting on code owner review from spark-match/<team>
@@ -274,6 +276,8 @@ Los 7 repos con `* @team` catch-all fueron migrados a patron explicito via push 
 Despues del push, ambos se restauran a su estado canonico (ventana de riesgo < 5 segundos por repo). Este procedimiento esta documentado en `scripts/mig-one.sh` (workspace script) y replicado 7 veces para los repos affected.
 
 **Nota**: `bypass_mode: always` solo en el ruleset NO es suficiente. La legacy branch protection con `enforce_admins: true` bloquea independientemente. Ambos deben deshabilitarse para que admin pueda pushear directo.
+
+> **Esto es un registro historico, no el procedimiento vigente (actualizado 2026-08-06).** El paso 2 y su restauracion ya no aplican: la branch protection clasica no forma parte del estandar (§ 2.1), asi que restaurar `enforce_admins: true` recrearia justo el problema. Hoy el bypass es de un solo flag, el del ruleset, y si un push directo sigue bloqueado despues de ponerlo en `always` el sintoma delata una capa clasica que hay que retirar con `--prune-legacy-protection`, no deshabilitar y volver a poner.
 
 ## 9. Desviaciones conocidas
 
