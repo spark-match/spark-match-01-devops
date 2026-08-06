@@ -34,7 +34,7 @@ This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
 - **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 442 bats tests, all running on every PR via `.github/workflows/reusable-quality.yml`.
+- **`tests/`** — 492 bats tests, all running on every PR via `.github/workflows/reusable-quality.yml`.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -121,7 +121,7 @@ spark-match-01-devops/
 │
 ├── scripts/                                operational scripts (see scripts/README.md)
 │   ├── README.md                           catalog of scripts
-│   ├── audit-codeowners-ruleset.sh             🔍 audits ruleset for CODE_OWNERS enforcement
+│   ├── audit-codeowners-ruleset.sh             audits ruleset for CODE_OWNERS enforcement
 │   └── configure-repo-rulesets.sh              declarative reconciler for the ruleset
 │
 ├── tests/                                 bats tests for bash scripts + composite actions
@@ -202,6 +202,8 @@ The recipes live at the top level of `.github/workflows/`. GitHub Actions requir
 | `reusable-sonar-python.yml`      | sonar-cloud Python analysis (Cobertura XML coverage) | `SONAR_TOKEN` |
 | `reusable-quality.yml`           | shellcheck + manifest schema + bats | — |
 | `reusable-codeql.yml`            | codeql JS/TS caller-repo scan | — |
+| `reusable-commitlint.yml`        | Conventional Commits check on the PR's commits | — |
+| `reusable-release-please.yml`    | Cut and maintain the release pull request; tag on merge | `release-please-app-id`, `release-please-app-private-key` |
 
 #### `reusable-actionlint.yml`
 
@@ -337,26 +339,138 @@ This workflow is part of the SLSA Build Level 3 + supply-chain transparency post
 
 sonar-cloud analysis for Terraform. Designed for projects where Terraform is the primary language (no Python/JS).
 
-Inputs (highlights):
+Every input is **required** — none has a default. Passing an input that is not
+on this list fails the caller's workflow outright with `Invalid input`, and
+omitting one fails it too, so this table is exhaustive rather than
+"highlights".
 
 | Input | Type | Notes |
 |---|---|---|
 | `project-key` | string (required) | sonar-cloud project key. |
+| `project-name` | string (required) | sonar-cloud project display name. |
 | `organization` | string (required) | sonar-cloud organization key. |
 | `sources` | string (required) | Comma-separated source paths (relative to `working-directory`). |
-| `tests` | string | Comma-separated test paths; empty disables test analysis. |
-| `coverage` | string | Path to coverage report (e.g. `coverage.xml`); empty skips coverage. |
-| `exclude-patterns` | string | Comma-separated globs to exclude from sources. |
-| `working-directory` | string | `.` |
-| `sonar-host-url` | string | `https://sonarcloud.io` |
+| `exclude-patterns` | string (required) | Comma-separated globs to exclude from sources. |
+| `working-directory` | string (required) | Directory containing the Terraform code. |
+| `env` | string (required) | Environment identifier; used in the job name and logs. |
+| `fail-on-quality-gate` | string (required) | `"true"` fails the job when the quality gate is ERROR. A string, not a bool. |
+
+There is no `sonar-host-url` input: the recipe targets sonar-cloud and the host
+is not configurable. There is no `tests` or `coverage` input either — this
+recipe analyses Terraform, which has no test or coverage report to feed
+sonar-cloud. Those three were documented here for a while and never existed.
 
 Required secrets: `SONAR_TOKEN` (same-name convention). Caller must set it in the GitHub Environment.
 
 #### `reusable-sonar-typescript.yml`
 
-sonar-cloud analysis for TypeScript. Used by `spark-match-04-frontend`. Adds the `tsconfig.json` path as input so Sonar can resolve TypeScript types during analysis.
+sonar-cloud analysis for TypeScript. Used by `spark-match-04-frontend`. Unlike
+the Terraform wrapper, this one installs dependencies and runs the caller's test
+command first, so it can hand sonar-cloud a real LCOV coverage report.
 
-Same input shape as `reusable-sonar-terraform.yml` (without `exclude-patterns`) plus `tsconfig-path` (default `tsconfig.json`).
+All 16 inputs are **required** — none has a default. There is no `tsconfig-path`
+input; the string `tsconfig` does not appear anywhere in the recipe.
+
+| Input | Notes |
+|---|---|
+| `project-key` | sonar-cloud project key. |
+| `project-name` | sonar-cloud project display name. |
+| `organization` | sonar-cloud organization key. |
+| `sources` | Comma-separated source paths, relative to `working-directory`. |
+| `tests` | Comma-separated test directory paths. |
+| `test-inclusions` | Glob identifying test files inside those directories. |
+| `exclude-patterns` | Globs excluded from both sources and tests. |
+| `working-directory` | Directory holding `package.json`. |
+| `env` | Environment identifier; used in the job name and logs. |
+| `node-version` | Node.js version. |
+| `package-manager` | Hint for the setup-node cache: `npm`, `pnpm`, `yarn` or `bun`. |
+| `lockfile-name` | Lockfile used as the cache key, relative to `working-directory`. |
+| `install-command` | e.g. `npm ci`, `pnpm install --frozen-lockfile`. |
+| `test-command` | Must produce LCOV coverage. |
+| `coverage-paths` | Comma-separated LCOV report paths. |
+| `fail-on-quality-gate` | `"true"` fails the job when the gate is ERROR. A string, not a bool. |
+
+#### `reusable-codeql.yml`
+
+codeql analysis for caller repos with JS/TS source. This repo scans its own
+Actions YAML through `codeql-actions.yml` instead, which is not this recipe.
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `languages` | string | `javascript` | Comma-separated codeql languages; drives the analysis matrix. |
+| `build-mode` | string | `none` | `none` or `autobuild`. |
+| `queries-pack` | string | `security-extended` | Query pack to run. |
+| `fail-on-alerts` | boolean | `true` | Exit non-zero when alerts at or above `fail-on-severity` exist. |
+| `fail-on-severity` | string | `warning` | `error`, `warning` or `note`. |
+| `config-file` | string | `''` | Optional codeql config YAML in the caller repo. |
+
+Needs no secrets: it works off `security-events: write` on `GITHUB_TOKEN`. The
+`secrets:` block declares a single empty entry named `pass` as a placeholder, so
+callers should not try to pass anything to it.
+
+One job per language, named `analyze-<language>`.
+
+#### `reusable-quality.yml`
+
+The three self-checks this repo runs on itself: shellcheck over `scripts/` and
+the composite actions, JSON Schema validation of the governance manifest, and
+the bats suite.
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `environment-name` | string | `dev` | Informational, and appended to all three job names. |
+| `shellcheck-severity` | string | `warning` | `warning`, `error`, `info` or `style`. |
+| `schema-strict` | boolean | `false` | When true, schema validation also fails on `additionalProperties`. |
+
+Three jobs: `shellcheck-<environment-name>`, `manifest-schema-<environment-name>`
+and `bats-<environment-name>`. The suffix comes from an input, so the contexts
+are stable per caller and usable as required checks — this repo passes
+`environment-name: ci` and requires `quality / bats-ci`.
+
+#### `reusable-commitlint.yml`
+
+Lints the PR's commit messages against Conventional Commits 1.0.0 using the
+caller's `.commitlintrc.json`. Consumed by `01-devops`, `02-infrastructure`,
+`03-backend` and `08-deep-agent`.
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `config-file` | string | `.commitlintrc.json` | Path relative to the repo root. |
+| `commit-depth` | number | `2` | How many commits back from the PR head to lint. |
+| `help-url` | string | `''` | Shown in the failure report; usually the caller's `AGENTS.md`. |
+| `skip-release-please` | boolean | `false` | Skips refs starting with `release-please--`, whose commits this recipe does not author. |
+
+The job is named `commitlint`, with **no** branch or environment suffix, so the
+published check context is `<caller-job-id> / commitlint` and stays identical on
+every run. That is deliberate and load-bearing: a required status check is
+matched by name, so a name that varies per branch can never be satisfied on a
+pull request. `tests/bats/reconciler-status-checks.bats` fails if an expression
+is reintroduced into the job name.
+
+#### `reusable-release-please.yml`
+
+Runs release-please: maintains an open "release pull request" that accumulates
+Conventional Commits into a CHANGELOG entry and a version bump, and on merge
+creates the tag plus the GitHub Release. Configured per caller via
+`.github/release-please-config.json` and `.release-please-manifest.json`.
+
+Takes **no inputs**, and the two config paths are hardcoded: the caller must
+place them at `.github/release-please-config.json` and
+`.release-please-manifest.json` exactly.
+
+It mints an installation token with `actions/create-github-app-token@v3` and
+hands that to release-please instead of using `GITHUB_TOKEN`. That matters
+because GitHub does not fire workflow triggers for events caused by
+`GITHUB_TOKEN`: a release pull request opened with it would never run the
+caller's own CI, so the release would go out unverified.
+
+The job is named `release-please`, so the check context is
+`<caller-job-id> / release-please`.
+
+Required secrets: `release-please-app-id`, `release-please-app-private-key`
+(mapped by the caller from the org-level `RELEASE_PLEASE_APP_ID` and
+`RELEASE_PLEASE_APP_PRIVATE_KEY`). Both are `required: true`, so a caller that
+omits them fails at workflow load.
 
 ### node
 
@@ -793,6 +907,29 @@ log configuration) while changing only the image. The read-only fields
 that `DescribeTaskDefinition` returns and `RegisterTaskDefinition`
 rejects are stripped with `jq` before rendering.
 
+**The flip side, and it is easy to get caught by**: what this preserves is
+whatever Terraform had put on the revision *the service is running*. It does not
+pick up later Terraform changes. Because the service ignores `task_definition`,
+a `terraform apply` that edits the task definition registers a **new revision
+that nothing ever points at**, and this recipe keeps rendering on top of the old
+one, so the change never reaches a container. Nothing fails: the apply succeeds,
+the deploy succeeds, and the new setting is simply absent.
+
+After a `terraform apply` that changes the task definition, point the service at
+the new revision once, by hand:
+
+```bash
+aws ecs describe-task-definition --task-definition <family> \
+  --query 'taskDefinition.revision' --output text     # -> N
+
+aws ecs update-service --cluster <cluster> --service <service> \
+  --task-definition <family>:N --force-new-deployment
+```
+
+From then on this recipe starts from the right revision again. A Terraform-made
+revision references the image by tag, not by digest, so that manual step drops
+the digest pin until the next deploy through this recipe restores it.
+
 `wait-for-service-stability` defaults to `true` so a deploy whose tasks
 crash-loop fails the job instead of reporting green.
 
@@ -828,6 +965,49 @@ Caller permissions: `id-token: write` and `contents: read` are mandatory;
 `pull-requests: write` only matters if the caller runs this on a
 `pull_request` event and wants the failure comment.
 
+#### `reusable-frontend-deploy.yml`
+
+Builds a static frontend and publishes it to S3 behind CloudFront: npm install,
+run the caller's build script, `s3 sync` the output, then invalidate the
+distribution. Used by `spark-match-04-frontend` for both its real deploy and its
+dry-run workflow. It does not create the bucket or the distribution; those come
+from `spark-match-02-infrastructure` (`modules/frontend-hosting`).
+
+`role-arn`, `bucket-name` and `distribution-id` are the only three that must be
+supplied — the recipe validates them up front via the `validate-workflow-inputs`
+composite action and fails with a clear message rather than part-way through a
+deploy. Note that they are declared without defaults but are **not** marked
+`required`, so the guard is that validation step, not GitHub.
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `role-arn` | string | `''` | **Must be set.** OIDC role to assume. Pass via `vars`, not `secrets`: an ARN is an identifier. Validated against an ARN regex. |
+| `bucket-name` | string | `''` | **Must be set.** Destination S3 bucket. Validated against S3 naming rules. |
+| `distribution-id` | string | `''` | **Must be set.** CloudFront distribution ID; validated as 10 to 14 uppercase alphanumerics. |
+| `environment-name` | string | `dev` | Logged, and appended to the job name. |
+| `gh-environment` | string | `''` | GitHub Environment to bind as an approval gate. Empty means no gate. |
+| `aws-region` | string | `us-east-1` | |
+| `working-directory` | string | `.` | Directory holding the frontend `package.json`. |
+| `build-script` | string | `build` | npm script that produces the dist, e.g. `build:ci`. |
+| `node-version` | string | `24` | Accepts `24`, `24.0` or `24.0.0`. |
+| `source-dir` | string | `dist` | Build output, relative to `working-directory`. |
+| `cache-control-hashed` | string | `public, max-age=31536000, immutable` | For content-hashed assets. |
+| `cache-control-html` | string | `no-cache, no-store, must-revalidate` | For HTML and anything not hashed. |
+| `invalidation-paths` | string | `/*` | Default invalidates everything. |
+| `dry-run` | string | `''` | `"true"` validates inputs and builds, then skips the sync and the invalidation. A string, not a bool. |
+
+Output: `url`, the distribution's public CloudFront domain. It is populated even
+on a dry run, so a PR preview job can report where the change would land.
+
+Two cache headers rather than one because the two kinds of file need opposite
+treatment: hashed assets are immutable and should be cached for a year, while
+`index.html` must never be cached or a browser keeps loading the old asset
+manifest and the deploy appears not to have happened.
+
+Requires no secrets. The job is named `frontend-deploy-<environment-name>`. That
+suffix comes from an input, not from the branch, so it is fixed for a given
+caller job and the check context can safely be made a required status check.
+
 #### `reusable-migrations-dry-run.yml`
 
 Read-only dry-run of node-pg-migrate migrations against an ephemeral `postgres:<version>` service container. Catches SQL sequence bugs (CHECK constraints, FK violations, idempotency failures) at PR time without touching the real RDS database. Used by `spark-match-03-backend` for every PR (Sprint 2 — see ADR-016).
@@ -854,8 +1034,8 @@ These workflows are **not** part of the consumer-facing catalog; they only run o
 
 - `ci.yml` — Pull request-triggered lint & security pass. Calls the catalog's own quality recipes (`reusable-actionlint`, `reusable-gitleaks`, `reusable-yamllint`, `reusable-quality`) against this repository so a broken recipe is caught here before consumers break. The node/deploy recipes (`reusable-eslint`, `reusable-node-test`, `reusable-terraform-plan`, `reusable-terraform-apply`, `reusable-terraform-destroy`) are NOT exercised here because this repo has no Node project or Terraform module to lint; they are validated directly by the consumer repos that invoke them (see `docs/VERSIONING.md` § strategy).
 - `codeql-actions.yml` — codeql analysis on GitHub Actions YAML. Runs on push to `main`, on pull requests, and weekly.
-- `commitlint.yml` — commitlint check on every PR + push. Validates Conventional Commits 1.0.0 against `.commitlintrc.json`.
-- `release-please.yml` — release-please automation. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
+- `commitlint.yml` — this repo's caller for `reusable-commitlint.yml`. Runs on every PR + push to `main`. Validates Conventional Commits 1.0.0 against `.commitlintrc.json`.
+- `release-please.yml` — this repo's caller for `reusable-release-please.yml`. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
 - `sbom.yml` — cyclonedx sbom attached to GitHub Release. Runs on `release: { types: [published] }`.
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
