@@ -26,10 +26,20 @@ There are no SemVer tags and no LTS branches. Consumers always pin `@main`.
 
 **DO NOT open a public GitHub issue for security vulnerabilities.**
 
-Report privately via one of:
+This repository is **public**. An issue, a pull request or a commit message is
+visible to everyone the moment you publish it, so none of those is a private
+channel.
 
-- **GitHub Security Advisories** (preferred): <https://github.com/spark-match/spark-match-01-devops/security/advisories/new>
-- **Email**: ahincho@spark-match.dev (or open a GitHub issue and ask for a private channel if you do not have email access).
+Report privately via:
+
+- **GitHub Security Advisories** (preferred):
+  <https://github.com/spark-match/spark-match-01-devops/security/advisories/new>.
+  Private vulnerability reporting is enabled on this repository, so the report
+  stays visible only to you and the maintainers until a fix ships.
+- **Email**: <ahincho@unsa.edu.pe>
+- **GitHub**: mention [@ahincho](https://github.com/ahincho) and ask for a private
+  channel. Send the details only once that channel exists. A mention is public,
+  so it must not contain the vulnerability itself.
 
 Include:
 
