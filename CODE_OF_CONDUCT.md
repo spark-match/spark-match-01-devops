@@ -62,8 +62,14 @@ further defined and clarified by project leaders.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at:
 
-- **GitHub**: open a private issue via <https://github.com/spark-match/spark-match-01-devops/issues/new> with the title prefixed `[CoC]` and `@spark-match/product-owners` mention; the maintainers will be notified.
-- **Email**: ahincho@spark-match.dev (replies typically within 7 days).
+- **Email**: <ahincho@unsa.edu.pe> (replies typically within 7 days).
+- **GitHub**: open an issue via <https://github.com/spark-match/spark-match-01-devops/issues/new>
+  with the title prefixed `[CoC]`, mentioning `@spark-match/product-owners` and
+  [@ahincho](https://github.com/ahincho); the maintainers will be notified.
+
+Use email if the report concerns a maintainer, or if you would rather it not be
+visible to the organization. GitHub issues in this repository are public, so do
+not put details you need kept private in one.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
