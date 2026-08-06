@@ -505,7 +505,12 @@ while IFS=$'\n\r' read -r repo; do
         RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection\",\"branch\":\"$legacy_branch\",\"enforce_admins\":$legacy_admins,\"is_default\":$legacy_default}")
         ANY_DRIFT=true
       fi
-    done < <(echo "$legacy_json" | jq -r '.branches[] | [.branch, (.enforce_admins|tostring), (.is_default|tostring)] | @tsv')
+    # Here-string y no `< <(...)`: la sustitucion de procesos depende de
+    # /dev/fd y bajo Git Bash falla de forma intermitente. Cuando falla el
+    # bucle no llega a correr, no se emite ningun aviso, y con --strict el
+    # script sale con 0 diciendo que todo esta bien. Un fallo silencioso en el
+    # camino que existe precisamente para detectar fallos silenciosos.
+    done <<< "$(echo "$legacy_json" | jq -r '.branches[] | [.branch, (.enforce_admins|tostring), (.is_default|tostring)] | @tsv')"
   fi
 
   current_json=$(fetch_current_ruleset "$repo")
