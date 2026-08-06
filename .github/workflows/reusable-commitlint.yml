@@ -29,7 +29,16 @@ permissions:
 
 jobs:
   lint-commits:
-    name: "commitlint-${{ github.event.pull_request.head.ref || github.ref_name }}"
+    # Nombre ESTATICO a proposito. Antes era
+    # "commitlint-${{ github.event.pull_request.head.ref || github.ref_name }}",
+    # y meter la rama dentro del nombre del job rompe los required status
+    # checks: el contexto que GitHub publica es "<job-id-del-caller> /
+    # <nombre-del-job>", asi que en un PR salia "lint-commits /
+    # commitlint-mi-rama" y cambiaba en cada rama. Un check requerido necesita
+    # un nombre fijo -- si no, el ruleset espera un contexto que no llega nunca
+    # y el PR se queda colgado en "Expected - Waiting for status to be
+    # reported" para siempre.
+    name: commitlint
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
