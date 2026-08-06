@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.3.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.3.0...v1.3.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **ecosystem:** pin de trivy-action a una version que existe ([#321](https://github.com/spark-match/spark-match-01-devops/issues/321)) ([168c2d9](https://github.com/spark-match/spark-match-01-devops/commit/168c2d9d44f74062f85acd0b2c171f27d67e9596))
+
 ## [1.3.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.4...v1.3.0) (2026-08-06)
 
 
