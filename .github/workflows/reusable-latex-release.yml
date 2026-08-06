@@ -67,12 +67,26 @@ jobs:
       - name: checkout-caller-repository
         uses: actions/checkout@v7
         with:
+          # Build the exact commit this pull request produced, not whatever
+          # origin/main happens to point at when the runner starts. Without
+          # this, two merges in quick succession both compile the second one's
+          # tree while the release body advertises each PR's own merge SHA.
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0   # Need full history to find latest tag
 
       - name: determine-next-version
         id: version
         run: |
-          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          # Pick the highest existing tag, NOT `git describe --tags
+          # --abbrev=0`. describe returns the nearest tag reachable from HEAD
+          # and, when several tags sit on one commit, it does not return the
+          # highest one. Two tags landed on the same commit in
+          # spark-match-07-article, describe kept answering the lower of the
+          # two, and every later merge recomputed a version that was already
+          # taken. sort -V over the full tag list cannot collide that way:
+          # max + 1 is free by construction.
+          LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          LATEST=${LATEST:-v0.0.0}
           CLEAN=${LATEST#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN"
           MAJOR=${MAJOR:-0}
@@ -82,6 +96,15 @@ jobs:
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
           echo "Latest tag: ${LATEST}"
           echo "Next version: ${NEW_VERSION}"
+
+          # Belt and braces. action-gh-release UPDATES an existing release
+          # instead of failing, so a collision replaces a published PDF
+          # without a single red mark anywhere. Refuse instead.
+          if git rev-parse -q --verify "refs/tags/${NEW_VERSION}" >/dev/null; then
+            echo "::error::Tag ${NEW_VERSION} already exists. Refusing to overwrite the release attached to it. Inspect the tag list and cut the next version by hand."
+            exit 1
+          fi
+
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: compile-latex-document
@@ -103,8 +126,14 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.version }}
+          # Anchor the tag to the merge commit. The default is the SHA that
+          # triggered the run, which for a closed pull request is the merge
+          # REF, not the merge COMMIT, so the tag can land off the branch the
+          # PDF was compiled from.
+          target_commitish: ${{ github.event.pull_request.merge_commit_sha }}
           name: ${{ inputs.release-name-prefix }} - ${{ steps.version.outputs.version }}
           generate_release_notes: true
+          make_latest: true
           files: release-*.pdf
           body: |
             ## ${{ inputs.release-name-prefix }} - ${{ steps.version.outputs.version }}
