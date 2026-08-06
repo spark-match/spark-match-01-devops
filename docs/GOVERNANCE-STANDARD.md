@@ -30,6 +30,33 @@ Every `spark-match/*` repository has exactly one ruleset named `spark-match-defa
 
 The full desired state for the three pilot repositories is encoded in `governance/repository-governance.json` (schema `spark-match.repository-governance/v2`).
 
+### 2.1 La branch protection clásica NO debe coexistir con el ruleset
+
+El ruleset cubre todo lo que cubría la branch protection clásica, así que un repositorio debe tener **una** de las dos, no las dos. Cuando conviven, gana la más restrictiva, y eso rompe cosas de forma poco obvia.
+
+El caso concreto, encontrado el 2026-08-06: `04-frontend`, `07-article` y `08-deep-agent` tenían branch protection clásica sobre `main` **además** del ruleset, con `enforce_admins: true`. Ese flag anula el `bypass_actors` del ruleset —ni un admin de la organización puede saltárselo—, así que todo pull request quedaba esperando a un revisor, con este error idéntico por CLI y por REST API:
+
+```
+Repository rule violations found
+Waiting on code owner review from spark-match/<team>
+```
+
+Diagnosticarlo cuesta, porque el mensaje habla de *rule violations* y el ruleset por sí solo permitiría el merge. Y llevaba tiempo así sin que nadie lo viera, porque el reconciliador solo consultaba `/rulesets`.
+
+Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protección clásica de la rama por defecto:
+
+```bash
+# Ver qué repos la tienen (no modifica nada; sale con 1 si hay drift)
+./scripts/configure-repo-rulesets.sh --check
+
+# Retirarla de un repo, dejando el ruleset como única fuente
+./scripts/configure-repo-rulesets.sh --apply --repos <repo> --prune-legacy-protection
+```
+
+Aparece como estado `legacy-protection`, cuenta como drift en `--check`, y con `--strict` es fallo duro. Borrarla exige el flag explícito, mismo criterio que `--prune-unexpected`: el reconciliador no destruye reglas que no creó sin que se lo pidan en la línea de comandos.
+
+**La lección general**: un manifiesto declarativo solo garantiza lo que sabe consultar. Este decía declarar «el estado deseado de branch protection en la organización» mientras ignoraba por completo una de las dos superficies donde vive esa protección.
+
 ## 3. CODEOWNERS canónico
 
 The canonical pattern is **explicit paths, no catch-all**. Every path that should require review must be listed on its own line. The motivation is twofold:

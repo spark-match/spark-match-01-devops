@@ -194,6 +194,37 @@ gh() {
         return 0
       fi
 
+      # repos/<owner>/<repo>/branches/<branch>/protection  (branch protection
+      # CLASICA, la superficie legacy que convive con los rulesets).
+      #
+      # Sin fixture devuelve no-cero, que es lo que hace la API real con 404 y
+      # es el estado deseado: no hay proteccion clasica. Markers:
+      #   legacy-protection.json     -> el repo SI la tiene (contenido = payload)
+      #   legacy-delete-rejected     -> el DELETE falla
+      if [[ "$url" =~ ^repos/[^/]+/[^/]+/branches/[^/]+/protection$ ]]; then
+        if [[ "$method" == "DELETE" ]]; then
+          if [[ -f "$fx/legacy-delete-rejected" ]]; then return 1; fi
+          return 0
+        fi
+        if [[ -f "$fx/legacy-protection.json" ]]; then
+          cat "$fx/legacy-protection.json"
+          return 0
+        fi
+        return 1
+      fi
+
+      # GET repos/<owner>/<repo>  (resolucion de default_branch).
+      # El script la llama con --jq '.default_branch', y este stub descarta los
+      # flags, asi que hay que emitir ya el valor filtrado, no el objeto.
+      if [[ "$url" =~ ^repos/[^/]+/[^/]+$ ]]; then
+        if [[ -f "$fx/default-branch" ]]; then
+          cat "$fx/default-branch"
+        else
+          echo "main"
+        fi
+        return 0
+      fi
+
       # GET repos/<owner>/<repo>/rulesets  (list)
       if [[ "$url" =~ ^repos/[^/]+/[^/]+/rulesets$ ]]; then
         if [[ -f "$fx/rulesets-list.json" ]]; then

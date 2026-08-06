@@ -28,15 +28,29 @@
 # tener UNA sola fuente de verdad (governance/repository-governance.json) y
 # borrar branch protection. Si tienes ambas, la mas restrictiva gana.
 #
+# Esa ultima frase era un aviso que nadie podia verificar: hasta 2026-08-06
+# este script solo miraba /rulesets y jamas consultaba
+# /branches/{branch}/protection, asi que --check daba verde en repositorios que
+# corrian las dos capas. Tres de nueve las tenian, con enforce_admins=true, y
+# eso anulaba el bypass del ruleset y dejaba todo merge esperando a un revisor.
+#
+# Ahora la proteccion clasica de la rama por defecto SE DETECTA siempre y sale
+# como `legacy-protection` (drift en --check, fallo con --strict). Borrarla
+# exige --prune-legacy-protection, mismo criterio que --prune-unexpected: no se
+# destruyen reglas que este script no creo sin pedirlo en la linea de comandos.
+#
 # Uso:
 #   ./configure-repo-rulesets.sh --check --repos spark-match-01-devops
 #   ./configure-repo-rulesets.sh --dry-run --apply --repos spark-match-01-devops
 #   ./configure-repo-rulesets.sh --apply --repos spark-match-01-devops
 #   ./configure-repo-rulesets.sh --apply --repos r1,r2 --strict
+#   ./configure-repo-rulesets.sh --check                            # detecta proteccion clasica en todos
+#   ./configure-repo-rulesets.sh --apply --repos r1 --prune-legacy-protection
 #   ./configure-repo-rulesets.sh --apply                            # todos los del manifest
 #
 # Salidas por repositorio: in-sync, would-create, would-update, created,
-#                          updated, failed, unexpected.
+#                          updated, failed, unexpected, legacy-protection,
+#                          legacy-protection-removed.
 # Exit codes:
 #   0  = todos in-sync (--check) o todos reconciliados (--apply)
 #   1  = drift detectado (--check) o al menos un fallo (--apply)
@@ -55,6 +69,7 @@ REPOS_FILTER=""
 BACKUP_DIR=""
 STRICT=false
 PRUNE_UNEXPECTED=false
+PRUNE_LEGACY_PROTECTION=false
 JSON_OUTPUT=false
 
 # Estado acumulado (declarado temprano porque log_warn puede mutarlos).
@@ -68,7 +83,7 @@ usage() {
   # (incluye Uso + Salidas + Exit codes + el arg parser) y luego sale.
   # El rango exacto se mantiene al final del `case` del arg parser; cualquier
   # codigo nuevo antes de ese limite requiere ajustar este numero.
-  sed -n '2,90p' "$0" | sed -E 's/^# ?//'
+  sed -n '2,105p' "$0" | sed -E 's/^# ?//'
   exit "${1:-0}"
 }
 
@@ -82,6 +97,7 @@ while [[ $# -gt 0 ]]; do
     --backup-dir)   BACKUP_DIR="$2"; shift 2 ;;
     --strict)       STRICT=true; shift ;;
     --prune-unexpected) PRUNE_UNEXPECTED=true; shift ;;
+    --prune-legacy-protection) PRUNE_LEGACY_PROTECTION=true; shift ;;
     --org)          ORG="$2"; shift 2 ;;
     --json)         JSON_OUTPUT=true; shift ;;
     -h|--help)      usage 0 ;;
@@ -212,6 +228,44 @@ fetch_current_ruleset() {
     --argjson unexpected "${unexpected_count:-0}" \
     --arg unexpected_ids "${unexpected_ids:-}" \
     '{exists: $exists, id: $id, payload: $payload, unexpected_count: $unexpected, unexpected_ids: ($unexpected_ids | split("\n"))}'
+}
+
+# Protección de rama CLASICA (branch protection legacy) sobre la rama por
+# defecto. Es una superficie DISTINTA de los rulesets, con su propio endpoint, y
+# hasta ahora este reconciliador no la miraba: por eso `--check` daba verde en
+# repos que corrian una segunda capa de reglas que nadie declaro.
+#
+# Importa sobre todo por `enforce_admins`. Con true, ni un admin de la
+# organizacion puede saltarsela, asi que el bypass del ruleset (bypass_actors =
+# OrganizationAdmin, bypass_mode = pull_request) deja de servir y todo merge
+# queda bloqueado esperando a un revisor. Sintoma tipico: "Repository rule
+# violations found / Waiting on code owner review", identico por CLI y por REST
+# API, en un repo donde el ruleset por si solo lo permitiria.
+#
+# Devuelve siempre un JSON, tambien cuando no hay proteccion (404).
+fetch_legacy_protection() {
+  local repo="$1"
+  local branch detail
+
+  branch=$(gh api "repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
+  if [[ -z "$branch" ]]; then
+    jq -n '{exists: false, branch: null, reason: "default-branch-unresolved"}'
+    return 0
+  fi
+
+  # 404 = sin proteccion clasica, que es el estado deseado. No es un error.
+  if ! detail=$(gh api "repos/$ORG/$repo/branches/$branch/protection" 2>/dev/null); then
+    jq -n --arg b "$branch" '{exists: false, branch: $b}'
+    return 0
+  fi
+
+  jq -n --arg b "$branch" --argjson d "$detail" '{
+    exists: true,
+    branch: $b,
+    enforce_admins: ($d.enforce_admins.enabled // false),
+    requires_review: ($d.required_pull_request_reviews != null),
+    requires_code_owner: ($d.required_pull_request_reviews.require_code_owner_reviews // false)
+  }'
 }
 
 # Construye el payload deseado a partir del manifiesto + team_id resuelto.
@@ -363,6 +417,29 @@ while IFS=$'\n\r' read -r repo; do
     continue
   fi
   log_info "$repo: team '$team_slug' -> id $team_id"
+
+  # Proteccion clasica: se DETECTA siempre, se borra solo con flag explicito.
+  # Mismo criterio que --prune-unexpected: el reconciliador no destruye reglas
+  # que no creo sin que alguien lo pida en la linea de comandos.
+  legacy_json=$(fetch_legacy_protection "$repo")
+  if [[ "$(echo "$legacy_json" | jq -r '.exists')" == "true" ]]; then
+    legacy_branch=$(echo "$legacy_json" | jq -r '.branch')
+    legacy_admins=$(echo "$legacy_json" | jq -r '.enforce_admins')
+    if [[ "$PRUNE_LEGACY_PROTECTION" == true && "$MODE" == "apply" && "$DRY_RUN" == false ]]; then
+      if gh api -X DELETE "repos/$ORG/$repo/branches/$legacy_branch/protection" >/dev/null 2>&1; then
+        log_info "$repo: borrada proteccion clasica en '$legacy_branch' (el ruleset queda como unica fuente)"
+        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection-removed\",\"branch\":\"$legacy_branch\"}")
+      else
+        log_err "$repo: fallo el DELETE de la proteccion clasica en '$legacy_branch'"
+        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"legacy-protection-delete-failed\"}")
+        ANY_FAIL=true
+      fi
+    else
+      log_warn "$repo: proteccion clasica activa en '$legacy_branch' (enforce_admins=$legacy_admins). Convive con el ruleset y no la declara el manifiesto; usa --prune-legacy-protection para retirarla."
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"legacy-protection\",\"branch\":\"$legacy_branch\",\"enforce_admins\":$legacy_admins}")
+      ANY_DRIFT=true
+    fi
+  fi
 
   current_json=$(fetch_current_ruleset "$repo")
   exists=$(echo "$current_json" | jq -r '.exists')
