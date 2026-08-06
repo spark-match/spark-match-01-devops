@@ -24,6 +24,10 @@
     },
     {
       "date": "2026-08-06",
+      "change": "Recorded why spark-match-07-article keeps statusChecks empty, so it reads as a decision rather than an oversight. Its CI workflow is path-filtered to **.tex, **.bib, figures/** and .github/workflows/**, because a pull request that only edits Markdown has nothing new to compile. A required check that a path filter can skip never reports, and GitHub then blocks the pull request forever on 'Expected - waiting for status to be reported'. That is the same failure mode as the commitlint ghost check in the entry above, reached by a different route: there the check name never matched, here the check never runs. The four pull requests merged into 07-article on 2026-08-06 all had an empty statusCheckRollup, which confirms it. Merge protection for that repository comes from the ruleset alone: one approving review, code-owner review required, linear history, squash-only. Making CI required would need the path filter dropped first, which means compiling the paper on every README typo."
+    },
+    {
+      "date": "2026-08-06",
       "change": "Dropped refs/heads/dev from spark-match-07-article. That branch is abandoned: last commit 2026-07-10 against 2026-08-06 on main, no pull request has ever targeted it, and both of its workflows trigger only on main. Its 6 unique commits touch only .github/CODEOWNERS and .gitignore, and comparing those files directly shows .gitignore identical and CODEOWNERS differing only in comment lines, so nothing substantive is lost. Note the three-dot compare (main...dev) misleads here: it diffs against the merge base, not against the tip of main, so it appears to show unique work that main already superseded. Removing the ref is also what makes the branch deletable at all, since blockDeletion is true and the ruleset covered dev. The same abandoned pattern exists in spark-match-06-model-training (dev 2026-07-10, main 2026-07-26) and is left untouched pending that team's decision."
     }
   ],
