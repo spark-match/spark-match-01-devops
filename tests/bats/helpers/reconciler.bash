@@ -233,6 +233,21 @@ gh() {
           if [[ -f "$fx/legacy-delete-rejected" ]]; then return 1; fi
           return 0
         fi
+        # legacy-backup-fail: la 1ra GET de cada rama (la deteccion) va bien y
+        # la 2da (el respaldo previo al DELETE) falla. Sirve para comprobar que
+        # sin respaldo no se borra.
+        if [[ -f "$fx/legacy-backup-fail" ]]; then
+          local safe="${br//\//-}"
+          local cnt_file="$fx/_legacy-get-count-$safe"
+          local cnt
+          cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
+          cnt=$((cnt + 1))
+          echo "$cnt" > "$cnt_file"
+          if [[ "$cnt" -gt 1 ]]; then
+            echo "fake backup failure for $br" >&2
+            return 1
+          fi
+        fi
         if [[ -f "$fx/legacy-protection-$br.json" ]]; then
           cat "$fx/legacy-protection-$br.json"
           return 0

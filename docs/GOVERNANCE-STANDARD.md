@@ -55,6 +55,19 @@ Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protecci
 
 Aparece como estado `legacy-protection`, cuenta como drift en `--check`, y con `--strict` es fallo duro. Cada rama produce su propia entrada, así que un repositorio con dos capas sale dos veces. Borrarla exige el flag explícito, mismo criterio que `--prune-unexpected`: el reconciliador no destruye reglas que no creó sin que se lo pidan en la línea de comandos.
 
+Antes de cada borrado se guarda el payload completo en `--backup-dir` como `<repo>-legacy-protection-<rama>.json`, y **si el respaldo falla no se borra**. Es el mismo contrato que ya tenían los rulesets antes de un `PUT`. Un `DELETE` sobre `/branches/{b}/protection` no tiene deshacer.
+
+### La política: rulesets + CODEOWNERS, y nada más
+
+La organización administra la protección de ramas con **dos mecanismos, y solo dos**:
+
+1. **Rulesets**, declarados en `governance/repository-governance.json` y aplicados por el reconciliador.
+2. **CODEOWNERS**, que decide quién revisa qué (sección 3).
+
+La branch protection clásica **no forma parte del estándar y debe retirarse allá donde exista**. No añade nada que el ruleset no cubra, no la declara ningún fichero versionado, y su `enforce_admins` rompe el bypass sin dejar rastro de por qué.
+
+Que un repositorio la tenga no es una decisión de su equipo pendiente de revisar: es deuda que hay que quitar. `--check` la trata como drift precisamente por eso.
+
 ### Por qué todas las ramas y no solo la de por defecto
 
 La primera versión de esta detección solo miraba `default_branch`. Con ese alcance no habría encontrado la protección clásica de la rama `dev` de `spark-match-07-article`, que hubo que retirar a mano ese mismo día.

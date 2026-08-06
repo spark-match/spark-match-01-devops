@@ -286,3 +286,82 @@ EOF
   [ "$fails" -eq 2 ]
   [ "$status" -ne 0 ]
 }
+
+# -----------------------------------------------------------------------------
+# Respaldo previo al borrado
+# -----------------------------------------------------------------------------
+# El script respaldaba los rulesets antes de un PUT, y hasta abortaba el PUT si
+# el respaldo fallaba, pero --prune-legacy-protection borraba la capa clasica
+# sin guardar nada. Un DELETE sobre /branches/{b}/protection no tiene deshacer.
+
+@test "legacy: se respalda la proteccion antes de borrarla" {
+  write_legacy_protection
+
+  run bash "$SCRIPT" --apply --prune-legacy-protection --backup-dir "$BATS_TEST_TMPDIR/bk" \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  [ -f "$BATS_TEST_TMPDIR/bk/spark-match-foo-legacy-protection-main.json" ]
+  jq -e '.enforce_admins.enabled == true' \
+    "$BATS_TEST_TMPDIR/bk/spark-match-foo-legacy-protection-main.json" >/dev/null
+}
+
+@test "legacy: el respaldo ocurre ANTES del DELETE, no despues" {
+  write_legacy_protection
+
+  run bash "$SCRIPT" --apply --prune-legacy-protection --backup-dir "$BATS_TEST_TMPDIR/bk" \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  # En el log, la GET del respaldo tiene que aparecer antes que el DELETE.
+  get_line=$(grep -n "gh api repos/spark-match/spark-match-foo/branches/main/protection$" \
+    "$BATS_TEST_TMPDIR/gh.log" | tail -1 | cut -d: -f1)
+  del_line=$(grep -n "DELETE repos/spark-match/spark-match-foo/branches/main/protection" \
+    "$BATS_TEST_TMPDIR/gh.log" | head -1 | cut -d: -f1)
+  [ -n "$get_line" ]
+  [ -n "$del_line" ]
+  [ "$get_line" -lt "$del_line" ]
+}
+
+@test "legacy: si el respaldo falla NO se borra" {
+  write_legacy_protection
+  touch fixtures/legacy-backup-fail
+
+  run bash "$SCRIPT" --apply --prune-legacy-protection --backup-dir "$BATS_TEST_TMPDIR/bk" \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  ! grep -qE "DELETE .*branches/.*/protection" "$BATS_TEST_TMPDIR/gh.log"
+  [ "$status" -ne 0 ]
+}
+
+@test "legacy: un respaldo fallido sale como failed con su motivo" {
+  write_legacy_protection
+  touch fixtures/legacy-backup-fail
+
+  run bash "$SCRIPT" --apply --json --prune-legacy-protection --backup-dir "$BATS_TEST_TMPDIR/bk" \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  json_output | jq -e '.[] | select(.reason == "legacy-protection-backup-failed") | .branch == "main"' >/dev/null
+}
+
+@test "legacy: una rama con barra produce un nombre de fichero valido" {
+  echo "release/1.x" > fixtures/protected-branches
+  cat > "fixtures/legacy-protection-release/1.x.json" 2>/dev/null || mkdir -p fixtures/legacy-protection-release
+  cat > "fixtures/legacy-protection-release/1.x.json" <<'EOF'
+{"enforce_admins": {"enabled": false}}
+EOF
+
+  run bash "$SCRIPT" --apply --prune-legacy-protection --backup-dir "$BATS_TEST_TMPDIR/bk" \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  # La barra se sustituye por guion; si no, mkdir/cat fallarian.
+  [ -f "$BATS_TEST_TMPDIR/bk/spark-match-foo-legacy-protection-release-1.x.json" ]
+}
+
+@test "legacy: --dry-run no respalda ni borra" {
+  write_legacy_protection
+
+  run bash "$SCRIPT" --apply --dry-run --prune-legacy-protection --backup-dir "$BATS_TEST_TMPDIR/bk" \
+    --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+
+  [ ! -f "$BATS_TEST_TMPDIR/bk/spark-match-foo-legacy-protection-main.json" ]
+  ! grep -qE "DELETE .*branches/.*/protection" "$BATS_TEST_TMPDIR/gh.log"
+}

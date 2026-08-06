@@ -449,6 +449,33 @@ backup_ruleset() {
   echo "$dir"
 }
 
+# Respalda la branch protection CLASICA de una rama antes de borrarla.
+#
+# Mismo contrato que backup_ruleset: devuelve no-cero si el respaldo falla, y
+# el caller DEBE abortar el borrado en ese caso.
+#
+# Existe porque no estaba y se noto tarde. El script respaldaba los rulesets
+# antes de un PUT, y hasta abortaba el PUT si el respaldo fallaba, pero
+# --prune-legacy-protection borraba la capa clasica sin guardar nada. Un DELETE
+# sobre /branches/{b}/protection no tiene deshacer: si luego resulta que esa
+# capa protegia algo que el ruleset no cubre, no hay a que volver.
+backup_legacy_protection() {
+  local repo="$1"
+  local branch="$2"
+  local dir="${BACKUP_DIR:-backups/rulesets/$(date +%Y%m%d-%H%M%S)}"
+  # El nombre de rama puede llevar barras (release/1.x), que no valen en un
+  # nombre de fichero.
+  local safe_branch="${branch//\//-}"
+  local target="$dir/${repo}-legacy-protection-${safe_branch}.json"
+  mkdir -p "$dir"
+  if ! gh api "repos/$ORG/$repo/branches/$branch/protection" > "$target" 2>/dev/null </dev/null; then
+    rm -f "$target"
+    log_err "Backup fallo para $repo rama '$branch' (target: $target)"
+    return 1
+  fi
+  echo "$dir"
+}
+
 # --- Loop principal ----------------------------------------------------------
 log_info "ORG=$ORG MANIFEST=$MANIFEST MODE=$MODE DRY_RUN=$DRY_RUN"
 
@@ -495,6 +522,17 @@ while IFS=$'\n\r' read -r repo; do
     while IFS=$'\t' read -r legacy_branch legacy_admins legacy_default; do
       [[ -z "$legacy_branch" ]] && continue
       if [[ "$PRUNE_LEGACY_PROTECTION" == true && "$MODE" == "apply" && "$DRY_RUN" == false ]]; then
+        # Respaldo ANTES del DELETE, mismo contrato que con los rulesets: si no
+        # se puede guardar, no se borra. Un DELETE sobre
+        # /branches/{b}/protection no tiene deshacer.
+        if ! legacy_backup_dir=$(backup_legacy_protection "$repo" "$legacy_branch"); then
+          log_err "$repo: no se pudo respaldar la proteccion clasica de '$legacy_branch'; no se borra"
+          RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"legacy-protection-backup-failed\",\"branch\":\"$legacy_branch\"}")
+          ANY_FAIL=true
+          continue
+        fi
+        log_info "$repo: proteccion clasica de '$legacy_branch' respaldada en $legacy_backup_dir"
+
         # </dev/null por el mismo motivo que en fetch_legacy_protection: este
         # bucle tambien lee ramas por stdin y gh se lo comeria.
         if gh api -X DELETE "repos/$ORG/$repo/branches/$legacy_branch/protection" >/dev/null 2>&1 </dev/null; then
