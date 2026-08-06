@@ -115,6 +115,40 @@ EOF
   done
 }
 
+# Este test existe porque el de arriba fallo dos veces por la misma causa y en
+# ninguna de las dos el sintoma senalaba al culpable: usage() imprimia un rango
+# fijo de lineas (`sed -n '2,105p'`) que tenia que llegar hasta el final del
+# `case` del parser, asi que anadir comentarios en la cabecera empujaba los
+# flags fuera del rango y --help dejaba de nombrarlos.
+#
+# Comparar contra el parser convierte "se me olvido mover el numero" en un
+# fallo que dice exactamente que flag falta, y ademas cubre el caso contrario:
+# un flag documentado a mano que ya no existe.
+@test "edge: --help lista EXACTAMENTE los flags que el parser acepta" {
+  run bash "$SCRIPT" --help
+  [ "$status" -eq 0 ]
+
+  # Flags reales, leidos del `case` del arg parser.
+  parser_flags=$(sed -n '/^while \[\[ \$# -gt 0 \]\]; do/,/^  esac/p' "$SCRIPT" \
+    | grep -oE '^[[:space:]]+--[a-z-]+\)' | tr -d ' )' | sort -u)
+
+  [ -n "$parser_flags" ]
+
+  while IFS= read -r flag; do
+    [[ "$output" == *"$flag"* ]] || {
+      echo "El parser acepta $flag pero --help no lo nombra" >&2
+      return 1
+    }
+  done <<< "$parser_flags"
+}
+
+@test "edge: usage() no depende de numeros de linea" {
+  # La causa raiz. Un rango fijo vuelve a romperse en cuanto alguien comenta
+  # algo en la cabecera, y el fallo aparece lejos de la edicion.
+  run grep -nE "sed -n '[0-9]+,[0-9]+p' \"\\\$0\"" "$SCRIPT"
+  [ "$status" -ne 0 ]
+}
+
 # -----------------------------------------------------------------------------
 # Empty repos list (--repos "")
 # -----------------------------------------------------------------------------

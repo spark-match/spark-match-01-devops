@@ -86,11 +86,25 @@ ANY_FAIL=false
 
 # --- Parsing de args ---------------------------------------------------------
 usage() {
-  # Imprime lineas 2..ultima linea del bloque de documentacion
-  # (incluye Uso + Salidas + Exit codes + el arg parser) y luego sale.
-  # El rango exacto se mantiene al final del `case` del arg parser; cualquier
-  # codigo nuevo antes de ese limite requiere ajustar este numero.
-  sed -n '2,105p' "$0" | sed -E 's/^# ?//'
+  # Imprime el bloque de documentacion de la cabecera y luego la lista de
+  # flags, extraida del propio arg parser.
+  #
+  # Antes esto era `sed -n '2,105p'`, un rango fijo que tenia que llegar hasta
+  # el final del `case`. Se rompio dos veces al anadir comentarios en la
+  # cabecera: los flags se salian del rango y --help dejaba de nombrarlos, con
+  # el agravante de que el sintoma aparecia en un test de --help y no donde se
+  # habia editado. Ahora no hay ningun numero de linea que mantener.
+  #
+  # La cabecera va desde la linea 2 hasta el primer renglon que ya no es
+  # comentario; los flags salen del `case`, asi que un flag nuevo aparece en
+  # --help sin tocar nada.
+  awk 'NR > 1 { if ($0 !~ /^#/) exit; print }' "$0" | sed -E 's/^# ?//'
+  echo "Flags:"
+  sed -n '/^while \[\[ \$# -gt 0 \]\]; do/,/^  esac/p' "$0" \
+    | grep -oE '^[[:space:]]+--[a-z-]+\)' \
+    | tr -d ' )' \
+    | sort -u \
+    | sed 's/^/  /'
   exit "${1:-0}"
 }
 
