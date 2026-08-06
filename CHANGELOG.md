@@ -20,6 +20,33 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.3.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.4...v1.3.0) (2026-08-06)
+
+
+### Features
+
+* **deploy:** receta reusable de deploy a ecs fargate ([358fc4e](https://github.com/spark-match/spark-match-01-devops/commit/358fc4e76e5f20aeaa1168dda4c286da4b2e0436))
+* **workflows:** exponer la uri de la imagen en la receta de ecr ([#317](https://github.com/spark-match/spark-match-01-devops/issues/317)) ([e2f9fda](https://github.com/spark-match/spark-match-01-devops/commit/e2f9fda40bddda31d3d598abbd2c4ea1fa198ff6))
+
+
+### Bug Fixes
+
+* **composite:** restaurar la composite run-pytest-with-args ([efb309a](https://github.com/spark-match/spark-match-01-devops/commit/efb309a105c5740a12a2fdef9a83f78af3148373))
+* **frontend:** cache immutable para chunks .js con hash en frontend-deploy ([5fadf45](https://github.com/spark-match/spark-match-01-devops/commit/5fadf4571f7672c8072df74f8dac9cdb05fba642))
+* **frontend:** no forzar content-type auto en el sync a s3 ([#315](https://github.com/spark-match/spark-match-01-devops/issues/315)) ([f3c977d](https://github.com/spark-match/spark-match-01-devops/commit/f3c977d06c15cfdf0627d89a2466fd2fb63e59b2))
+* **governance:** quitar la rama del nombre del job de commitlint ([#319](https://github.com/spark-match/spark-match-01-devops/issues/319)) ([85a3792](https://github.com/spark-match/spark-match-01-devops/commit/85a3792d73b7abc17781b57986c618e2a5c1de2f))
+* **python:** pasar los targets como argumentos separados y no como uno solo ([fd8741d](https://github.com/spark-match/spark-match-01-devops/commit/fd8741d35eb6f3c3edf891441115d765a5acb254))
+* **python:** pin setup-uv a v9.0.0 (el alias flotante v9 no existe) ([3106eb9](https://github.com/spark-match/spark-match-01-devops/commit/3106eb98c91813555ee2265167f699c668af1117))
+* **workflows:** propagar el exit code de terraform apply y destroy ([#316](https://github.com/spark-match/spark-match-01-devops/issues/316)) ([1f26379](https://github.com/spark-match/spark-match-01-devops/commit/1f26379e4943f15f3ee626a60adf44d11ead4a79))
+* **workflows:** romper el job cuando terraform plan falla ([ec756ac](https://github.com/spark-match/spark-match-01-devops/commit/ec756ac422daf9af64071a1d0dc2b42829f7c2f9))
+
+
+### Documentation
+
+* add header doc to reusable-python-ci workflow ([#307](https://github.com/spark-match/spark-match-01-devops/issues/307)) ([f371bc2](https://github.com/spark-match/spark-match-01-devops/commit/f371bc25220ee6702045172d117389b96d29f05f))
+* alinear el catalogo del readme con lo que los workflows hacen ([#320](https://github.com/spark-match/spark-match-01-devops/issues/320)) ([4b1c5f2](https://github.com/spark-match/spark-match-01-devops/commit/4b1c5f2c599eea85416da9e0cc448ec55e1f17dc))
+* apuntar los canales de reporte a sitios que existen ([#318](https://github.com/spark-match/spark-match-01-devops/issues/318)) ([aeee427](https://github.com/spark-match/spark-match-01-devops/commit/aeee427ac1dc19ce78a6090e928aba5d76302679))
+
 ## [1.2.4](https://github.com/spark-match/spark-match-01-devops/compare/v1.2.3...v1.2.4) (2026-08-04)
 
 
