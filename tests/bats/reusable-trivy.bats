@@ -71,12 +71,24 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/reusable-trivy.yml"
   [ "$status" -ne 0 ]
 }
 
-@test "reusable-trivy: trivy-action pinned to exact minor (0.x breaking-changes policy)" {
-  # Per AGENTS.md §5.1, actions without `v` prefix are pinned to exact minor
-  # (anchore/sbom-action precedent). trivy-action publishes 0.X.Y without
-  # `v` prefix and has breaking changes between minors.
-  run grep -E "uses: aquasecurity/trivy-action@[0-9]+\\.[0-9]+\\.[0-9]+" "$WORKFLOW"
+@test "reusable-trivy: trivy-action pinned to exact minor WITH the v prefix" {
+  # Pin a minor exacto porque la linea 0.x rompe entre minors (AGENTS.md 5.1).
+  #
+  # El `v` NO es opcional. Este test antes exigia lo contrario -- pedia
+  # `@[0-9]+\.[0-9]+\.[0-9]+`, sin `v`, con el comentario "trivy-action
+  # publishes 0.X.Y without `v` prefix". Eso es falso: en
+  # aquasecurity/trivy-action TODOS los tags llevan `v`. La API confirma
+  # v0.36.0 y devuelve 404 para 0.36.0.
+  #
+  # Consecuencia: la receta se restauro el 2026-08-04 (PR #297) con
+  # `@0.36.0`, jamas resolvio, y este test lo daba por bueno. No salto porque
+  # la receta no tenia ni un consumidor: cero runs en toda la organizacion.
+  # Lo destapo el primer repo que intento usarla.
+  run grep -E "uses: aquasecurity/trivy-action@v[0-9]+\\.[0-9]+\\.[0-9]+" "$WORKFLOW"
   [ "$status" -eq 0 ]
+  # Y que no quede ninguna referencia sin el prefijo.
+  run grep -E "uses: aquasecurity/trivy-action@[0-9]" "$WORKFLOW"
+  [ "$status" -ne 0 ]
   # Specifically NOT a SHA pin.
   run grep -E "uses: aquasecurity/trivy-action@[a-f0-9]{40}" "$WORKFLOW"
   [ "$status" -ne 0 ]

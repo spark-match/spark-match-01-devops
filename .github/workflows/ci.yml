@@ -18,6 +18,9 @@ on:
 
 permissions:
   contents: read
+  # Lo pide reusable-trivy.yml a nivel de workflow. Un reusable no puede
+  # escalar por encima del caller: sin esto, el job de trivy ni arranca.
+  security-events: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -52,3 +55,28 @@ jobs:
       environment-name: ci
       shellcheck-severity: warning
       schema-strict: false
+  # Job 5: Trivy
+  #
+  # Esta aqui sobre todo para EJERCER la receta, no porque este repo tenga
+  # dependencias que escanear: son workflows YAML y scripts bash.
+  #
+  # reusable-trivy.yml se restauro el 2026-08-04 (PR #297) con el pin
+  # `aquasecurity/trivy-action@0.36.0`, que no existe -- los tags de ese
+  # repositorio llevan prefijo `v`. Estuvo roto desde el primer dia y nadie se
+  # entero, porque no tenia ni un consumidor en toda la organizacion: cero runs
+  # historicos. Lo destapo el primer repo que intento usarla
+  # (spark-match-08-deep-agent, PR #65).
+  #
+  # El README dice que ci.yml existe para que "una receta rota se detecte aqui
+  # antes de que rompa a los consumidores". Eso solo funciona con las recetas
+  # que ci.yml realmente invoca. Esta faltaba.
+  trivy:
+    name: trivy
+    uses: ./.github/workflows/reusable-trivy.yml
+    with:
+      scan-type: fs
+      scan-ref: .
+      scanners: vuln,misconfig
+      severity: CRITICAL,HIGH
+      ignore-unfixed: true
+      format: table
