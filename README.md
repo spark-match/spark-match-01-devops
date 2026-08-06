@@ -660,8 +660,10 @@ Default fails on any CRITICAL finding; HIGH configurable via the `severity:`
 input. SARIF output (when `format: sarif`) is uploaded to the GitHub
 Security tab via `github/codeql-action/upload-sarif`.
 
-Pin: `aquasecurity/trivy-action@0.36.0` (minor-pinned because the 0.x line
+Pin: `aquasecurity/trivy-action@v0.36.0` (minor-pinned because the 0.x line
 has breaking changes between minors, per AGENTS.md §5.1 exception pattern).
+The `v` is not optional — that repository's tags are all `v`-prefixed, and
+`@0.36.0` does not resolve.
 
 Inputs (highlights):
 
