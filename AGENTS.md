@@ -123,8 +123,7 @@ gh pr create \
 | `quality / bats` | tests bats en `tests/bats/` |
 | `quality / manifest schema` | `governance/repository-governance.json` contra schema |
 | `quality / shellcheck` | bash scripts en `scripts/` + `.github/actions/` |
-| `commitlint` | convención de commits en cada pull request (PR-side) |
-| `commitlint-main` | convención de commits en el push a main (post-merge, required desde #276) |
+| `commitlint` | convención de commits. Mismo nombre de job en el PR y en el push a main: el contexto es `lint-commits / commitlint` en ambos, y es el que exige el ruleset |
 | `codeql-actions` | vulnerabilidades en YAML de Actions |
 | `Code scanning` | resultados agregados de CodeQL sobre Actions |
 
@@ -165,11 +164,11 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/spark-match/spark-match-01-
 > **Pitfall crítico REST API merge**: cuando el body de la solicitud PUT
 > solo contiene `commit_message`, GitHub usa el **PR title como
 > `commit_title`** del merge commit. El PR-side commitlint check
-> (`lint-commits / commitlint-{branch}`) solo valida los mensajes de los
+> (`lint-commits / commitlint`) solo valida los mensajes de los
 > git commits del PR, **no el PR title**. Resultado: si el PR title
 > tiene `camelCase` (e.g. `statusChecks`) o viola otras reglas
 > (`subject-case` lower-case, etc.), el commit del merge squash las hereda
-> y falla `lint-commits / commitlint-main` en el push a main. El check
+> y falla `lint-commits / commitlint` en el push a main. El check
 > PR-side pasó pero el check post-merge falló.
 >
 > **Solución operativa**: enviar `commit_title` Y `commit_message` por
@@ -180,10 +179,17 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/spark-match/spark-match-01-
 > $payload = '{"merge_method":"squash","commit_title":"fix(scope): subject (#NN)","commit_message":"\n\nBody line 1.\nBody line 2.","sha":"' + $sha + '"}'
 > ```
 >
-> Adicionalmente, `lint-commits / commitlint-main` es **required
-> status check** en el ruleset de este repo (agregado en PR #276). Si
-> un merge produce un commit con subject que viola commitlint, el push
-> a main queda pegado en rojo hasta que se arregle.
+> Enviar los dos campos por separado es la **única** defensa real contra
+> esto. PR #276 añadió `lint-commits / commitlint-main` como required
+> status check creyendo que lo cubría, pero un required status check
+> se evalúa contra el head SHA del PR y decide si el merge puede
+> ocurrir: un check que solo corre *después* del merge no puede ser
+> puerta *del* merge. Peor, ese contexto no aparecía nunca en un PR
+> (el job llevaba la rama en el nombre), así que dejaba cada PR colgado
+> y obligaba a `--admin`. Retirado el 2026-08-06.
+>
+> El run post-merge sigue existiendo y sigue poniéndose rojo en `main`
+> si el subject es malo. Avisa, no previene.
 
 > **Reglas activas de longitud de línea** (`.commitlintrc.json` + defaults de `@commitlint/config-conventional`):
 >
@@ -236,7 +242,7 @@ usar siempre `--body-file` (ver §4.1).
 Para evitar el pitfall documentado en §4.4 (PR title → commit subject), ejecutar este checklist **antes** de hacer el PUT:
 
 ```powershell
-# 1. Validar PR title contra las reglas que commitlint-main va a aplicar
+# 1. Validar PR title contra las reglas que commitlint va a aplicar
 $title = gh pr view <N> --repo <owner>/<repo> --json title -q .title
 if ($title -cmatch '[A-Z]') { Write-Error "title has uppercase (commitlint subject-case)"; exit 1 }
 if ($title.Length -gt 100) { Write-Error "title >100 chars (commitlint header-max-length)"; exit 1 }
@@ -260,9 +266,9 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/<owner>/<repo>/pulls/<N>/me
 
 | Falla | Síntoma | Fix |
 |---|---|---|
-| `commit_message` solo (sin `commit_title`) | El merge commit subject = PR title. Si PR title tiene `camelCase`, falla `commitlint-main` en push a main | Enviar `commit_title` + `commit_message` separados |
+| `commit_message` solo (sin `commit_title`) | El merge commit subject = PR title. Si PR title tiene `camelCase`, falla `commitlint` en el push a main (avisa, ya fusionado) | Enviar `commit_title` + `commit_message` separados |
 | PR title con `(#NN)` al final | En §4.4 el subject heredado termina con `(#NN)^{1,2}` que es BODY char límite | Agregar `(#NN)` solo en `commit_title`, no en `commit_message` |
-| `commit_message` con una sola línea larga (>100 chars) | Falla `header-max-length` o `footer-max-line-length` en commitlint-main | Dividir en múltiples líneas, cada una ≤100 chars |
+| `commit_message` con una sola línea larga (>100 chars) | Falla `header-max-length` o `footer-max-line-length` en commitlint | Dividir en múltiples líneas, cada una ≤100 chars |
 | Usar `git commit -m` con strings concatenadas (`+`) | PowerShell tokeniza `"..."` con caracteres especiales de forma impredecible | Usar `Get-Content -Raw` desde un archivo |
 
 **Pre-flight obligatorio para squash-merge de PR de release-please** (PR #275, #277, #281, etc.): el PR title es `release X.Y.Z` que pasa todos los checks. No requiere edición. Pero el `commit_message` debe ser multi-line (no una línea concatenada de 200+ chars).
@@ -563,7 +569,7 @@ ls tests/bats/*.bats
 
 ## 13. Lessons learned (2026-08-04)
 
-**Cosmético NO requiere rewrite.** El fix de `commitlint-main` required (PR #276) es la defensa real. Lo que sigue es la bitácora del rewrite de 2026-08-04 (one-off, no repetir) y las lecciones reutilizables que dejó.
+**Cosmético NO requiere rewrite.** La defensa real es el checklist de §4.5 (enviar `commit_title` y `commit_message` por separado); el required check de PR #276 nunca llegó a funcionar, ver §4.4. Lo que sigue es la bitácora del rewrite de 2026-08-04 (one-off, no repetir) y las lecciones reutilizables que dejó.
 
 ### 13.1 Bitácora del rewrite
 
@@ -582,7 +588,7 @@ La rama `main` fue reescrita con `git rebase -i aa52bf7` + 5 amend manuales + fo
 
 **1. Status check name mismatch** (causante original de las PRs #273, #274): el manifest tenía nombres que no correspondían a los que los workflows reportan. Antes de mergear un cambio al manifest, validar contra `gh api /repos/$REPO/actions/runs?per_page=10` + `/jobs`. Los 8 bats tests en `reconciler-status-checks.bats` lockean los nombres reales para que el próximo agente no pueda sobrescribirlos con placeholders.
 
-**2. REST API merge pitfall** (causante del cosmético): documentado en §4.4 + §4.5. SIEMPRE enviar `commit_title` + `commit_message` separados en `PUT /pulls/N/merge`. Si solo envías `commit_message`, GitHub usa el PR title como commit subject y hereda cualquier `camelCase`. El fix de PR #276 (`commitlint-main` required + bats test 3) hace fail-closed el sistema.
+**2. REST API merge pitfall** (causante del cosmético): documentado en §4.4 + §4.5. SIEMPRE enviar `commit_title` + `commit_message` separados en `PUT /pulls/N/merge`. Si solo envías `commit_message`, GitHub usa el PR title como commit subject y hereda cualquier `camelCase`. PR #276 intentó hacerlo fail-closed con un required check, pero no era alcanzable por esa vía (§4.4): el checklist es la defensa.
 
 **3. Pre-commit hook vs CI commitlint**: el pre-commit es un proxy aproximado. Documentado en §5.7. Si pre-commit rechaza por **bang `!`** o **`(#NN)`**: `--no-verify` es seguro. Cualquier otra razón: NO usar `--no-verify`, el commit es genuinamente inválido.
 
@@ -594,7 +600,7 @@ La rama `main` fue reescrita con `git rebase -i aa52bf7` + 5 amend manuales + fo
 
 | Defensa | Origen | Bloquea |
 |---|---|---|
-| `commitlint-main` required | PR #276 | squash merge con subject malo en push a main |
+| checklist de merge por REST API (§4.5) | PR #276 (el required check que añadió se retiró el 2026-08-06) | squash merge con subject malo en push a main |
 | 8 bats tests en `reconciler-status-checks.bats` | PR #274 | regresión de governance (manifest con placeholder names) |
 | §4.4 doc del REST API pitfall | PR #278 | próximo agente sabe el pitfall |
 | §4.5 checklist pre-merge | PR #282 | script de validación antes del PUT |

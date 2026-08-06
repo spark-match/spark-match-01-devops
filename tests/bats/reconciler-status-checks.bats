@@ -27,7 +27,7 @@ setup() {
     | sort == [
         "actionlint / actionlint-ci",
         "gitleaks / gitleaks-ci",
-        "lint-commits / commitlint-main",
+        "lint-commits / commitlint",
         "yamllint / yamllint-ci"
       ]
   ' "$MANIFEST" >/dev/null
@@ -40,16 +40,29 @@ setup() {
   ' "$MANIFEST" >/dev/null
 }
 
-@test "spark-match-01-devops statusChecks MUST include commitlint-main as a guard against REST API merge title concatenation" {
-  # Defense against PR title becoming the squash-merge commit subject:
-  # the PR-side commitlint check lints git commit messages (not PR titles),
-  # so a camelCase PR title can pass the PR check but produce a merge commit
-  # that violates subject-case. Required on the post-merge push to main
-  # forces the system to flag this.
+@test "spark-match-01-devops requires the commitlint context a pull request actually reports" {
+  # Antes esto exigia "lint-commits / commitlint-main". Ese context solo se
+  # publica en un push a main: en un PR el job se llamaba commitlint-<rama>,
+  # asi que el check requerido no llegaba nunca y el PR quedaba colgado en
+  # "Expected - Waiting for status to be reported" -- el mismo fallo que
+  # describe la cabecera de este fichero.
   jq -e '
     .repositories["spark-match-01-devops"].statusChecks
-    | any(. == "lint-commits / commitlint-main")
+    | any(. == "lint-commits / commitlint")
   ' "$MANIFEST" >/dev/null
+}
+
+@test "reusable-commitlint job name MUST be static so it can gate a merge" {
+  # Un required status check se identifica por su nombre. Si el nombre del job
+  # lleva dentro una expresion (la rama, el actor, el SHA), el context cambia
+  # en cada run y el ruleset espera uno que no llega. Este test falla si
+  # alguien vuelve a meter ${{ ... }} en el name: del job.
+  local wf="${REPO_ROOT}/.github/workflows/reusable-commitlint.yml"
+  [ -f "$wf" ]
+
+  # Solo el name: del job, no los comentarios que explican por que.
+  run grep -E '^ {4}name:.*\$\{\{' "$wf"
+  [ "$status" -ne 0 ]
 }
 
 # -----------------------------------------------------------------------------
