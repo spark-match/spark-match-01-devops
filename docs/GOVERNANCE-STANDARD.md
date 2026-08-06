@@ -30,6 +30,63 @@ Every `spark-match/*` repository has exactly one ruleset named `spark-match-defa
 
 The full desired state for the three pilot repositories is encoded in `governance/repository-governance.json` (schema `spark-match.repository-governance/v2`).
 
+### 2.1 La branch protection clásica NO debe coexistir con el ruleset
+
+El ruleset cubre todo lo que cubría la branch protection clásica, así que un repositorio debe tener **una** de las dos, no las dos. Cuando conviven, gana la más restrictiva, y eso rompe cosas de forma poco obvia.
+
+El caso concreto, encontrado el 2026-08-06: `04-frontend`, `07-article` y `08-deep-agent` tenían branch protection clásica sobre `main` **además** del ruleset, con `enforce_admins: true`. Ese flag anula el `bypass_actors` del ruleset —ni un admin de la organización puede saltárselo—, así que todo pull request quedaba esperando a un revisor, con este error idéntico por CLI y por REST API:
+
+> Esos tres fueron lo que se vio **mirando solo la rama por defecto**. El barrido completo del mismo día encontró 9 ramas en 5 repositorios; el desglose está más abajo, en «Por qué todas las ramas».
+
+```
+Repository rule violations found
+Waiting on code owner review from spark-match/<team>
+```
+
+Diagnosticarlo cuesta, porque el mensaje habla de *rule violations* y el ruleset por sí solo permitiría el merge. Y llevaba tiempo así sin que nadie lo viera, porque el reconciliador solo consultaba `/rulesets`.
+
+Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protección clásica, y en **todas las ramas** del repositorio, no solo en la de por defecto:
+
+```bash
+# Ver qué repos la tienen (no modifica nada; sale con 1 si hay drift)
+./scripts/configure-repo-rulesets.sh --check
+
+# Retirarla de un repo, dejando el ruleset como única fuente
+./scripts/configure-repo-rulesets.sh --apply --repos <repo> --prune-legacy-protection
+```
+
+Aparece como estado `legacy-protection`, cuenta como drift en `--check`, y con `--strict` es fallo duro. Cada rama produce su propia entrada, así que un repositorio con dos capas sale dos veces. Borrarla exige el flag explícito, mismo criterio que `--prune-unexpected`: el reconciliador no destruye reglas que no creó sin que se lo pidan en la línea de comandos.
+
+Antes de cada borrado se guarda el payload completo en `--backup-dir` como `<repo>-legacy-protection-<rama>.json`, y **si el respaldo falla no se borra**. Es el mismo contrato que ya tenían los rulesets antes de un `PUT`. Un `DELETE` sobre `/branches/{b}/protection` no tiene deshacer.
+
+### La política: rulesets + CODEOWNERS, y nada más
+
+La organización administra la protección de ramas con **dos mecanismos, y solo dos**:
+
+1. **Rulesets**, declarados en `governance/repository-governance.json` y aplicados por el reconciliador.
+2. **CODEOWNERS**, que decide quién revisa qué (sección 3).
+
+La branch protection clásica **no forma parte del estándar y debe retirarse allá donde exista**. No añade nada que el ruleset no cubra, no la declara ningún fichero versionado, y su `enforce_admins` rompe el bypass sin dejar rastro de por qué.
+
+Que un repositorio la tenga no es una decisión de su equipo pendiente de revisar: es deuda que hay que quitar. `--check` la trata como drift precisamente por eso.
+
+### Por qué todas las ramas y no solo la de por defecto
+
+La primera versión de esta detección solo miraba `default_branch`. Con ese alcance no habría encontrado la protección clásica de la rama `dev` de `spark-match-07-article`, que hubo que retirar a mano ese mismo día.
+
+El barrido completo sobre la organización, el 2026-08-06, devolvió esto:
+
+| | |
+|---|---|
+| Ramas con protección clásica | 9, en 5 repositorios |
+| En la rama por defecto | 5 |
+| **En otras ramas** | **4**, todas en `dev` |
+| Con `enforce_admins: true` | 5, todas en la rama por defecto |
+
+El alcance corto se dejaba fuera casi la mitad de los hallazgos. Las candidatas se obtienen de tres fuentes que se unen y deduplican: el listado `?protected=true`, la rama por defecto, y las refs que el manifiesto declara. La primera acota el trabajo pero **no decide**, porque ese filtro devuelve también las ramas protegidas solo por ruleset; quien decide es el endpoint clásico, y un 404 significa que ahí no hay capa clásica.
+
+**La lección general**: un manifiesto declarativo solo garantiza lo que sabe consultar. Este decía declarar «el estado deseado de branch protection en la organización» mientras ignoraba por completo una de las dos superficies donde vive esa protección. Y cuando por fin la consultó, la consultó en un solo sitio.
+
 ## 3. CODEOWNERS canónico
 
 The canonical pattern is **explicit paths, no catch-all**. Every path that should require review must be listed on its own line. The motivation is twofold:
@@ -219,6 +276,8 @@ Los 7 repos con `* @team` catch-all fueron migrados a patron explicito via push 
 Despues del push, ambos se restauran a su estado canonico (ventana de riesgo < 5 segundos por repo). Este procedimiento esta documentado en `scripts/mig-one.sh` (workspace script) y replicado 7 veces para los repos affected.
 
 **Nota**: `bypass_mode: always` solo en el ruleset NO es suficiente. La legacy branch protection con `enforce_admins: true` bloquea independientemente. Ambos deben deshabilitarse para que admin pueda pushear directo.
+
+> **Esto es un registro historico, no el procedimiento vigente (actualizado 2026-08-06).** El paso 2 y su restauracion ya no aplican: la branch protection clasica no forma parte del estandar (§ 2.1), asi que restaurar `enforce_admins: true` recrearia justo el problema. Hoy el bypass es de un solo flag, el del ruleset, y si un push directo sigue bloqueado despues de ponerlo en `always` el sintoma delata una capa clasica que hay que retirar con `--prune-legacy-protection`, no deshabilitar y volver a poner.
 
 ## 9. Desviaciones conocidas
 

@@ -194,6 +194,85 @@ gh() {
         return 0
       fi
 
+      # GET repos/<owner>/<repo>/branches?protected=true...  (ramas candidatas)
+      #
+      # El script la llama con --paginate --jq '.[].name', y este stub descarta
+      # los flags, asi que hay que emitir ya los nombres filtrados, uno por
+      # linea, igual que se hace con default-branch. Marker:
+      #   protected-branches         -> un nombre de rama por linea
+      # Sin fixture devuelve vacio: el script cae en la union con la rama por
+      # defecto y las refs del manifiesto, que es justo lo que hay que probar.
+      if [[ "$url" =~ ^repos/[^/]+/[^/]+/branches\? ]]; then
+        if [[ -f "$fx/protected-branches" ]]; then
+          cat "$fx/protected-branches"
+        fi
+        return 0
+      fi
+
+      # repos/<owner>/<repo>/branches/<branch>/protection  (branch protection
+      # CLASICA, la superficie legacy que convive con los rulesets).
+      #
+      # Sin fixture devuelve no-cero, que es lo que hace la API real con 404 y
+      # es el estado deseado: no hay proteccion clasica. Markers:
+      #   legacy-protection-<rama>.json  -> esa rama concreta la tiene
+      #   legacy-protection.json         -> SOLO la rama por defecto la tiene
+      #   legacy-delete-rejected         -> el DELETE falla
+      #
+      # Que legacy-protection.json aplique unicamente a la rama por defecto es
+      # deliberado: antes el stub lo devolvia para cualquier rama, y desde que
+      # el script barre todas las ramas eso convertiria cada fixture en varios
+      # hallazgos. Los tests que solo quieren "este repo tiene proteccion
+      # clasica" siguen escribiendo el fichero de siempre.
+      # La rama va sin escapar y puede llevar barras (release/1.x, feat/x), que
+      # es lo que acepta la API real, asi que el patron tiene que ser .+ y no
+      # [^/]+. Con [^/]+ una rama con barra no casaba aqui, se colaba hasta el
+      # fallback de "200 vacio" y el script la leia como protegida.
+      if [[ "$url" =~ ^repos/[^/]+/[^/]+/branches/(.+)/protection$ ]]; then
+        local br="${BASH_REMATCH[1]}"
+        if [[ "$method" == "DELETE" ]]; then
+          if [[ -f "$fx/legacy-delete-rejected" ]]; then return 1; fi
+          return 0
+        fi
+        # legacy-backup-fail: la 1ra GET de cada rama (la deteccion) va bien y
+        # la 2da (el respaldo previo al DELETE) falla. Sirve para comprobar que
+        # sin respaldo no se borra.
+        if [[ -f "$fx/legacy-backup-fail" ]]; then
+          local safe="${br//\//-}"
+          local cnt_file="$fx/_legacy-get-count-$safe"
+          local cnt
+          cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
+          cnt=$((cnt + 1))
+          echo "$cnt" > "$cnt_file"
+          if [[ "$cnt" -gt 1 ]]; then
+            echo "fake backup failure for $br" >&2
+            return 1
+          fi
+        fi
+        if [[ -f "$fx/legacy-protection-$br.json" ]]; then
+          cat "$fx/legacy-protection-$br.json"
+          return 0
+        fi
+        local default_br
+        default_br=$(cat "$fx/default-branch" 2>/dev/null || echo "main")
+        if [[ -f "$fx/legacy-protection.json" && "$br" == "$default_br" ]]; then
+          cat "$fx/legacy-protection.json"
+          return 0
+        fi
+        return 1
+      fi
+
+      # GET repos/<owner>/<repo>  (resolucion de default_branch).
+      # El script la llama con --jq '.default_branch', y este stub descarta los
+      # flags, asi que hay que emitir ya el valor filtrado, no el objeto.
+      if [[ "$url" =~ ^repos/[^/]+/[^/]+$ ]]; then
+        if [[ -f "$fx/default-branch" ]]; then
+          cat "$fx/default-branch"
+        else
+          echo "main"
+        fi
+        return 0
+      fi
+
       # GET repos/<owner>/<repo>/rulesets  (list)
       if [[ "$url" =~ ^repos/[^/]+/[^/]+/rulesets$ ]]; then
         if [[ -f "$fx/rulesets-list.json" ]]; then
