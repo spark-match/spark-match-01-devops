@@ -1,14 +1,16 @@
 # Governance Standard — Spark Match Organization
 
-> **Scope:** this document defines the governance standard for the nine repositories under the `spark-match` GitHub organization. Consumer repositories under the personal `ahincho/` namespace are out of scope and follow their own local conventions.
+> **Scope:** this document defines the governance standard for every repository declared in `governance/repository-governance.json` under the `spark-match` GitHub organization. Consumer repositories under the personal `ahincho/` namespace are out of scope and follow their own local conventions.
 >
 > **Status:** this is the canonical reference. The declarative source of truth is `governance/repository-governance.json`; this document is the narrative companion that explains the rationale and how to apply it.
 
-## 1. Resumen ejecutivo
+## 1. Executive summary
 
-Every `spark-match/*` repository must enforce the same baseline governance: a single ruleset named `spark-match-default-branch-protection` that protects the default branch (and `dev` where applicable), blocks force-pushes and branch deletions, requires pull-request approval from a designated technical team via `CODEOWNERS`, allows only squash merges, and limits admin bypass to the pull-request context. **Current global compliance: 39%** (snapshot 2026-07-26; see § 8).
+Every `spark-match/*` repository must enforce the same baseline governance: a single ruleset named `spark-match-default-branch-protection` that protects the default branch (and `dev` where applicable), blocks force-pushes and branch deletions, requires pull-request approval from a designated technical team via `CODEOWNERS`, allows only squash merges, and limits admin bypass to the pull-request context.
 
-## 2. Ruleset canónico
+For current compliance, ask the reconciler — `./scripts/configure-repo-rulesets.sh --check` — which computes it against the live rulesets. A percentage used to sit here, dated 2026-07-26, and it was stale in both directions: it counted nine repositories when `.github` brought the total to ten, and it read as authoritative while `spark-match-02-infrastructure` sat in drift for three days.
+
+## 2. The canonical ruleset
 
 Every `spark-match/*` repository has exactly one ruleset named `spark-match-default-branch-protection`. Its shape is:
 
@@ -30,92 +32,170 @@ Every `spark-match/*` repository has exactly one ruleset named `spark-match-defa
 
 The full desired state for the three pilot repositories is encoded in `governance/repository-governance.json` (schema `spark-match.repository-governance/v2`).
 
-### 2.1 La branch protection clásica NO debe coexistir con el ruleset
+### 2.1 Classic branch protection must NOT coexist with the ruleset
 
-El ruleset cubre todo lo que cubría la branch protection clásica, así que un repositorio debe tener **una** de las dos, no las dos. Cuando conviven, gana la más restrictiva, y eso rompe cosas de forma poco obvia.
+The ruleset covers everything classic branch protection covered, so a repository
+should have **one** of the two, never both. When they coexist the more
+restrictive one wins, and that breaks things in non-obvious ways.
 
-El caso concreto, encontrado el 2026-08-06: `04-frontend`, `07-article` y `08-deep-agent` tenían branch protection clásica sobre `main` **además** del ruleset, con `enforce_admins: true`. Ese flag anula el `bypass_actors` del ruleset —ni un admin de la organización puede saltárselo—, así que todo pull request quedaba esperando a un revisor, con este error idéntico por CLI y por REST API:
+The concrete case, found on 2026-08-06: `04-frontend`, `07-article` and
+`08-deep-agent` had classic branch protection on `main` **in addition to** the
+ruleset, with `enforce_admins: true`. That flag overrides the ruleset's
+`bypass_actors` — not even an organization admin can get past it — so every pull
+request sat waiting for a reviewer, with an error identical through the CLI and
+the REST API:
 
-> Esos tres fueron lo que se vio **mirando solo la rama por defecto**. El barrido completo del mismo día encontró 9 ramas en 5 repositorios; el desglose está más abajo, en «Por qué todas las ramas».
+> Those three were what showed up **looking only at the default branch**. The
+> full sweep the same day found 9 branches across 5 repositories; the breakdown
+> is below, under "Why every branch".
 
 ```
 Repository rule violations found
 Waiting on code owner review from spark-match/<team>
 ```
 
-Diagnosticarlo cuesta, porque el mensaje habla de *rule violations* y el ruleset por sí solo permitiría el merge. Y llevaba tiempo así sin que nadie lo viera, porque el reconciliador solo consultaba `/rulesets`.
+It is expensive to diagnose, because the message says *rule violations* while
+the ruleset on its own would allow the merge. And it had been that way for a
+while without anyone noticing, because the reconciler only queried `/rulesets`.
 
-Desde el 2026-08-06 `configure-repo-rulesets.sh` **detecta siempre** la protección clásica, y en **todas las ramas** del repositorio, no solo en la de por defecto:
+Since 2026-08-06 `configure-repo-rulesets.sh` **always** detects classic
+protection, across **every branch** of the repository, not just the default one:
 
 ```bash
-# Ver qué repos la tienen (no modifica nada; sale con 1 si hay drift)
+# See which repos have it (changes nothing; exits 1 if there is drift)
 ./scripts/configure-repo-rulesets.sh --check
 
-# Retirarla de un repo, dejando el ruleset como única fuente
+# Remove it from one repo, leaving the ruleset as the single source
 ./scripts/configure-repo-rulesets.sh --apply --repos <repo> --prune-legacy-protection
 ```
 
-Aparece como estado `legacy-protection`, cuenta como drift en `--check`, y con `--strict` es fallo duro. Cada rama produce su propia entrada, así que un repositorio con dos capas sale dos veces. Borrarla exige el flag explícito, mismo criterio que `--prune-unexpected`: el reconciliador no destruye reglas que no creó sin que se lo pidan en la línea de comandos.
+It surfaces as the `legacy-protection` state, counts as drift under `--check`,
+and is a hard failure under `--strict`. Each branch produces its own entry, so a
+repository running both layers appears twice. Removing it requires the explicit
+flag, on the same principle as `--prune-unexpected`: the reconciler does not
+destroy rules it did not create unless asked to on the command line.
 
-Antes de cada borrado se guarda el payload completo en `--backup-dir` como `<repo>-legacy-protection-<rama>.json`, y **si el respaldo falla no se borra**. Es el mismo contrato que ya tenían los rulesets antes de un `PUT`. Un `DELETE` sobre `/branches/{b}/protection` no tiene deshacer.
+Before each deletion the full payload is saved to `--backup-dir` as
+`<repo>-legacy-protection-<branch>.json`, and **if the backup fails, nothing is
+deleted**. That is the same contract rulesets already had before a `PUT`. A
+`DELETE` on `/branches/{b}/protection` has no undo.
 
-### La política: rulesets + CODEOWNERS, y nada más
+### The policy: rulesets plus CODEOWNERS, and nothing else
 
-La organización administra la protección de ramas con **dos mecanismos, y solo dos**:
+The organization manages branch protection with **two mechanisms, and only
+two**:
 
-1. **Rulesets**, declarados en `governance/repository-governance.json` y aplicados por el reconciliador.
-2. **CODEOWNERS**, que decide quién revisa qué (sección 3).
+1. **Rulesets**, declared in `governance/repository-governance.json` and applied by the reconciler.
+2. **CODEOWNERS**, which decides who reviews what (section 3).
 
-La branch protection clásica **no forma parte del estándar y debe retirarse allá donde exista**. No añade nada que el ruleset no cubra, no la declara ningún fichero versionado, y su `enforce_admins` rompe el bypass sin dejar rastro de por qué.
+Classic branch protection **is not part of the standard and must be removed
+wherever it exists**. It adds nothing the ruleset does not cover, no versioned
+file declares it, and its `enforce_admins` breaks the bypass without leaving any
+trace of why.
 
-Que un repositorio la tenga no es una decisión de su equipo pendiente de revisar: es deuda que hay que quitar. `--check` la trata como drift precisamente por eso.
+A repository having it is not a pending decision for its team to revisit: it is
+debt to remove. That is precisely why `--check` treats it as drift.
 
-### Por qué todas las ramas y no solo la de por defecto
+### Why every branch, not just the default one
 
-La primera versión de esta detección solo miraba `default_branch`. Con ese alcance no habría encontrado la protección clásica de la rama `dev` de `spark-match-07-article`, que hubo que retirar a mano ese mismo día.
+The first version of this detection only looked at `default_branch`. With that
+scope it would not have found the classic protection on the `dev` branch of
+`spark-match-07-article`, which had to be removed by hand that same day.
 
-El barrido completo sobre la organización, el 2026-08-06, devolvió esto:
+The full sweep across the organization on 2026-08-06 returned this:
 
 | | |
 |---|---|
-| Ramas con protección clásica | 9, en 5 repositorios |
-| En la rama por defecto | 5 |
-| **En otras ramas** | **4**, todas en `dev` |
-| Con `enforce_admins: true` | 5, todas en la rama por defecto |
+| Branches with classic protection | 9, across 5 repositories |
+| On the default branch | 5 |
+| **On other branches** | **4**, all on `dev` |
+| With `enforce_admins: true` | 5, all on the default branch |
 
-El alcance corto se dejaba fuera casi la mitad de los hallazgos. Las candidatas se obtienen de tres fuentes que se unen y deduplican: el listado `?protected=true`, la rama por defecto, y las refs que el manifiesto declara. La primera acota el trabajo pero **no decide**, porque ese filtro devuelve también las ramas protegidas solo por ruleset; quien decide es el endpoint clásico, y un 404 significa que ahí no hay capa clásica.
+The narrow scope was missing almost half the findings. Candidates come from
+three sources that are merged and deduplicated: the `?protected=true` listing,
+the default branch, and the refs the manifest declares. The first narrows the
+work but **does not decide**, because that filter also returns branches
+protected by a ruleset alone; the classic endpoint decides, and a 404 there
+means no classic layer.
 
-**La lección general**: un manifiesto declarativo solo garantiza lo que sabe consultar. Este decía declarar «el estado deseado de branch protection en la organización» mientras ignoraba por completo una de las dos superficies donde vive esa protección. Y cuando por fin la consultó, la consultó en un solo sitio.
+**The general lesson**: a declarative manifest only guarantees what it knows how
+to query. This one claimed to declare "the desired state of branch protection
+across the organization" while ignoring one of the two surfaces where that
+protection lives. And when it finally did query it, it queried in a single
+place.
 
-## 3. CODEOWNERS canónico
+## 3. The canonical CODEOWNERS
 
-The canonical pattern is **explicit paths, no catch-all**. Every path that should require review must be listed on its own line. The motivation is twofold:
+The canonical pattern is **a catch-all first, then explicit paths that override
+it**. Every path that deserves a named owner still gets its own line; the
+catch-all exists so that the paths nobody remembered to list are not left
+ownerless.
 
-- **Predictability**: a new file added to the repo does not silently inherit a reviewer; the CODEOWNERS file must be updated, which forces a conscious decision.
-- **Reduced accumulation**: GitHub accumulates owners from every matching pattern. With `* @team-a` plus `/README.md @team-b`, every file in the repo has at least `team-a`, which makes it harder to reason about who owns what.
+```
+*                    @spark-match/<tech-team>          <- floor, never the whole answer
+/README.md           @spark-match/<tech-team> @spark-match/product-owners
+/governance/         @spark-match/<tech-team> @spark-match/product-owners
+```
+
+Order matters and only in one direction: **for any given file, the last matching
+pattern wins, and it wins outright.** GitHub does not accumulate owners across
+patterns. The catch-all is therefore a floor, not a tax — every later, more
+specific line replaces it completely.
+
+> **Policy change, 2026-08-07.** This section used to say *"explicit paths, no
+> catch-all"*, and gave two reasons. The first — predictability, a new file
+> should not silently inherit a reviewer — still stands and is why the specific
+> lines are kept. The second was simply wrong: it claimed *"GitHub accumulates
+> owners from every matching pattern"*, so that `* @team-a` plus
+> `/README.md @team-b` would demand both on the README. It does not.
+>
+> That mattered, because the prohibition rested on the wrong half.
+>
+> The cost of *not* having a catch-all is now measured rather than theorised. On
+> 2026-08-07, `spark-match-02-infrastructure` had `bootstrap/` — where the IAM
+> policies applied to the Terraform roles live — with **no owner at all**, along
+> with `tasks/` and ten of its sixteen modules. `require_code_owner_review` over
+> an unowned path is satisfied trivially: the gate is there, it reports green,
+> and it is guarding nothing. The rule "if you create a new path, add a line"
+> depends on somebody remembering, and it had gone ten modules unremembered.
+>
+> That is a fail-open failure, and the reason for the change: a floor that is
+> occasionally too broad is safer than a hole that reads as a pass. The residual
+> cost is real but smaller — ownership is less obvious to a reader, and paths
+> nobody chose get a default owner. `tests/bats/` guards against the specific
+> case that bit us, an unowned top-level directory.
+>
+> **To reverse this**, drop the catch-all from every repository's CODEOWNERS and
+> restore explicit-only paths — but pair it with a check that fails when a path
+> has no owner, or the same hole comes back the next time somebody adds a
+> directory in a hurry.
 
 ### Header template
 
 ```
 # CODEOWNERS - Spark Match <N>-<slug>
 #
-# Politica de aprobacion (configurada via ruleset):
+# Approval policy (configured via the ruleset):
 #   - dev:  required_approving_review_count: 1
-#            require_code_owner_review: true
+#           require_code_owner_review: true
 #   - main: required_approving_review_count: 1
-#            require_code_owner_review: true
+#           require_code_owner_review: true
 #
-# CODE OWNERS del repo:
-#   @spark-match/<tech-team>     Miembros: <list>
-#   @spark-match/product-owners  Miembros: <list>  (solo para paths de governance)
+# Code owners for this repo:
+#   @spark-match/<tech-team>     Members: <list>
+#   @spark-match/product-owners  Members: <list>  (governance paths only)
 #
-# Convencion:
-#   - Cada path del repo esta listado explicitamente.
-#   - Si se crea un path nuevo, agregar una linea aqui antes de mergearlo.
+# Convention:
+#   - Every path in the repo is listed explicitly.
+#   - If you create a new path, add a line here before merging it.
 #
-# Nota: el autor del PR no puede aprobar su propio PR, ni siquiera siendo
-# CODE OWNER (regla de GitHub). Un PR abierto por <user> necesita la
-# aprobacion de cualquier otro miembro del team.
+# On precedence: for any given file, the LAST matching pattern wins, and it
+# wins outright -- GitHub does not accumulate owners across patterns. A
+# catch-all placed first is overridden by every later, more specific line.
+#
+# Note: the author of a pull request cannot approve their own, not even as a
+# code owner (a GitHub rule). A pull request opened by <user> needs approval
+# from any other member of the team.
 ```
 
 ### Path patterns
@@ -137,15 +217,20 @@ All other paths are owned only by the technical team of the repo:
 
 If the repo has no `/scripts/`, omit that line. The point is: every directory and file that exists must appear in the file.
 
-### Migration from catch-all pattern
+### Bringing a repository up to the pattern
 
-Repositories currently using `* @team` plus `/decisions/`, `/onboarding/`, etc. must be migrated to explicit paths. The migration is mechanical:
+This section used to describe migrating **away** from `* @team` toward
+explicit-only paths. Since the policy change of 2026-08-07 the direction is
+reversed: the catch-all stays as a floor and the explicit lines sit on top of
+it. The work is the same either way, and it is mechanical:
 
-1. Run `--check --repos <repo>` to confirm current state.
+1. Run `--check --repos <repo>` to confirm the current state.
 2. List every top-level directory and file: `git ls-files | awk -F/ '{print $1}' | sort -u`.
-3. Replace the `*` line with one explicit line per path, using the same team.
-4. Open a PR; require approval from another team member (self-approval is impossible).
-5. Re-run `--check` to confirm no drift introduced by the change.
+3. Make sure a `*` line exists and comes **first**, owned by the repository's technical team.
+4. Add one explicit line per path that deserves a named owner — governance and community docs get `@product-owners` alongside the technical team. Every one of these must come **after** the catch-all, or it will not take effect.
+5. Compare the result against step 2: an unlisted path is not an error any more, but it does mean nobody chose its owner. Decide, then list it or leave it to the floor deliberately.
+6. Open a pull request; it needs approval from another team member (self-approval is impossible).
+7. Re-run `--check` to confirm the change introduced no drift.
 
 ### Reference implementation: `spark-match-01-devops`
 
@@ -158,48 +243,57 @@ The catalog repo (`spark-match-01-devops`) is the canonical example of a fully-m
 
 The header comment in the file lists the PRs that introduced each new path so future maintainers can audit why a path exists.
 
-## 4. Asignacion de equipos por repo
+## 4. Team assignment per repository
 
-| Repositorio | Tech team obligatorio | Miembros auditados | Notas |
+| Repository | Required tech team | Audited members | Notes |
 |---|---|---|---|
-| `spark-match/.github` | `@spark-match/devops` | dbarretol, ahincho | Repo organizacional |
-| `spark-match-00-knowledge-base` | `@spark-match/tech-leads` | ahincho, dbarretol | Documentacion |
-| `spark-match-01-devops` | `@spark-match/devops` | dbarretol, ahincho | Catalogo DevOps (este repo) |
+| `spark-match/.github` | `@spark-match/devops` | dbarretol, ahincho | Organization profile |
+| `spark-match-00-knowledge-base` | `@spark-match/tech-leads` | ahincho, dbarretol | Documentation |
+| `spark-match-01-devops` | `@spark-match/devops` | dbarretol, ahincho | DevOps catalog (this repo) |
 | `spark-match-02-infrastructure` | `@spark-match/devops` | dbarretol, ahincho | Terraform |
-| `spark-match-03-backend` | `@spark-match/backend-devs` | ahincho, BriyitHT | API backend |
+| `spark-match-03-backend` | `@spark-match/backend-devs` | ahincho, BriyitHT | Backend API |
 | `spark-match-04-frontend` | `@spark-match/frontend-devs` | ahincho, BriyitHT | Frontend |
 | `spark-match-05-data-pipeline` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Data |
 | `spark-match-06-model-training` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | ML |
-| `spark-match-07-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | latex |
+| `spark-match-07-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | LaTeX |
 | `spark-match-08-deep-agent` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Agents |
 
 Every team has at least two members, which guarantees the author of any PR has a potential reviewer who is not themselves.
 
-## 5. Onboarding de un repo nuevo
+## 5. Onboarding a new repository
 
-1. **Crear el repo** con visibilidad interna y `main` como rama por defecto.
-2. **Escribir `CODEOWNERS`** siguiendo el template de § 3. Cada path del repo debe aparecer.
-3. **Agregar el repo al manifest**: editar `governance/repository-governance.json` y agregar una entrada con `refs`, `reviewerTeam`, `filePatterns`, `statusChecks`.
-4. **Dry-run**:
+1. **Create the repository** with internal visibility and `main` as the default branch.
+2. **Write `CODEOWNERS`** following the template in § 3: catch-all first, then the explicit lines.
+3. **Add the repository to the manifest**: edit `governance/repository-governance.json` with an entry carrying `refs`, `reviewerTeam`, `filePatterns` and `statusChecks`.
+4. **Dry run**:
    ```bash
    ./scripts/configure-repo-rulesets.sh --dry-run --apply --repos <new-repo>
    ```
-   Confirma que el payload es valido contra el schema y contra la API.
+   Confirms the payload is valid against both the schema and the API.
 5. **Apply**:
    ```bash
    ./scripts/configure-repo-rulesets.sh --apply --repos <new-repo>
    ```
-   El script crea el ruleset (POST) o lo actualiza (PUT) y guarda backup en `backups/rulesets/<timestamp>/`.
-6. **Smoke test**: abrir un PR no-op que toque un path de raiz y un path bajo subdirectorio. Confirmar que CODEOWNERS solicita el review del team correcto.
+   The script creates the ruleset (`POST`) or updates it (`PUT`), saving a backup under `backups/rulesets/<timestamp>/`.
+6. **Smoke test**: open a no-op pull request touching one path at the root and one under a subdirectory. Confirm CODEOWNERS requests review from the right team.
 
-## 6. Como migrar un repo legacy al estandar
+> **A caveat on `statusChecks`.** This field is what the reconciler *writes*, so
+> it is the desired state, not a record of what a repository happens to have.
+> Declaring fewer checks than the live ruleset requires means the next `--apply`
+> silently removes the difference. On 2026-08-07 this manifest declared 8 checks
+> for `spark-match-02-infrastructure` against 21 actually required, so running
+> the tool as designed would have dropped thirteen gates. Derive the list from
+> what the pull requests actually publish -- `gh pr checks <n>` -- not from
+> reading the workflow files.
 
-1. **Auditar el estado actual**:
+## 6. Migrating a legacy repository to the standard
+
+1. **Audit the current state**:
    ```bash
    ./scripts/configure-repo-rulesets.sh --check --repos <repo>
    ```
-   Esto reporta drift en 4 dimensiones: bypass_mode, merge methods, deletion rule, codeowner_review. Ademas, manualmente auditar el CODEOWNERS para verificar que usa el patron explicito.
-2. **Backup manual** del ruleset actual (defensa en profundidad):
+   This reports drift across bypass_mode, merge methods, the deletion rule, codeowner_review, and classic branch protection on any branch. Read the CODEOWNERS by hand as well: the reconciler does not look inside that file.
+2. **Manual backup** of the current ruleset, as defence in depth:
    ```bash
    gh api repos/spark-match/<repo>/rulesets > backups/<repo>-pre-standards.json
    ```
@@ -207,116 +301,162 @@ Every team has at least two members, which guarantees the author of any PR has a
    ```bash
    ./scripts/configure-repo-rulesets.sh --apply --repos <repo>
    ```
-   El reconciler hace backup automatico + PUT. Si el payload es rechazado por la API, el reconciler reporta `failed` y el ruleset queda sin cambios.
-4. **Canary PR**: abrir un PR trivial (comentario trailing) que toque root + subdir. Confirmar `reviewDecision: REVIEW_REQUIRED` y que el team correcto es solicitado.
-5. **Cerrar el canary** (era no-op). El equipo debe haber visto la notificacion automaticamente.
-6. **CODEOWNERS**: si el repo usaba catch-all, abrir un PR adicional que migre al patron explicito (§ 3).
+   The reconciler backs up automatically, then `PUT`s. If the API rejects the payload it reports `failed` and the ruleset is left untouched.
+4. **Canary pull request**: open a trivial one (a trailing comment) touching both the root and a subdirectory. Confirm `reviewDecision: REVIEW_REQUIRED` and that the right team is requested.
+5. **Close the canary** — it was a no-op. The team should have been notified automatically.
+6. **CODEOWNERS**: bring the file up to the pattern in § 3 — catch-all first, explicit lines after it.
 7. **Final check**:
    ```bash
    ./scripts/configure-repo-rulesets.sh --check --repos <repo>
    ```
-   El unico drift aceptable debe ser `required_reviewers` (vease § 9).
+   The only acceptable drift is `required_reviewers` (see § 9).
 
 ## 7. Compliance checklist
 
-Para declarar un repo `spark-match/*` compliant, debe satisfacer **todos** los criterios:
+To call a `spark-match/*` repository compliant it must satisfy **all** of these:
 
-- [ ] **Ruleset `bypass_mode == "pull_request"`** (no `always`).
-- [ ] **Ruleset `allowed_merge_methods == ["squash"]`** (no incluye `merge`).
-- [ ] **Ruleset incluye regla `deletion`** (block branch deletion).
+- [ ] **Ruleset `bypass_mode == "pull_request"`** (not `always`).
+- [ ] **Ruleset `allowed_merge_methods == ["squash"]`** (does not include `merge`).
+- [ ] **Ruleset includes the `deletion` rule** (branch deletion blocked).
 - [ ] **Ruleset `require_code_owner_review == true`**.
-- [ ] **CODEOWNERS sigue patron explicito** (sin catch-all `*`).
-- [ ] **Header de CODEOWNERS menciona "ruleset"** (no "branch protection").
+- [ ] **No classic branch protection on any branch** (§ 2.1).
+- [ ] **CODEOWNERS has a catch-all first**, so no path is left ownerless, with explicit lines after it for anything that deserves a named owner (§ 3).
+- [ ] **The CODEOWNERS header says "ruleset"**, not "branch protection".
 
-Comandos de auditoria:
+> Until 2026-08-07 the sixth item read *"CODEOWNERS follows the explicit pattern
+> (no catch-all `*`)"*. It was inverted that day; § 3 records why and how to
+> reverse it.
+
+Audit commands:
 
 ```bash
-# Compliance ruleset (5 criterios):
+# Ruleset compliance, plus classic-protection detection on every branch:
 ./scripts/configure-repo-rulesets.sh --check --repos <repo>
 
-# Compliance CODEOWNERS (1 criterio):
-grep -E '^\s*\*\s+@' .github/CODEOWNERS    # debe devolver 0 lineas
+# CODEOWNERS: a catch-all must exist, and it must come first
+grep -nE '^\s*\*\s+@' .github/CODEOWNERS    # must return at least one line
 
-# Compliance header:
-grep -i 'ruleset' .github/CODEOWNERS | head -1   # debe existir
+# Header wording:
+grep -i 'ruleset' .github/CODEOWNERS | head -1   # must exist
 ```
 
-## 8. Status actual (snapshot 2026-07-26)
+## 8. Current status
 
-| Repositorio | bypass | squash | deletion | codeowner | CODEOWNERS explicito | Header | Compliance |
-|---|---|---|---|---|---|---|---|
-| `spark-match-01-devops` | ok | ok | ok | ok | ok | ok | 6/6 |
-| `spark-match-02-infrastructure` | ok | ok | ok | ok | ok | ok | 6/6 |
-| `spark-match-07-article` | ok | ok | ok | ok | ok | drift | 5/6 |
-| `spark-match-00-knowledge-base` | ok | ok | ok | ok | ok | drift | 5/6 |
-| `spark-match-03-backend` | ok | ok | ok | ok | ok | drift | 5/6 |
-| `spark-match-04-frontend` | ok | ok | ok | ok | ok | drift | 5/6 |
-| `spark-match-05-data-pipeline` | ok | ok | ok | ok | ok | drift | 5/6 |
-| `spark-match-06-model-training` | ok | ok | ok | ok | ok | drift | 5/6 |
-| `spark-match-08-deep-agent` | ok | ok | ok | ok | ok | drift | 5/6 |
+There is no status table here, and that is deliberate.
 
-**Compliance global: 47/54 = 87%** (post-migracion; snapshot 2026-07-26).
+The one that used to sit in this section was a snapshot dated 2026-07-26 with a
+"global compliance: 87%" line under it. It aged badly in three separate ways:
+`.github` was declared on 2026-08-06 and never appeared in it; the "explicit
+CODEOWNERS" column became meaningless when the policy inverted on 2026-08-07;
+and `spark-match-02-infrastructure` sat in drift for three days — 8 status
+checks declared against 21 actually required — while the table still showed it
+at full compliance.
 
-### Casos especiales
+A table of live state, transcribed by hand into a document, is a report that
+cannot report. Ask the tool:
 
-- **Headers "drift"**: los 8 repos migrados conservan el header que dice "branch protection" en lugar de "ruleset". Es un detalle cosmético del comentario; no afecta la funcionalidad. La migracion al header correcto se puede hacer en un PR de cleanup posterior.
-- **`spark-match-04-frontend`** (resuelto en migracion 2026-07-26): el CODEOWNERS ahora asigna `frontend-devs` explicitamente a `.github/`, `.vscode/`, `public/`, `src/`, archivos de config raiz, y double-owns README/CONTRIBUTING/LICENSE. Un canary PR anterior valido que `frontend-devs` + `product-owners` son solicitados correctamente.
+```bash
+./scripts/configure-repo-rulesets.sh --check
+```
 
-### Delta desde el snapshot 2026-07-26
+Every repository should come back `in-sync`. That command reads the live
+rulesets and every branch's classic protection, so it cannot be stale by
+construction.
 
-- **2026-08-01 (spark-match-02-infrastructure, strict mode)**: tras gap analysis post-PR #77/#78/#79 (todos bypasaron tflint via admin-bypass), se agregaron 3 required checks adicionales: `tflint / tflint (env=dev)`, `gitleaks / gitleaks (env=dev)`, `sonar-terraform / sonar-cloud terraform (dev)`. Tracked en `tasks/devops/pending/sprint-2/03-strict-required-checks-and-admin-bypass-policy.md`. Prerequisito: infra debe arreglar `.tflint.hcl` antes de mergear PRs futuros.
+### Known cosmetic drift
 
-### Proceso de migracion aplicado (leccion aprendida)
+The CODEOWNERS header comment in most repositories still says "branch
+protection" where it should say "ruleset". It is a comment, so the reconciler
+cannot see it and `--check` will never report it; the compliance checklist in
+§ 7 keeps it as a manual item. It changes nothing functionally, and the fix is a
+cleanup pull request per repository.
 
-Los 7 repos con `* @team` catch-all fueron migrados a patron explicito via push directo a `main`. El push directo requiere que **ambos** flags esten deshabilitados temporalmente:
+### Historical record: the 2026-07-26 migration
 
-1. Ruleset `bypass_actors[0].bypass_mode`: `pull_request` -> `always`
-2. Legacy branch protection `enforce_admins`: `true` -> `false`
+Kept because the procedure is instructive, **not because it is current** — it
+migrated repositories *toward* explicit-only CODEOWNERS, which § 3 reversed on
+2026-08-07.
 
-Despues del push, ambos se restauran a su estado canonico (ventana de riesgo < 5 segundos por repo). Este procedimiento esta documentado en `scripts/mig-one.sh` (workspace script) y replicado 7 veces para los repos affected.
+Seven repositories were migrated by pushing directly to `main`, which required
+**both** of these to be temporarily disabled:
 
-**Nota**: `bypass_mode: always` solo en el ruleset NO es suficiente. La legacy branch protection con `enforce_admins: true` bloquea independientemente. Ambos deben deshabilitarse para que admin pueda pushear directo.
+1. Ruleset `bypass_actors[0].bypass_mode`: `pull_request` → `always`
+2. Classic branch protection `enforce_admins`: `true` → `false`
 
-> **Esto es un registro historico, no el procedimiento vigente (actualizado 2026-08-06).** El paso 2 y su restauracion ya no aplican: la branch protection clasica no forma parte del estandar (§ 2.1), asi que restaurar `enforce_admins: true` recrearia justo el problema. Hoy el bypass es de un solo flag, el del ruleset, y si un push directo sigue bloqueado despues de ponerlo en `always` el sintoma delata una capa clasica que hay que retirar con `--prune-legacy-protection`, no deshabilitar y volver a poner.
+Both were restored afterwards, with a risk window under five seconds per
+repository.
 
-## 9. Desviaciones conocidas
+**The lesson worth keeping**: setting `bypass_mode: always` on the ruleset alone
+is *not* enough. Classic branch protection with `enforce_admins: true` blocks
+independently of the ruleset — which is the same interaction that § 2.1
+documents from the other direction, and the reason classic protection must be
+removed rather than merely worked around.
 
-### `required_reviewers` (ruleset API) no disponible
+> **Historical record, not the current procedure (updated 2026-08-06).** Step 2
+> and its restoration no longer apply: classic branch protection is not part of
+> the standard (§ 2.1), so putting `enforce_admins: true` back would recreate
+> exactly the problem. Today the bypass is a single flag, the ruleset's. If a
+> direct push is still blocked after setting it to `always`, that symptom gives
+> away a classic layer, and the fix is to retire it with
+> `--prune-legacy-protection` — not to disable and re-enable it.
 
-El ruleset de GitHub acepta un campo `required_reviewers` para forzar reviews por team/individual via API (en lugar de via CODEOWNERS). Sin embargo, este campo **no esta disponible en el plan Free de la organizacion**: la API rechaza payloads con valores no vacios con HTTP 422. Por lo tanto, la funcionalidad equivalente se logra via `require_code_owner_review: true` + CODEOWNERS.
+## 9. Known deviations
 
-Esto esta documentado en `_notes` del manifest (`governance/repository-governance.json`) y en el commit de pilot. La unica manera de usar `required_reviewers` es upgrading a GitHub Team o Enterprise; mientras tanto, CODEOWNERS es la fuente de verdad.
+### `required_reviewers` (ruleset API) is unavailable
 
-### Drift esperado (resuelto por canonical_diff)
+The GitHub ruleset accepts a `required_reviewers` field to force reviews by team
+or individual through the API, instead of via CODEOWNERS. That field is **not
+available on the organization's Free plan**: the API rejects payloads carrying
+non-empty values with HTTP 422. The equivalent behaviour is therefore achieved
+with `require_code_owner_review: true` plus CODEOWNERS.
 
-El reconciler tenia una seccion previa "Drift permanente esperado" que documentaba `required_reviewers` como drift ruidoso. Esto **se resolvio** en v3 del schema + commit que extendio `canonical_diff()` para strip `required_reviewers` antes de comparar. Ahora todos los repos reportan `in-sync` pese a tener el field stale.
+This is recorded in the manifest's `_notes` (`governance/repository-governance.json`)
+and in the pilot commit. The only way to use `required_reviewers` is upgrading to
+GitHub Team or Enterprise; until then, CODEOWNERS is the source of truth.
+
+### Expected drift, resolved by `canonical_diff`
+
+An earlier section here, "Expected permanent drift", documented
+`required_reviewers` as noisy drift. That **was resolved** in schema v3, together
+with the commit that extended `canonical_diff()` to strip `required_reviewers`
+before comparing. Every repository now reports `in-sync` despite the field being
+stale in the live payload.
 
 ## 10. Tools
 
 ### Reconciler
 
+`--help` is the authoritative list. What each of the destructive flags does:
+
 ```bash
 ./scripts/configure-repo-rulesets.sh \
-  --check                            # drift detection, exit 1 si hay drift
-  --apply                            # PUT/POST + backup
-  --dry-run                          # sin escrituras
+  --check                            # drift detection; exits 1 when there is drift
+  --apply                            # PUT/POST plus backup
+  --dry-run                          # no writes
   --repos r1,r2                      # scope
   --manifest governance/repository-governance.json
   --backup-dir <path>                # default: backups/rulesets/<ts>/
-  --strict                           # warn en status checks no observados
-  --prune-unexpected                 # opt-in DELETE para rulesets foraneos
-  --org spark-match                  # override org
+  --strict                           # escalate warnings to failures
+  --prune-unexpected                 # opt-in DELETE of rulesets this script did not create
+  --prune-legacy-protection          # opt-in DELETE of classic branch protection (§ 2.1)
+  --org spark-match                  # override the organization
   --json                             # machine-readable output
 ```
 
-### Auditoria rapida
+Both `--prune-*` flags are opt-in for the same reason: the reconciler does not
+destroy rules it did not create unless asked to on the command line. Each backs
+the payload up first, and skips the deletion if the backup fails.
+
+### Quick audit
 
 ```bash
-# Estado de los 9 repos en una linea:
-for r in spark-match-{00-knowledge-base,01-devops,02-infrastructure,03-backend,04-frontend,05-data-pipeline,06-model-training,07-article,08-deep-agent}; do
-  ./scripts/configure-repo-rulesets.sh --check --repos $r
-done
+# Every declared repository, one line each:
+./scripts/configure-repo-rulesets.sh --check
 ```
+
+With no `--repos`, the reconciler walks every repository in the manifest. Do not
+hardcode the list here — it was wrong within two weeks of being written, when
+`.github` was declared on 2026-08-06.
 
 ## 11. Referencias
 
