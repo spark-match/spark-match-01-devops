@@ -15,7 +15,7 @@ Pick the path that matches what you need:
 
 ## Architecture
 
-The catalog has **seven layers**, each defined by what it inspects or mutates:
+The catalog has **six layers**, each defined by what it inspects or mutates:
 
 | Layer | Path | Caller secrets | Purpose |
 |---|---|---|---|
@@ -33,8 +33,8 @@ Every recipe (workflow and composite action) accepts an `environment-name` input
 This repo also ships:
 
 - **`governance/repository-governance.json`** — declarative desired state of the org ruleset across all `spark-match/*` repos.
-- **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`.
-- **`tests/`** — 492 bats tests, all running on every PR via `.github/workflows/reusable-quality.yml`.
+- **`scripts/configure-repo-rulesets.sh`** — idempotent reconciler: reads the manifest, computes drift, applies via `POST` / `PUT`, backs up before any mutation. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--prune-legacy-protection`, `--json`, `--manifest`, `--org`, `--backup-dir`, `--help`. Run `--help` for the authoritative list.
+- **`tests/`** — bats suites covering every recipe, all running on every PR via `.github/workflows/reusable-quality.yml`. Run `bats tests/bats/` for the current count. No number is quoted here on purpose: the previous one said 492 against a real 539, because a count in prose has to be hand-synced with a tree that changes every week.
 - **`.github/dependabot.yml`** — weekly Monday bump PRs for GitHub Actions (5 groups: aws-actions, actions-ecosystem, marocchino, release-tools, third-party-actions). Each PR has `ahincho` as assignee and `@spark-match/devops` as reviewer.
 - **`.github/workflows/release-please.yml`** — auto-cuts a "release PR" on every push to main via `googleapis/release-please-action`. Merging the release PR creates the git tag + GitHub Release.
 
@@ -1103,7 +1103,7 @@ The `scripts/` directory holds **2 idempotent bash bootstrappers**. Scripts requ
 | Script | Type | Purpose | Required by a workflow? |
 |---|---|---|---|
 | [`audit-codeowners-ruleset.sh`](scripts/audit-codeowners-ruleset.sh) | Bash | Audits the ruleset for a given repo against the expected CODE_OWNERS enforcement contract: `require_code_owner_review: true`, `required_approving_review_count >= 1`, `strict_required_status_checks_policy: true`, and a `bypass_actors` inventory. Used to detect drift after the ruleset is edited via the GitHub UI (no YAML schema field for it). | No (manual + CI-friendly) |
-| [`configure-repo-rulesets.sh`](scripts/configure-repo-rulesets.sh) | Bash | Declarative reconciler. Reads `governance/repository-governance.json` and reconciles each repo's ruleset to the desired state. Supports `--check`, `--apply`, `--dry-run`, `--repos`, `--strict`, `--prune-unexpected`, `--json`. Backs up the current ruleset before any `PUT` and never uses `DELETE` unless `--prune-unexpected` is passed. | No |
+| [`configure-repo-rulesets.sh`](scripts/configure-repo-rulesets.sh) | Bash | Declarative reconciler. Reads `governance/repository-governance.json` and reconciles each repo's ruleset to the desired state. Run `--help` for the full flag list; the destructive ones are `--prune-unexpected` (removes rulesets this script did not create) and `--prune-legacy-protection` (removes classic branch protection). Backs up the current ruleset before any `PUT`, and never deletes anything unless one of those two flags is passed. | No |
 
 See [`scripts/README.md`](scripts/README.md) for per-script usage, full flag list, and the convention for adding new entries.
 
@@ -1124,9 +1124,28 @@ Every `spark-match/*` repo runs the same `spark-match-default-branch-protection`
 - **Status checks per-repo** (`required_status_checks` keyed by the per-repo list in the manifest).
 - **Admin bypass scoped to pull-request context only** (`bypass_actors[0].bypass_mode: "pull_request"`, not `"always"`). Direct pushes to `main` are blocked.
 
-### Current compliance (snapshot 2026-07-26)
+### Current compliance
 
-9 of 9 repos compliant on the 5 hard criteria (bypass, squash, deletion, code-owner review, explicit CODEOWNERS paths). 1 of 9 (`spark-match-01-devops`) at full 6/6 since its header wording was aligned to "ruleset"; the other 8 still have the legacy "branch protection" wording in their CODEOWNERS header comment, which is a cosmetic drift documented in `docs/GOVERNANCE-STANDARD.md` § 8.
+Do not read a compliance snapshot off this page. Ask the reconciler, which
+computes it against the live rulesets:
+
+```bash
+./scripts/configure-repo-rulesets.sh --check
+```
+
+Every repository should come back `in-sync`. Anything else is drift, and the
+manifest is the desired state to reconcile against.
+
+A snapshot used to sit here, dated 2026-07-26, claiming every repository was
+compliant. It went stale twice over: `.github` was declared on 2026-08-06,
+raising the count, and `spark-match-02-infrastructure` spent three days in drift
+(8 status checks declared against 21 actually required) while this page still
+claimed full compliance. A tally frozen in prose cannot report drift -- that is
+what `--check` is for.
+
+The cosmetic drift on CODEOWNERS header wording is tracked in
+`docs/GOVERNANCE-STANDARD.md` § 8; the reconciler does not look at comments, so
+that one still needs a human.
 
 ### Quick commands
 
