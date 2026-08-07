@@ -78,15 +78,38 @@ extract_codeowners_path() {
 }
 
 # ---------------------------------------------------------------------------
-# No catch-all pattern
+# Catch-all floor
 # ---------------------------------------------------------------------------
 
-@test "CODEOWNERS: no catch-all '*' pattern (paths must be explicit)" {
-  # A catch-all '*' causes GitHub to ACCUMULATE owners for every other
-  # matching rule, which silently broadens review scope. The header
-  # comment in CODEOWNERS explicitly forbids this.
-  if grep -E '^[[:space:]]+\*[[:space:]]+@' "$CODEOWNERS"; then
-    echo "# CODEOWNERS contains a catch-all '*' pattern"
+@test "CODEOWNERS: a catch-all '*' exists, and it comes first" {
+  # Inverted on 2026-08-07. This used to forbid the catch-all, on the grounds
+  # that GitHub ACCUMULATES owners across matching rules. It does not: for any
+  # given file the LAST matching pattern wins, outright. See
+  # docs/GOVERNANCE-STANDARD.md § 3 for the full reasoning and how to revert.
+  #
+  # Worth recording how the old test behaved, because it is its own lesson: it
+  # matched `^[[:space:]]+\*`, requiring leading whitespace before the asterisk.
+  # A catch-all is always written at column 0, so the assertion could never fire
+  # on a real one. It guarded the policy it was named after in name only, and it
+  # went green against a CODEOWNERS carrying exactly what it claimed to forbid.
+  local catchall_line first_rule_line
+  catchall_line="$(grep -nE '^\*[[:space:]]+@' "$CODEOWNERS" | head -1 | cut -d: -f1)"
+
+  if [[ -z "$catchall_line" ]]; then
+    echo "# CODEOWNERS has no catch-all '*' rule." >&2
+    echo "# Without it, any path nobody listed has no owner, and" >&2
+    echo "# require_code_owner_review over an unowned path is satisfied" >&2
+    echo "# trivially -- the gate reports green while guarding nothing." >&2
+    return 1
+  fi
+
+  # Order is the whole point: a later, more specific line overrides the
+  # catch-all. A catch-all placed last would override every named owner.
+  first_rule_line="$(grep -nE '^[^#[:space:]]' "$CODEOWNERS" | head -1 | cut -d: -f1)"
+  if [[ "$catchall_line" != "$first_rule_line" ]]; then
+    echo "# The catch-all is on line ${catchall_line} but the first rule is on" >&2
+    echo "# line ${first_rule_line}. Because the last matching pattern wins," >&2
+    echo "# a catch-all after a specific line silently replaces its owners." >&2
     return 1
   fi
 }
@@ -190,13 +213,25 @@ extract_codeowners_path() {
   [ "$status" -eq 0 ]
 }
 
-@test "CODEOWNERS: header explains the no-catch-all convention" {
-  run grep -E "catch-all|NO usamos catch-all" "$CODEOWNERS"
+@test "CODEOWNERS: header explains the catch-all convention" {
+  run grep -E "catch-all" "$CODEOWNERS"
+  [ "$status" -eq 0 ]
+}
+
+@test "CODEOWNERS: header states that the last matching pattern wins" {
+  # The precedence rule is the reason the catch-all is safe to have and the
+  # reason its position matters. It was also, in its inverted form -- "GitHub
+  # accumulates owners" -- the false premise the previous policy rested on, so
+  # it is worth asserting that the header says the true thing.
+  run grep -iE "last matching pattern" "$CODEOWNERS"
   [ "$status" -eq 0 ]
 }
 
 @test "CODEOWNERS: header warns that PR author cannot self-approve" {
-  run grep -E "no puede aprobar su propio PR|self.approve" "$CODEOWNERS"
+  # Language-agnostic on purpose. This assertion used to grep the Spanish
+  # phrasing, so translating the header to English broke it -- a test coupled
+  # to wording rather than to meaning.
+  run grep -iE "cannot approve their own|no puede aprobar su propio|self.approve" "$CODEOWNERS"
   [ "$status" -eq 0 ]
 }
 
