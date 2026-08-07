@@ -29,6 +29,18 @@
     {
       "date": "2026-08-06",
       "change": "Dropped refs/heads/dev from spark-match-07-article. That branch is abandoned: last commit 2026-07-10 against 2026-08-06 on main, no pull request has ever targeted it, and both of its workflows trigger only on main. Its 6 unique commits touch only .github/CODEOWNERS and .gitignore, and comparing those files directly shows .gitignore identical and CODEOWNERS differing only in comment lines, so nothing substantive is lost. Note the three-dot compare (main...dev) misleads here: it diffs against the merge base, not against the tip of main, so it appears to show unique work that main already superseded. Removing the ref is also what makes the branch deletable at all, since blockDeletion is true and the ruleset covered dev. The same abandoned pattern exists in spark-match-06-model-training (dev 2026-07-10, main 2026-07-26) and is left untouched pending that team's decision."
+    },
+    {
+      "date": "2026-08-06",
+      "change": "Declared the .github organization profile repository, which had never been in this manifest: it listed 9 repositories while the org has 10. This was not cosmetic. resolve_repos() passes --repos through verbatim, but the reconciler loop rejects an undeclared repository with not-in-manifest and continues before it reaches the legacy-protection block, so .github could not be reconciled and its classic branch protection could not be pruned even when named explicitly. Its ruleset already existed and already carried the shared name, but it was missing the deletion rule the defaults declare, so it had been drifting unmeasured. reviewerTeam is devops because the catch-all line in that repo's .github/CODEOWNERS is @spark-match/devops, which is what makes requireCodeOwnerReview reachable there."
+    },
+    {
+      "date": "2026-08-06",
+      "change": "What declaring .github costs, recorded as a decision rather than discovered later. Its classic protection on main sets require_last_push_approval=true and enforce_admins=true. The defaults here set requireLastPushApproval=false and adminBypassMode=pull_request, and configure-repo-rulesets.sh reads require_last_push_approval from .defaults only - there is no per-repository override for it - so reconciling .github and then pruning its classic layer drops last-push approval on main. Accepted for consistency: all 9 other repositories already run without it, and keeping .github as the single exception would mean either leaving a classic protection alive against the rulesets-plus-CODEOWNERS policy or adding a per-repo override to schema and script, which is a larger change than declaring a repository. The comment header in that repo's CODEOWNERS still describes the classic settings and will be stale once the prune runs. If last-push approval is wanted back, the fix is an override field, not a classic protection."
+    },
+    {
+      "date": "2026-08-06",
+      "change": "statusChecks for .github is empty on purpose, same reasoning as the spark-match-07-article entry above reached by a third route: that repository has zero workflows, so every required context would be a check that never reports and every pull request would sit forever on 'Expected - waiting for status to be reported'. refs keeps refs/heads/dev because the live protection covers it and removing a ref is what makes a branch deletable, but that branch is stale - last commit 2026-07-10 against 2026-07-27 on main, 4 ahead and 2 behind - which is the same abandoned shape as spark-match-06-model-training. Left in place for the same reason: dropping it is that team's call, not a side effect of declaring the repository."
     }
   ],
   "defaults": {
@@ -47,6 +59,12 @@
     "rulesetEnforcement": "active"
   },
   "repositories": {
+    ".github": {
+      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
+      "reviewerTeam": "devops",
+      "filePatterns": ["**"],
+      "statusChecks": []
+    },
     "spark-match-01-devops": {
       "refs": ["~DEFAULT_BRANCH"],
       "reviewerTeam": "devops",
