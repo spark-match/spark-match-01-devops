@@ -250,29 +250,28 @@ Adds commitlint line-limit rules reference.
 BREAKING CHANGE: AGENTS.md v1 contract.
 ```
 
-**Regla práctica para merges vía REST API**: escribir el mensaje en
-un archivo de texto plano (cada línea ≤100 chars) y leerlo con
-`Get-Content -Raw`. Nunca concatenar strings con `+` porque
-PowerShell tokeniza `"..."` con caracteres especiales de forma
-impredecible. Lo mismo aplica a `gh pr create --body "..."` —
-usar siempre `--body-file` (ver §4.1).
+**Practical rule for merges via the REST API**: write the message into a plain
+text file (every line ≤100 chars) and read it with `Get-Content -Raw`. Never
+concatenate strings with `+`, because PowerShell tokenises `"..."` containing
+special characters unpredictably. The same applies to `gh pr create --body "..."`
+— always use `--body-file` (see § 4.1).
 
-`--admin` se autoriza **solo** después de confirmar CI verde. No usar para skippear checks fallidos.
+`--admin` is authorized **only** after confirming CI is green. Never use it to skip a failing check.
 
 ### 4.5 Squash-merge REST API checklist (EMU workaround)
 
-Para evitar el pitfall documentado en §4.4 (PR title → commit subject), ejecutar este checklist **antes** de hacer el PUT:
+To avoid the pitfall documented in § 4.4 (pull request title becoming the commit subject), run this checklist **before** the `PUT`:
 
 ```powershell
-# 1. Validar PR title contra las reglas que commitlint va a aplicar
+# 1. Validate the PR title against the rules commitlint will apply
 $title = gh pr view <N> --repo <owner>/<repo> --json title -q .title
 if ($title -cmatch '[A-Z]') { Write-Error "title has uppercase (commitlint subject-case)"; exit 1 }
 if ($title.Length -gt 100) { Write-Error "title >100 chars (commitlint header-max-length)"; exit 1 }
-if ($title -match '\(#\d+\)\s*$') { Write-Error "title has trailing (#NN) (commitlint no acepta en subject)"; exit 1 }
+if ($title -match '\(#\d+\)\s*$') { Write-Error "title has trailing (#NN); commitlint rejects it in the subject"; exit 1 }
 
-# 2. Construir payload con commit_title Y commit_message SEPARADOS
+# 2. Build the payload with commit_title AND commit_message SEPARATE
 $sha = (gh pr view <N> --repo <owner>/<repo> --json headRefOid -q .headRefOid)
-$msg = Get-Content C:\path\to\merge-msg.txt -Raw   # multi-line, cada linea <=100 chars
+$msg = Get-Content C:\path\to\merge-msg.txt -Raw   # multi-line, each line <=100 chars
 $payload = @"
 {"merge_method":"squash","commit_title":"$title","commit_message":$(($msg | ConvertTo-Json -Compress)),"sha":"$sha"}
 "@
@@ -284,39 +283,39 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/<owner>/<repo>/pulls/<N>/me
   -Body $payload -ContentType "application/json" -UseBasicParsing
 ```
 
-**Errores específicos a evitar**:
+**Specific mistakes to avoid**:
 
-| Falla | Síntoma | Fix |
+| Failure | Symptom | Fix |
 |---|---|---|
-| `commit_message` solo (sin `commit_title`) | El merge commit subject = PR title. Si PR title tiene `camelCase`, falla `commitlint` en el push a main (avisa, ya fusionado) | Enviar `commit_title` + `commit_message` separados |
-| PR title con `(#NN)` al final | En §4.4 el subject heredado termina con `(#NN)^{1,2}` que es BODY char límite | Agregar `(#NN)` solo en `commit_title`, no en `commit_message` |
-| `commit_message` con una sola línea larga (>100 chars) | Falla `header-max-length` o `footer-max-line-length` en commitlint | Dividir en múltiples líneas, cada una ≤100 chars |
-| Usar `git commit -m` con strings concatenadas (`+`) | PowerShell tokeniza `"..."` con caracteres especiales de forma impredecible | Usar `Get-Content -Raw` desde un archivo |
+| `commit_message` alone, without `commit_title` | The merge commit subject becomes the PR title. If that title has `camelCase`, `commitlint` fails on the push to main — it warns, after the merge has already happened | Send `commit_title` and `commit_message` separately |
+| PR title ending in `(#NN)` | The inherited subject ends with `(#NN)`, which trips the character limit described in § 4.4 | Put `(#NN)` in `commit_title` only, never in `commit_message` |
+| `commit_message` as one long line (>100 chars) | Fails `header-max-length` or `footer-max-line-length` | Split into several lines, each ≤100 chars |
+| `git commit -m` with concatenated strings (`+`) | PowerShell tokenises `"..."` containing special characters unpredictably | Use `Get-Content -Raw` from a file |
 
-**Pre-flight obligatorio para squash-merge de PR de release-please** (PR #275, #277, #281, etc.): el PR title es `release X.Y.Z` que pasa todos los checks. No requiere edición. Pero el `commit_message` debe ser multi-line (no una línea concatenada de 200+ chars).
+**Mandatory pre-flight for squash-merging a release-please pull request** (#275, #277, #281 and the like): the title is `release X.Y.Z`, which passes every check and needs no editing. The `commit_message` still has to be multi-line, not one concatenated 200-character line.
 
-## 5. Convenciones de estilo
+## 5. Style conventions
 
 ### 5.1 General
 
-- **Sin emojis decorativos**: no usar emojis como adorno visual en código, commits, mensajes de pull request ni documentación. Los símbolos usados como marcadores de bullets en la sección 10 son indicadores estructurales y están permitidos.
-- **Código en inglés**: variables, funciones, clases, archivos y demás identificadores del código fuente van en inglés. Los mensajes de commit (Conventional Commits) también.
-- **Comentarios y documentación en español**: los comentarios en código (cuando se permitan, ver regla "sin comentarios" más abajo) y los archivos de explicación como `AGENTS.md`, `VERSIONING.md`, `CONTRIBUTING.md`, `docs/` y secciones de README que documenten procesos se escriben en español.
-- **Cuidar caracteres especiales**: ñ, tildes (á, é, í, ó, ú, ü) y demás caracteres diacríticos deben estar correctamente codificados en UTF-8 para evitar mojibake en consola Windows PowerShell 5.1.
-- **NO agregar comentarios a menos que se pidan explícitamente.** El repo sigue la regla de "self-documenting code".
-- **Mimic existing patterns** antes de inventar nuevos. Si un workflow existente usa `permissions: contents: read`, el nuevo también.
-- **No introducir dependencias nuevas** sin justificación en el pull request body.
-- **Pin por versiones o branches, NO por SHA**. Para third-party actions usar `@vN` (major flotante, e.g. `actions/checkout@v4`) cuando el action publica tags con prefijo `v`. Si el action NO publica tags con prefijo `v` (e.g. `ludeeus/action-shellcheck` solo tiene `2.0.0`), usar la versión exacta `@N.N.N` (e.g. `ludeeus/action-shellcheck@2.0.0`). Excepciones documentadas:
-  - **Self-actions** (nuestras propias composite actions): siempre `@main`.
-  - **Anchore/sbom-action**: pinneado a `@v0.24.0` (minor pinned) porque la línea 0.x tiene breaking changes entre minors.
-- La guardia contra SHA-pinning vive en `tests/bats/no-sha-pinning.bats` (3 casos: third-party, self, AGENTS.md policy text). Si el guard falla, el pull request se bloquea.
-- **Naming convention — kebab-case obligatorio** en identificadores (excepto secretos y env vars del OS, que van en `SNAKE_CASE`):
-  - **`kebab-case`** para:
-    - **Job IDs** (`jobs: <id>:`) y nombres de archivo (`reusable-<name>.yml`).
+- **No decorative emojis**: never as visual ornament in code, commits, pull request messages or documentation. The symbols used as bullet markers in section 10 are structural indicators and are allowed.
+- **Code in English**: variables, functions, classes, files and every other source identifier. Commit messages (Conventional Commits) too.
+- **Documentation in English.** This reversed on 2026-08-07; the rule here used to require Spanish. `AGENTS.md`, `docs/VERSIONING.md` and `docs/GOVERNANCE-STANDARD.md` were translated that day. The other repositories still document in Spanish and will follow later, so expect the organization to be mixed for a while — this is a migration in progress, not an inconsistency to "fix" by translating a repository nobody asked for.
+- **Mind the special characters**: where Spanish text remains, `ñ` and accented vowels must be correctly encoded as UTF-8, or they turn into mojibake in the Windows PowerShell 5.1 console.
+- **Do NOT add comments unless explicitly asked.** The repo follows the self-documenting-code rule.
+- **Mimic existing patterns** before inventing new ones. If an existing workflow uses `permissions: contents: read`, the new one does too.
+- **Do not introduce new dependencies** without justifying them in the pull request body.
+- **Pin by version or branch, NOT by SHA.** For third-party actions use `@vN` (floating major, `actions/checkout@v4`) when the action publishes `v`-prefixed tags. When it does not — `ludeeus/action-shellcheck` only has `2.0.0` — use the exact version `@N.N.N`. Documented exceptions:
+  - **Self-actions** (our own composite actions): always `@main`.
+  - **anchore/sbom-action**: pinned to `@v0.24.0` (minor pinned) because the 0.x line carries breaking changes between minors.
+- The guard against SHA-pinning lives in `tests/bats/no-sha-pinning.bats` (3 cases: third-party, self, and this policy text). If it fails, the pull request is blocked.
+- **Naming convention — kebab-case is mandatory** for identifiers, except secrets and OS environment variables, which use `SNAKE_CASE`:
+  - **`kebab-case`** for:
+    - **Job IDs** (`jobs: <id>:`) and filenames (`reusable-<name>.yml`).
     - **Step IDs** (`- id: <id>`).
-    - **Inputs** de `workflow_call` o composite action (`inputs.<name>:`, `with: <name>: value`).
+    - **Inputs** of `workflow_call` or a composite action (`inputs.<name>:`, `with: <name>: value`).
     - **Outputs** (`outputs.<name>:`).
-    - **Display names** de workflow, job, y step (`name: <name>` en `workflow_call`, `jobs`, y `steps`). Plantillas `${{ inputs.x }}` se concatenan con `-` (sin espacios).
+    - **Display names** of workflow, job and step (`name: <name>`). `${{ inputs.x }}` templates are joined with `-`, no spaces.
     - **Referencias a marcas/herramientas** dentro de `name:`, comentarios, descripciones de inputs y mensajes `::error::`. Marcas y herramientas van en kebab:
       - `SonarCloud` -> `sonar-cloud`
       - `CodeQL` -> `codeql`
@@ -324,58 +323,60 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/<owner>/<repo>/pulls/<N>/me
       - `ESLint` -> `eslint`
       - `TFLint` -> `tflint`
       - `SBOM` -> `sbom`
-      - `CycloneDX` -> `cyclonedx` (excepto donde es valor literal de schema JSON, e.g. `bomFormat == CycloneDX`)
-      - `Terraform` -> `terraform` (lowercase, una sola palabra)
-  - **`SNAKE_CASE`** (uppercase con guion bajo) para:
-    - **Secretos** (`secrets.SOME_SECRET`, `secrets.GITLEAKS_LICENSE`, `secrets.AWS_PLAN_ROLE_ARN`). Convención heredada del entorno: las env vars que GitHub Actions expone para secrets siguen la convención POSIX de uppercase.
-    - **Env vars pasadas al SO** dentro de `env:` blocks (`env: SBOM_DIR: ...`, `env: RUNNER_TEMP: ...`). Convención POSIX: env vars exportadas al OS van en `UPPER_SNAKE_CASE`.
-  - **`kebab-case` (lowercase con guión) — excepción para env vars de workflow-level**: cuando se exporta una env var al runtime del workflow mediante `echo "key=value" >> "$GITHUB_ENV"` (típicamente desde un step bash dentro de `run:`), el nombre de la variable va en kebab-case lowercase, igual que el kebab-case de los identificadores YAML. Esto aplica a variables como `lower-os`, `env-name`, `cache-path`, `pkg-install-cmd`, `pkg-run-cmd` que son leídas vía `${{ env.lower-os }}` desde steps posteriores. La razón: consistencia con el identificador del step que las crea y legibilidad en `${{ }}` expressions. NO usar mayúsculas, ni guiones bajos, ni mezcla de estilos en este contexto.
-  - **Excepciones intencionales** (no kebab):
-    - URLs externas: `https://sonarcloud.io`, `https://github.com/anchore/sbom-action` (no romper links).
-    - Nombres de acciones de terceros: `actions/checkout`, `anchore/sbom-action`, `github/codeql-action` (no romper refs de mercado).
-    - Nombres de eventos de GitHub: `pull_request`, `push`, `workflow_call`, `workflow_dispatch`, `release`, `schedule` (son palabras reservadas del schema).
-    - **Valores literales de schema**: `CycloneDX` como valor JSON de `bomFormat`, `cyclonedx-json` como valor de `format:` en anchore/sbom-action (mantener contrato con el schema externo).
-  - **Reglas de transición**:
-    - Si un nombre previo en `name:` usaba Title Case (e.g. `"Compile LaTeX document"`), kebab-casearlo: `compile-latex-document`.
-    - Plantillas embebidas: `"name": "eslint-${{ inputs.environment-name }}"` (con guión, no espacio).
-    - Para paréntesis con descripción (e.g. `(OIDC, plan role)`), kebab-case el contenido y unir con guión: `configure-aws-credentials-oidc-plan-role`.
+      - `CycloneDX` -> `cyclonedx`, except where it is a literal JSON schema value (`bomFormat == CycloneDX`)
+      - `Terraform` -> `terraform` (lowercase, one word)
+  - **`SNAKE_CASE`** (uppercase with underscores) for:
+    - **Secrets** (`secrets.SOME_SECRET`, `secrets.GITLEAKS_LICENSE`, `secrets.AWS_PLAN_ROLE_ARN`). Inherited from the environment: the env vars GitHub Actions exposes for secrets follow the POSIX uppercase convention.
+    - **Env vars passed to the OS** inside `env:` blocks (`env: SBOM_DIR: ...`). POSIX convention: env vars exported to the OS use `UPPER_SNAKE_CASE`.
+  - **`kebab-case` — the exception for workflow-level env vars**: when exporting an env var to the workflow runtime with `echo "key=value" >> "$GITHUB_ENV"`, typically from a bash step inside `run:`, the variable name is lowercase kebab-case, matching the YAML identifiers. This covers `lower-os`, `env-name`, `cache-path`, `pkg-install-cmd` and `pkg-run-cmd`, read later via `${{ env.lower-os }}`. The reason is consistency with the step that creates them and readability inside `${{ }}` expressions. No uppercase, no underscores, no mixing styles here.
+  - **Deliberate exceptions** (not kebab):
+    - External URLs: `https://sonarcloud.io`, `https://github.com/anchore/sbom-action` — do not break links.
+    - Third-party action names: `actions/checkout`, `anchore/sbom-action`, `github/codeql-action` — do not break marketplace refs.
+    - GitHub event names: `pull_request`, `push`, `workflow_call`, `workflow_dispatch`, `release`, `schedule` — reserved schema words.
+    - **Literal schema values**: `CycloneDX` as the JSON value of `bomFormat`, `cyclonedx-json` as the `format:` value in anchore/sbom-action — keep the contract with the external schema.
+  - **Transition rules**:
+    - A previous `name:` in Title Case (`"Compile LaTeX document"`) becomes `compile-latex-document`.
+    - Embedded templates: `"name": "eslint-${{ inputs.environment-name }}"` — hyphen, not space.
+    - For a parenthesised description like `(OIDC, plan role)`, kebab-case the contents and join with hyphens: `configure-aws-credentials-oidc-plan-role`.
 
-### 5.2 Cómo añadir un nuevo reusable workflow
+### 5.2 How to add a new reusable workflow
 
-> Patrón establecido en PR #254 (Tier 3) y aplicado por primera vez en
-> `spark-match-02-infrastructure` (PR #104, #105).
+> Pattern established in PR #254 (Tier 3) and first applied in
+> `spark-match-02-infrastructure` (PRs #104 and #105).
 >
-> **Pin cross-repo**: la regla vigente es `@main` per
-> `docs/VERSIONING.md` (single-main-branch model, decision 2026-07). Los
-> tags `vX.Y.Z` existen por trazabilidad de release-please pero NO son
-> el pin requerido para callers internos. Esta sub-sección históricamente
-> recomendaba `@vX.Y.Z`; esa guía queda derogada y el contrato actual es
-> `@main`. Ver §5.2 item 8 abajo.
+> **Cross-repo pin**: the rule in force is `@main`, per `docs/VERSIONING.md`
+> (single-main-branch model, decided 2026-07). The `vX.Y.Z` tags exist for
+> release-please traceability but are NOT the required pin for internal
+> callers. This sub-section historically recommended `@vX.Y.Z`; that guidance
+> is superseded and the current contract is `@main`. See item 8 below.
 
-Un reusable workflow (`on: workflow_call`) encapsula lógica reutilizable
-cross-repo. Para añadir uno:
+A reusable workflow (`on: workflow_call`) encapsulates logic shared across
+repositories. To add one:
 
-1. **Crear archivo** en `.github/workflows/reusable-<name>.yml` (prefijo
-   `reusable-` + kebab-case, ver §5.1).
-2. **Inputs vs secrets**:
-   - `workflow_call.inputs` para valores NO sensibles (paths, flags, toggles).
-   - `workflow_call.secrets` para credenciales (App IDs, tokens).
-   - Inputs y secrets deben tener `description` + `default` (si opcional) +
-     `required` explícito.
-3. **NO lookup dinámico de secrets**: `${{ secrets[inputs.foo] }}` está
-   prohibido por GH Actions (PR #256). Usar `workflow_call.secrets`
-   declarados y forwardear desde el caller.
-4. **NO definir `concurrency`**: GH Actions rechaza reusable workflows
-   que definan su propio concurrency block (PR #255). El caller lo posee.
-5. **Permisos mínimos**: `contents: read` por default. Escalar a `write`
-   solo si crea branches / tags / releases.
-6. **Dogfooding obligatorio**: el caller interno de 01-devops
-   (`commitlint.yml`, `release-please.yml`) debe consumir el reusable
-   via `uses: ./.github/workflows/...`. Esto valida el shape contra
-   la suite de bats ANTES de exponerlo cross-repo.
-7. **Tests bats**: añadir en `tests/bats/reusable-ci-workflows.bats`
-   (o archivo nuevo por dominio). Cubrir:
-   - `workflow_call` declarado.
+1. **Create the file** at `.github/workflows/reusable-<name>.yml` (`reusable-`
+   prefix plus kebab-case, see § 5.1).
+2. **Inputs versus secrets**:
+   - `workflow_call.inputs` for non-sensitive values (paths, flags, toggles).
+   - `workflow_call.secrets` for credentials (App IDs, tokens).
+   - Both need a `description`, a `default` when optional, and an explicit
+     `required`.
+3. **No dynamic secret lookup**: `${{ secrets[inputs.foo] }}` is forbidden by
+   GitHub Actions (PR #256). Declare `workflow_call.secrets` and forward them
+   from the caller.
+4. **Do not define `concurrency`**: GitHub Actions rejects a reusable workflow
+   that declares its own concurrency block (PR #255). The caller owns it.
+5. **Minimum permissions**: `contents: read` by default. Escalate to `write`
+   only when creating branches, tags or releases. Remember that a reusable
+   cannot escalate beyond what the caller grants — if the caller gives less
+   than the reusable declares, GitHub aborts the whole run as
+   `startup_failure`, with no logs and no published check context.
+6. **Dogfooding is mandatory**: an internal caller in 01-devops
+   (`commitlint.yml`, `release-please.yml`) must consume the reusable via
+   `uses: ./.github/workflows/...`. That validates its shape against the bats
+   suite BEFORE it is exposed cross-repo.
+7. **Bats tests**: add them to `tests/bats/reusable-ci-workflows.bats`, or a new
+   file per domain. Cover:
+   - `workflow_call` declared.
    - Cada input tiene `type` explícito.
    - Cada action pinneada al major (`@vN`, NO SHA).
    - Caller interno consume el reusable.
