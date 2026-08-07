@@ -1,52 +1,52 @@
-# AGENTS.md — Guía para agentes de IA en `spark-match-01-devops`
+# AGENTS.md — guide for AI agents working on `spark-match-01-devops`
 
-> Documento para agentes de IA (OpenCode, GitHub Copilot, Claude Code, etc.) que operan sobre este repositorio. Refleja las convenciones observadas en el repo y el flujo de trabajo vigente.
+> For AI agents (OpenCode, GitHub Copilot, Claude Code and the like) operating on this repository. It reflects the conventions actually observed in the repo and the workflow currently in force.
 
-## 1. Propósito y estructura del repositorio
+## 1. Purpose and structure of the repository
 
-`spark-match-01-devops` es el **catálogo único** de CI/CD compartida para la organización `spark-match`. No contiene código de aplicación (no Node, Python, Terraform ni SAM propios): su superficie es exclusivamente infraestructura declarativa de pipelines (workflows reutilizables y composite actions) y de governance (ruleset de la organización + scripts de reconciliación).
+`spark-match-01-devops` is the **single catalog** of shared CI/CD for the `spark-match` organization. It contains no application code — no Node, Python, Terraform or SAM of its own. Its entire surface is declarative pipeline infrastructure (reusable workflows and composite actions) plus governance (the organization ruleset and the reconciliation scripts).
 
-### 1.1 Estructura
+### 1.1 Structure
 
-- `.github/workflows/`: reusable workflows (`workflow_call`). Prefijo `reusable-` = consumible; sin prefijo = CI interna de este repo.
-- `.github/actions/`: composite actions (primitivas atómicas). Consumidas por las reusables o por repos externos.
-- `.github/ISSUE_TEMPLATE/`: bug + feature + docs issue templates.
-- `.github/dependabot.yml`: bump de pull requests semanales para GitHub Actions.
-- `.github/CODEOWNERS`: paths explícitos, sin catch-all (`*`).
-- `.github/release-please-config.json`: Conventional Commits → section mapping para el release pull request.
-- `.github/PULL_REQUEST_TEMPLATE.md`: checklist 11-tipos de Conventional Commits.
-- `docs/`: convenciones de diseño (cache-key, governance standard, versioning).
-- `scripts/`: operaciones idempotentes que aplican governance a la organización via la API de GitHub (gh).
-- `governance/`: desired state del ruleset de la organización (manifest JSON + JSON Schema).
-- `tests/`: bats tests por subject. Helpers compartidos en `tests/bats/helpers/`.
+- `.github/workflows/`: reusable workflows (`workflow_call`). The `reusable-` prefix means consumable; no prefix means internal CI for this repo.
+- `.github/actions/`: composite actions (atomic primitives), consumed by the reusables or by external repositories.
+- `.github/ISSUE_TEMPLATE/`: bug, feature and docs issue templates.
+- `.github/dependabot.yml`: weekly bump pull requests for GitHub Actions.
+- `.github/CODEOWNERS`: a catch-all floor first, then explicit paths that override it (see `docs/GOVERNANCE-STANDARD.md` § 3).
+- `.github/release-please-config.json`: Conventional Commits to section mapping for the release pull request.
+- `.github/PULL_REQUEST_TEMPLATE.md`: checklist covering the 11 Conventional Commit types.
+- `docs/`: design conventions (cache-key, governance standard, versioning).
+- `scripts/`: idempotent operations that apply governance to the organization through the GitHub API (`gh`).
+- `governance/`: desired state of the organization ruleset (JSON manifest plus JSON Schema).
+- `tests/`: bats tests per subject. Shared helpers under `tests/bats/helpers/`.
 
 ### 1.2 Naming conventions
 
-- **Workflows reusables**: prefijo `reusable-` obligatorio. Encapsula tecnología (terraform, node, sonar, etc.) + responsabilidad (plan, apply, build, test).
-- **Composite actions**: una carpeta por action bajo `.github/actions/<name>/`, con `action.yml` + opcional `*.sh` ejecutable.
-- **Scripts**: kebab-case, ejecutable, shebang `#!/usr/bin/env bash` + `set -euo pipefail`.
-- **Tests**: archivo bats por subject, bajo `tests/bats/<subject>.bats`.
+- **Reusable workflows**: the `reusable-` prefix is mandatory. The name encapsulates the technology (terraform, node, sonar, and so on) plus the responsibility (plan, apply, build, test).
+- **Composite actions**: one folder per action under `.github/actions/<name>/`, with an `action.yml` and optionally an executable `*.sh`.
+- **Scripts**: kebab-case, executable, shebang `#!/usr/bin/env bash` plus `set -euo pipefail`.
+- **Tests**: one bats file per subject, under `tests/bats/<subject>.bats`.
 
-### 1.3 Modelo de consumo
+### 1.3 Consumption model
 
-- **Reusables**: consumidos desde repos `spark-match/*` vía `uses: spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main`.
-- **Composite actions**: consumidas por las reusables (mismo repo, path `./.github/actions/<name>`) o por repos externos (`@main`).
-- **Governance**: aplicada a la organización via `scripts/configure-repo-rulesets.sh`. No se aplica manualmente vía la UI de GitHub.
+- **Reusables**: consumed from `spark-match/*` repositories via `uses: spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main`.
+- **Composite actions**: consumed by the reusables (same repo, path `./.github/actions/<name>`) or by external repositories (`@main`).
+- **Governance**: applied to the organization via `scripts/configure-repo-rulesets.sh`. Never applied by hand through the GitHub UI.
 
-## 2. Modelo de rama — `main` único
+## 2. Branch model — a single `main`
 
-- **Single-branch, single-purpose.** Todos los pull requests van directo a `main`. No existe rama `dev` en este repo.
-- **Branch directo desde `main`** con Conventional Commits scope:
+- **Single-branch, single-purpose.** Every pull request targets `main` directly. There is no `dev` branch in this repository.
+- **Branch straight off `main`**, named with a Conventional Commits scope:
   ```bash
   git checkout main
   git pull --ff-only
   git checkout -b chore/<scope>-<short-desc>
   ```
-- **El nombre de la branch debe reflejar el tipo + scope**:
+- **The branch name must reflect the type plus scope**:
   - `feat/composite-action-add`, `fix/quality-cache-key`
   - `chore(workflows): ...` → `chore/remove-stale-shared-reusables`
   - `docs(readme): ...` → `docs/clarify-cache-section`
-- **Branch se borra en merge** (regla `delete_branch_on_merge=true` del ruleset). Limpia local y remoto después:
+- **Branches are deleted on merge** (`delete_branch_on_merge=true` in the ruleset). Clean up local and remote afterwards:
   ```bash
   git checkout main
   git pull --ff-only
@@ -54,33 +54,39 @@
   git fetch --prune
   ```
 
-## 3. Convención de commits — Conventional Commits 1.0.0
+## 3. Commit convention — Conventional Commits 1.0.0
 
 ```bash
 git commit -m "chore(workflows): remove 6 stale reusables (zero consumers)"
 ```
 
-Scopes usados en este repo:
+Scopes used in this repository:
 
-| Scope | Aplicación |
+| Scope | Applies to |
 |---|---|
 | `composite` | composite actions |
 | `workflows` | reusable workflows |
-| `ecosystem` / `node` / `python` / `deploy` / `frontend` | workflows por capa |
-| `governance` | manifest, schema, scripts de ruleset |
-| `scripts` | scripts bash |
+| `ecosystem` / `node` / `python` / `deploy` / `frontend` | workflows by layer |
+| `governance` | manifest, schema, ruleset scripts |
+| `scripts` | bash scripts |
 | `docs` | README, `docs/`, CONTRIBUTING |
-| `ci` | `.github/workflows/` (CI de este repo) |
-| `quality` | bats/shellcheck/schema infra |
-| `reconciler` | tests del reconciler |
-| `repo` | cambios estructurales del repo (no catalog) |
-| `deps` | bumps de dependabot (pull requests automatizados) |
+| `ci` | `.github/workflows/` (this repo's own CI) |
+| `quality` | bats / shellcheck / schema infrastructure |
+| `reconciler` | reconciler tests |
+| `repo` | structural changes to the repo (not the catalog) |
+| `deps` | dependabot bumps (automated pull requests) |
 
-Tipos: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `revert`. `perf` y `revert` se añadieron al set base — heredados de `@commitlint/config-conventional`.
+Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `revert`. `perf` and `revert` were added to the base set, inherited from `@commitlint/config-conventional`.
+
+`.commitlintrc.json` is the authoritative list, and the pre-commit hook enforces
+it locally before CI does. Two rules bite often enough to be worth naming: the
+scope must come from the table above — `readme` is not a scope, `repo` is — and
+the subject must be lowercase, which a filename like `VERSIONING.md` in the
+subject line will violate.
 
 ## 4. Pull Request workflow
 
-### 4.1 Push + crear pull request
+### 4.1 Push and open the pull request
 
 ```bash
 git push -u origin <branch>
@@ -91,67 +97,82 @@ gh pr create \
   --body-file <body-file>
 ```
 
-### 4.2 Body del pull request — plantilla sugerida
+### 4.2 Pull request body — suggested template
 
 ```markdown
 ## Summary
-[1-3 frases describiendo el cambio]
+[1-3 sentences describing the change]
 
 ### Deleted / Added / Modified
 | File | Change |
 |------|--------|
-| `path/to/file` | descripción de 1 línea |
+| `path/to/file` | one-line description |
 
-### Docs cleanup (si aplica)
+### Docs cleanup (if applicable)
 - `README.md`: ...
 - `docs/VERSIONING.md`: ...
-- `examples/...`: ...
 
 ### Impact
-[Net diff + efecto en el catalog: "Catalog: 38 → 33 workflows", "Test suite: 124 bats unchanged", etc.]
+[Net diff plus effect on the catalog: "Catalog: 38 → 33 workflows", and so on]
 ```
 
-### 4.3 Checks requeridos — todos deben pasar
+### 4.3 Required checks — all must pass
 
-9 checks corren en cada pull request vía `.github/workflows/ci.yml` + `codeql-actions.yml`:
+Checks run on every pull request via `.github/workflows/ci.yml` and
+`codeql-actions.yml`. `gh pr checks <num>` is the authoritative list; what each
+one validates:
 
-| Check | Qué valida |
+| Check | What it validates |
 |---|---|
-| `actionlint` | sintaxis de Actions YAML |
+| `actionlint` | Actions YAML syntax |
 | `gitleaks` | secret scan |
-| `yamllint` | formato YAML no-workflow |
-| `quality / bats` | tests bats en `tests/bats/` |
-| `quality / manifest schema` | `governance/repository-governance.json` contra schema |
-| `quality / shellcheck` | bash scripts en `scripts/` + `.github/actions/` |
-| `commitlint` | convención de commits. Mismo nombre de job en el PR y en el push a main: el contexto es `lint-commits / commitlint` en ambos, y es el que exige el ruleset |
-| `codeql-actions` | vulnerabilidades en YAML de Actions |
-| `Code scanning` | resultados agregados de CodeQL sobre Actions |
+| `yamllint` | non-workflow YAML formatting |
+| `quality / bats` | bats tests under `tests/bats/` |
+| `quality / manifest schema` | `governance/repository-governance.json` against its schema |
+| `quality / shellcheck` | bash scripts under `scripts/` and `.github/actions/` |
+| `commitlint` | commit convention. The job name is identical on the pull request and on the push to main — the context is `lint-commits / commitlint` in both, and that is what the ruleset requires |
+| `codeql-actions` | vulnerabilities in Actions YAML |
+| `Code scanning` | aggregated CodeQL results over Actions |
 
-Si un check falla, **arregla el código** antes de pedir review. No marques `Resolve conversation` ni `--admin` para saltar un check rojo.
+If a check fails, **fix the code** before asking for review. Do not click
+`Resolve conversation`, and do not reach for `--admin`, to get past a red check.
 
-### 4.4 Merge — squash + admin bypass (autorizado por el dueño de la organización)
+### 4.4 Merge — squash plus admin bypass (authorized by the organization owner)
 
-CODEOWNERS reviewers suelen no estar disponibles. Cuando CI está verde:
+CODEOWNERS reviewers are often unavailable. Once CI is green:
 
-**Para cuentas con scope `admin:org` (usuarios normales):**
+**For accounts with `admin:org` scope (ordinary users):**
 
 ```bash
 gh pr merge <num> --repo spark-match/spark-match-01-devops \
   --squash --admin --delete-branch \
-  --body "All 9 checks green. [resumen]. Merged via admin bypass."
+  --subject "chore(scope): lowercase subject that passes commitlint" \
+  --body "All checks green. [summary]. Merged via admin bypass."
 ```
 
-**Para cuentas Enterprise Managed Users (EMU):**
+> **Pass `--subject` explicitly, always.** A squash merge uses the pull request
+> **title** as the commit subject, while the pull-request-side commitlint check
+> lints the *branch* commits. A title that violates the convention therefore
+> passes on the pull request and fails afterwards, on the push to main, when
+> there is nothing left to do: the branch is protected against force-push and
+> the bad subject is on main permanently. This happened on 2026-08-05 with
+> `fix(bootstrap):`, an invalid scope.
+>
+> The body has the same trap through a different rule: `footer-max-line-length`
+> is 100, so a long unwrapped line in the merge body fails the same way. That
+> one happened on 2026-08-07.
 
-`gh pr merge --admin` falla con `GraphQL: Unauthorized: As an
-Enterprise Managed User, you cannot access this content
-(mergePullRequest)`. Workaround directo via REST API con el token de
-`gh auth token` y PowerShell nativo (sin `--admin`):
+**For Enterprise Managed User (EMU) accounts:**
+
+`gh pr merge --admin` fails with `GraphQL: Unauthorized: As an Enterprise
+Managed User, you cannot access this content (mergePullRequest)`. The workaround
+goes straight to the REST API with the token from `gh auth token`, using native
+PowerShell and no `--admin`:
 
 ```powershell
 $token = (gh auth token).Trim()
 $sha = (gh pr view <num> --repo spark-match/spark-match-01-devops --json headRefOid -q .headRefOid)
-$msg = Get-Content C:\path\to\merge-msg.txt -Raw  # multi-line, cada linea <=100 chars
+$msg = Get-Content C:\path\to\merge-msg.txt -Raw  # multi-line, each line <=100 chars
 $payload = @"
 {"merge_method":"squash","commit_message":$(($msg | ConvertTo-Json -Compress)),"sha":"$sha"}
 "@
@@ -161,56 +182,57 @@ Invoke-WebRequest -Uri "https://api.github.com/repos/spark-match/spark-match-01-
   -Body $payload -ContentType "application/json" -UseBasicParsing
 ```
 
-> **Pitfall crítico REST API merge**: cuando el body de la solicitud PUT
-> solo contiene `commit_message`, GitHub usa el **PR title como
-> `commit_title`** del merge commit. El PR-side commitlint check
-> (`lint-commits / commitlint`) solo valida los mensajes de los
-> git commits del PR, **no el PR title**. Resultado: si el PR title
-> tiene `camelCase` (e.g. `statusChecks`) o viola otras reglas
-> (`subject-case` lower-case, etc.), el commit del merge squash las hereda
-> y falla `lint-commits / commitlint` en el push a main. El check
-> PR-side pasó pero el check post-merge falló.
+> **The critical REST API merge pitfall**: when the `PUT` body carries only
+> `commit_message`, GitHub uses the **pull request title as the merge commit's
+> `commit_title`**. The pull-request-side commitlint check
+> (`lint-commits / commitlint`) validates only the git commit messages on the
+> branch, **not the title**. So a title with `camelCase` (`statusChecks`, say)
+> or breaking any other rule is inherited by the squash commit and fails
+> `lint-commits / commitlint` on the push to main. The check on the pull request
+> passed; the one after the merge failed.
 >
-> **Solución operativa**: enviar `commit_title` Y `commit_message` por
-> separado. `commit_title` lower-case explícito, `commit_message`
-> multi-line (body). Ambos campos en el mismo payload JSON:
+> **The fix**: send `commit_title` **and** `commit_message` separately.
+> `commit_title` explicitly lowercase, `commit_message` multi-line. Both fields
+> in the same JSON payload:
 >
 > ```powershell
 > $payload = '{"merge_method":"squash","commit_title":"fix(scope): subject (#NN)","commit_message":"\n\nBody line 1.\nBody line 2.","sha":"' + $sha + '"}'
 > ```
 >
-> Enviar los dos campos por separado es la **única** defensa real contra
-> esto. PR #276 añadió `lint-commits / commitlint-main` como required
-> status check creyendo que lo cubría, pero un required status check
-> se evalúa contra el head SHA del PR y decide si el merge puede
-> ocurrir: un check que solo corre *después* del merge no puede ser
-> puerta *del* merge. Peor, ese contexto no aparecía nunca en un PR
-> (el job llevaba la rama en el nombre), así que dejaba cada PR colgado
-> y obligaba a `--admin`. Retirado el 2026-08-06.
+> Sending both fields is the **only** real defence. PR #276 added
+> `lint-commits / commitlint-main` as a required status check believing it
+> covered this, but a required status check is evaluated against the pull
+> request's head SHA and decides whether the merge may happen: a check that only
+> runs *after* the merge cannot gate *the* merge. Worse, that context never
+> appeared on a pull request at all — the job carried the branch name in its own
+> name — so it left every pull request hanging and forced `--admin`. Removed on
+> 2026-08-06.
 >
-> El run post-merge sigue existiendo y sigue poniéndose rojo en `main`
-> si el subject es malo. Avisa, no previene.
+> The post-merge run still exists and still turns `main` red on a bad subject.
+> It warns; it does not prevent.
 
-> **Reglas activas de longitud de línea** (`.commitlintrc.json` + defaults de `@commitlint/config-conventional`):
+> **Active line-length rules** (`.commitlintrc.json` plus the defaults inherited
+> from `@commitlint/config-conventional`):
 >
-> | Regla | Límite | Aplica a | Estado |
+> | Rule | Limit | Applies to | State |
 > |---|---|---|---|
-> | `header-max-length` | 100 chars | Subject (`type(scope)!: subject`) | Activo (`[2, always, 100]`) |
-> | `body-max-line-length` | — | Body | **Deshabilitado** (`[0]` en `.commitlintrc.json`) |
-> | `footer-max-line-length` | 100 chars | Footer | Activo (default heredado) |
+> | `header-max-length` | 100 chars | Subject (`type(scope)!: subject`) | Active (`[2, always, 100]`) |
+> | `body-max-line-length` | — | Body | **Disabled** (`[0]` in `.commitlintrc.json`) |
+> | `footer-max-line-length` | 100 chars | Footer | Active (inherited default) |
 >
-> **Implicancia operativa**: el parser de commitlint
-> (`@commitlint/parse` + `conventional-commits-parser`) clasifica
-> oportunísticamente el contenido post-header como body o footer.
-> Una línea larga que en una corrida pasa como body puede ser
-> clasificada como footer en otra y disparar `footer-max-line-length`.
-> **Mantener TODAS las líneas del commit message ≤100 chars** para
-> comportamiento determinístico. La regla `body-max-line-length`
-> está explícitamente deshabilitada en este repo porque queremos
-> libertad en el body, pero el parser no garantiza que el contenido
-> post-header sea tratado como body en todas las corridas.
+> **What that means in practice**: commitlint's parser (`@commitlint/parse` plus
+> `conventional-commits-parser`) classifies post-header content as body or
+> footer opportunistically. A long line that passes as body in one run can be
+> classified as footer in another and trip `footer-max-line-length`.
+>
+> **Keep every line of the commit message at 100 characters or fewer.**
+> `body-max-line-length` is disabled here deliberately, because we want freedom
+> in the body — but the parser gives no guarantee that post-header content is
+> treated as body on every run. This is not theoretical: a merge body with one
+> unwrapped line failed exactly this way on 2026-08-07, after the subject had
+> been passed correctly.
 
-**Ejemplos de mensajes válidos** (cada línea ≤100 chars, separar con `\n` literal en el JSON o con líneas reales en un archivo):
+**Examples of valid messages** (every line ≤100 chars; separate with a literal `\n` in JSON, or with real lines in a file):
 
 ```
 fix(quality): allow x.y.z major >=1 in release-please manifest bats regex
