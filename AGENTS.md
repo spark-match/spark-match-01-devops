@@ -383,66 +383,77 @@ repositories. To add one:
    - Caller interno NO duplica steps del reusable.
    - Reusable NO define `concurrency`.
    - Caller interno SÍ define `concurrency`.
-   - Para reusables con secrets: caller forwardea ambos secrets via
-     `secrets:` block, reusable los consume via `${{ secrets.<name> }}`.
-8. **Pin cross-repo**: `uses: spark-match/spark-match-01-devops/.github/
-   workflows/reusable-<name>.yml@main` per `docs/VERSIONING.md`
-   (single-main-branch model, decision 2026-07). Los tags `vX.Y.Z`
-   existen por trazabilidad de release-please pero NO son el pin
-   requerido para callers internos. Si en el futuro spark-match
-   quisiera ofrecer versiones estables a repos third-party (no
-   spark-match org), se haría vía un proceso de release dedicado
-   (ver `docs/VERSIONING.md` § "Cuando se justificara SemVer").
-9. **Documentar en §11**: añadir a la tabla de reusables, contar
-   correctamente. Bumpear el `package-name` en `.github/release-please-
-   config.json` si aplica.
+   - For reusables taking secrets: the caller forwards them via a `secrets:`
+     block, and the reusable consumes them via `${{ secrets.<name> }}`.
+8. **Cross-repo pin**: `uses: spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main`,
+   per `docs/VERSIONING.md` (single-main-branch model, decided 2026-07). The
+   `vX.Y.Z` tags exist for release-please traceability but are NOT the required
+   pin for internal callers. If spark-match ever wants to offer stable versions
+   to third-party repositories, that would go through a dedicated release
+   process — see `docs/VERSIONING.md` § "When SemVer would be justified".
+9. **Document it in the README catalog.** `tests/bats/readme-fidelity.bats`
+   enforces the correspondence in both directions, so a reusable that is not
+   documented will fail the build, and a documented one that no longer exists
+   will too.
 
 **Anti-patterns**:
 
-- `uses: ./...` cross-repo (solo funciona same-repo, error en runtime).
-- Inputs que cambian paths canónicos (hardcodear en su lugar).
-- `permissions: write` por defecto.
-- Reutilizar nombres de inputs legacy que impliquen lookup dinámico
-  de secrets.
-- Olvidar el auto-dogfooding (caller interno no consume el reusable).
-- Publicar reusable sin bats tests.
+- `uses: ./...` cross-repo — it only works same-repo, and fails at runtime.
+- Inputs that change canonical paths; hardcode those instead.
+- `permissions: write` by default.
+- Reusing legacy input names that imply dynamic secret lookup.
+- Skipping the dogfooding step, so no internal caller consumes the reusable.
+- Publishing a reusable with no bats tests.
 
-**Referencia**: PR #254 introduce el patrón (con bugs corregidos en
-#255 y #256). PR #104 y #105 en `spark-match-02-infrastructure` son los
-primeros consumers cross-repo.
+**Reference**: PR #254 introduced the pattern, with bugs fixed in #255 and #256.
+PRs #104 and #105 in `spark-match-02-infrastructure` were the first cross-repo
+consumers.
 
-### 5.3 Workflows reusables
+### 5.3 Reusable workflows
 
-- **Top-level only** en `.github/workflows/`. Subcarpetas rompen `uses: ./...` (limitación de GitHub Actions).
-- Cada workflow expone un input `environment-name` (incluso si es informativo).
-- Inputs van en `workflow_call.inputs` con `description`, `type`, `required`, `default`.
-- Para workflows de deploy: gate vía GitHub Environment + secret `AWS_DEPLOY_ROLE_ARN` (o equivalente). El repo que invoca define el Environment.
-- **Cross-owner secrets**: pasar explícitamente vía bloque `secrets:` en el repo que invoca. GitHub bloquea `secrets: inherit` entre owners distintos.
-- **Env-isolate** cualquier `${{ inputs.* }}` usado dentro de `run:` (codeql guard contra code injection):
+- **Top-level only** in `.github/workflows/`. Subfolders break `uses: ./...` — a GitHub Actions limitation.
+- Every workflow exposes an `environment-name` input, even when it is only informational.
+- Inputs go in `workflow_call.inputs` with `description`, `type`, `required` and `default`.
+- For deploy workflows: gate via a GitHub Environment plus an `AWS_DEPLOY_ROLE_ARN` secret, or its equivalent. The calling repository defines the Environment.
+- **Cross-owner secrets**: pass them explicitly through a `secrets:` block in the calling repository. GitHub blocks `secrets: inherit` across different owners.
+- **Env-isolate** any `${{ inputs.* }}` used inside a `run:` block — this is the CodeQL guard against code injection:
   ```yaml
   env:
     INPUTS_FOO: ${{ inputs.foo }}
   run: |
     echo "${INPUTS_FOO}"
   ```
+- **Job names must be static.** A required status check is identified by its
+  name, so a `name:` containing an expression — the branch, the actor, the SHA —
+  publishes a different context on every run, and the ruleset waits forever for
+  one that never arrives. This is not hypothetical: `commitlint-${{ ... }}` left
+  every pull request stuck on "Expected — waiting for status to be reported"
+  until it was made static on 2026-08-06. `tests/bats/reconciler-status-checks.bats`
+  guards it.
 
 ### 5.4 Composite actions
 
-- `.github/actions/<name>/action.yml` (un directorio por action).
-- Sin deps de runtime fuera de las actions oficiales de GitHub.
+- `.github/actions/<name>/action.yml`, one directory per action.
+- No runtime dependencies beyond GitHub's official actions.
 
 ### 5.5 Scripts
 
-- Shebang `#!/usr/bin/env bash` + `set -euo pipefail` al top.
-- Cada script declara su uso en un header con ejemplos.
-- `--dry-run` cuando sea posible (todo script idempotente debe soportarlo).
-- Cubrir con bats tests si la lógica es no-trivial.
+- Shebang `#!/usr/bin/env bash` plus `set -euo pipefail` at the top.
+- Every script documents its usage in a header, with examples.
+- `--dry-run` wherever possible; every idempotent script must support it.
+- Cover with bats tests when the logic is non-trivial.
 
 ### 5.6 Tests
 
-- bats tests bajo `tests/bats/<subject>.bats`. Descubrimiento automático vía `tests/bats/*.bats` (ver `quality.yml`).
-- Helpers compartidos en `tests/bats/helpers/`.
-- Comandos:
+- bats tests under `tests/bats/<subject>.bats`, discovered automatically via `tests/bats/*.bats` (see `quality.yml`).
+- Shared helpers in `tests/bats/helpers/`.
+- **Verify every guard in both directions.** Break the invariant on purpose and
+  confirm the test fails, then restore it. A test only ever seen green proves
+  nothing: on 2026-08-07 the guard forbidding a CODEOWNERS catch-all was found
+  to match `^[[:space:]]+\*`, requiring whitespace before an asterisk that is
+  always written at column 0. It had been passing against a file carrying
+  exactly what it claimed to forbid.
+- Commands:
   ```bash
   bats tests/bats/
   shellcheck scripts/*.sh .github/actions/*/action.sh
@@ -450,63 +461,91 @@ primeros consumers cross-repo.
 
 ### 5.7 Pre-commit hook vs CI commitlint
 
-El hook local `.githooks/commit-msg` y el CI commitlint **no son idénticos**. El hook local es un proxy aproximado; el CI es canónico. Conocer las diferencias evita dos errores opuestos: (1) usar `--no-verify` cuando NO se debe, (2) confiar en `--no-verify` cuando sí se debe.
+The local `.githooks/commit-msg` hook and the CI commitlint are **not
+identical**. The hook is an approximate proxy; CI is canonical. Knowing the
+differences avoids two opposite mistakes: reaching for `--no-verify` when you
+should not, and refusing to when you should.
 
-| Caso | Pre-commit local | CI commitlint | Acción |
+| Case | Local pre-commit | CI commitlint | Action |
 |---|---|---|---|
-| `feat!:` (bang después de type/scope) | **FALLA** (regex no soporta `!`) | OK | `--no-verify` (es seguro) |
-| `(#NN)` al final del subject | **FALLA** (regex no lo incluye) | OK | `--no-verify` (es seguro) |
-| `camelCase` en subject (e.g. `statusChecks`) | OK (no chequea lowercase) | **FALLA** (`subject-case`) | NO usar `--no-verify`; confiar en CI para catch + arreglar |
-| Body o footer con líneas >100 chars | OK (header-only check) | **FALLA** (`footer-max-line-length`) | NO usar `--no-verify`; confiar en CI para catch + arreglar |
-| Scope fuera de enum | **FALLA** | **FALLA** | NO usar `--no-verify`; cambiar el scope |
-| `subject-empty` | **FALLA** | OK (`scope-empty: [0]`) | `--no-verify` (es seguro) |
-| Type fuera de enum (`feat`, `fix`, etc.) | **FALLA** | **FALLA** | NO usar `--no-verify`; cambiar el type |
+| `feat!:` (bang after type/scope) | **FAILS** (the regex does not support `!`) | OK | `--no-verify` is safe |
+| `(#NN)` at the end of the subject | **FAILS** (not covered by the regex) | OK | `--no-verify` is safe |
+| `camelCase` in the subject (`statusChecks`) | OK (does not check case) | **FAILS** (`subject-case`) | Do NOT use `--no-verify`; let CI catch it and fix it |
+| Body or footer lines over 100 chars | OK (header-only check) | **FAILS** (`footer-max-line-length`) | Do NOT use `--no-verify`; fix the wrapping |
+| Scope outside the enum | **FAILS** | **FAILS** | Do NOT use `--no-verify`; change the scope |
+| `subject-empty` | **FAILS** | OK (`scope-empty: [0]`) | `--no-verify` is safe |
+| Type outside the enum | **FAILS** | **FAILS** | Do NOT use `--no-verify`; change the type |
 
-**Regla operativa**:
+**The operating rule**:
 
-- Si el pre-commit rechaza por **bang `!`** o **`(#NN)`**: usar `git commit --no-verify` con confianza. El CI commitlint SÍ soporta ambos y va a pasar.
-- Si el pre-commit rechaza por **cualquier otra razón**: NO usar `--no-verify`. El pre-commit y el CI están de acuerdo; el commit es genuinamente inválido. Arreglar el commit.
-- Si el CI rechaza pero el pre-commit pasó: el CI es canónico. Confiar en el CI. Mirar el log para entender qué falló (probablemente `body-max-line-length` o `header-max-length` que el pre-commit no chequea con la misma precisión).
+- If pre-commit rejects because of the **bang `!`** or **`(#NN)`**: use `git commit --no-verify` with confidence. CI supports both and will pass.
+- If pre-commit rejects for **any other reason**: do NOT use `--no-verify`. The hook and CI agree, and the commit is genuinely invalid. Fix it.
+- If CI rejects while pre-commit passed: CI is canonical. Read the log — it is usually a length rule the hook does not check with the same precision.
 
-**Workaround de un solo paso para bang y (#NN)**: usar `git commit --no-verify -F <message-file>` con un archivo de texto plano (cada línea ≤100 chars). El archivo evita la tokenización impredecible de PowerShell.
+**One-step workaround for bang and `(#NN)`**: `git commit --no-verify -F <message-file>` with a plain text file, every line ≤100 chars. The file avoids PowerShell's unpredictable tokenisation.
 
-## 6. CODEOWNERS y paths
+## 6. CODEOWNERS and paths
 
-Este repo **NO usa catch-all `*`** porque GitHub acumula code owners de todas las reglas que matchean. Cada path está listado explícitamente en `.github/CODEOWNERS`.
+This repo uses **a catch-all `*` first, then explicit paths that override it**.
+For any given file the last matching pattern wins, outright — GitHub does not
+accumulate owners across patterns. The catch-all is a floor so that no path is
+ever ownerless; the explicit lines are how ownership gets decided on purpose.
+See `docs/GOVERNANCE-STANDARD.md` § 3 for the reasoning and how to reverse it.
 
-**Al agregar un path nuevo**: agregarlo al CODEOWNERS en el mismo pull request. Si no, el pull request queda con CODEOWNERS coverage incompleto.
+> This section previously said the opposite, and gave GitHub's supposed
+> accumulation as the reason. That was wrong on the facts, and the policy
+> inverted on 2026-08-07.
 
-Paths actuales:
+**When you add a new path**: add it to CODEOWNERS in the same pull request. The
+catch-all means the path is not left unowned, but it also means nobody
+*decided* who owns it.
+
+Current paths:
 
 - `/README.md`, `/LICENSE`, `/SECURITY.md`, `/CONTRIBUTING.md`, `/CODE_OF_CONDUCT.md`, `/CHANGELOG.md`, `/AGENTS.md` → dual-owned (`@devops` + `@product-owners`)
 - `/.github/`, `/scripts/`, `/governance/`, `/tests/`, `/.githooks/`, `/.commitlintrc.json`, `/.gitleaks.toml` → `@devops`
 - `/docs/` → dual-owned
 - `/.yamllint.yml`, `/.gitignore`, `/.shellcheckrc`, `/.release-please-manifest.json` → `@devops`
+- everything else → `@devops`, via the catch-all
 
-## 7. Governance — sincronizar con `governance/`
+## 7. Governance — keeping `governance/` in sync
 
-El ruleset de la organización vive en `governance/repository-governance.json` (declarativo) + `scripts/configure-repo-rulesets.sh` (ejecutor) + `scripts/audit-codeowners-ruleset.sh` (detector de divergencias).
+The organization ruleset lives in `governance/repository-governance.json` (the
+declaration), `scripts/configure-repo-rulesets.sh` (the executor) and
+`scripts/audit-codeowners-ruleset.sh` (the divergence detector).
 
-Al modificar paths bajo gobernanza:
+When changing governed paths:
 
 ```bash
-# Después de editar governance/repository-governance.json:
+# After editing governance/repository-governance.json:
 ./scripts/configure-repo-rulesets.sh --check --repos spark-match-01-devops
 ./scripts/configure-repo-rulesets.sh --dry-run --apply --repos spark-match-01-devops
 ```
 
-No aplicar el manifest manualmente vía la UI de GitHub — eso crea divergencias.
+Never apply the manifest by hand through the GitHub UI — that creates
+divergence.
 
-## 8. Releases — release-please automático
+> **The manifest is what the tool WRITES.** Declaring fewer `statusChecks` than
+> a repository actually requires does not describe reality, it destroys it: the
+> next `--apply` removes the difference. On 2026-08-07 this manifest declared 8
+> checks for `spark-match-02-infrastructure` against 21 live, so running the
+> tool as designed would have dropped thirteen gates. Derive the list from what
+> pull requests actually publish (`gh pr checks <n>`), not from reading the
+> workflow files.
 
-`.github/workflows/release-please.yml` corta un "release pull request" en cada push a `main` basándose en conventional commits. Mergear el release pull request crea el git tag + un release de GitHub. La versión actual vive en `.release-please-manifest.json`.
+## 8. Releases — release-please, automatically
 
-**No bumpear versiones manualmente.** El flujo es:
-1. Pull request con conventional commit → merge a main
-2. release-please crea release pull request con version bump + CHANGELOG
-3. Merge del release pull request → tag + release de GitHub
+`.github/workflows/release-please.yml` cuts a release pull request on every push
+to `main`, based on the conventional commits. Merging it creates the git tag and
+a GitHub release. The current version lives in `.release-please-manifest.json`.
 
-## 9. Troubleshooting común
+**Never bump versions by hand.** The flow is:
+
+1. Pull request with a conventional commit → merged to main
+2. release-please opens a release pull request with the version bump and CHANGELOG
+3. Merging that → tag plus GitHub release
+
+## 9. Common troubleshooting
 
 ### `gitleaks` no instalado localmente
 El pre-commit hook `.githooks/pre-commit` skipea con warning. **CI sigue catching secrets** vía el job `gitleaks`. No bloquea el pull request.
