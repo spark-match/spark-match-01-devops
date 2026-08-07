@@ -41,6 +41,10 @@
     {
       "date": "2026-08-06",
       "change": "statusChecks for .github is empty on purpose, same reasoning as the spark-match-07-article entry above reached by a third route: that repository has zero workflows, so every required context would be a check that never reports and every pull request would sit forever on 'Expected - waiting for status to be reported'. refs keeps refs/heads/dev because the live protection covers it and removing a ref is what makes a branch deletable, but that branch is stale - last commit 2026-07-10 against 2026-07-27 on main, 4 ahead and 2 behind - which is the same abandoned shape as spark-match-06-model-training. Left in place for the same reason: dropping it is that team's call, not a side effect of declaring the repository."
+    },
+    {
+      "date": "2026-08-07",
+      "change": "Reconciled spark-match-02-infrastructure statusChecks against the live ruleset: 8 declared against 21 actually required, and the only repository of the ten reporting drift. The gap was not cosmetic. This manifest is what configure-repo-rulesets.sh writes, so running --apply on that repository would have replaced 21 gates with 8 and silently dropped every checkov-* matrix context - the governance tool weakening a repository by being used exactly as designed. The 14 checkov contexts were added to the ruleset by hand on 2026-08-01 and never came back here. Worse, four modules were not required at all: agent-service, ecr, frontend-hosting and oidc-frontend, which carry the ECS service, the container registry and the public CloudFront distribution, so the newest and least reviewed modules were also the least gated. lint-pr-title joins the list because with squash-only merges the pull request title becomes the commit subject and it is the only check that lints it. Checkov - the aggregate context Code Scanning derives from the SARIF - is deliberately NOT here: it was removed as required on 2026-08-04 because it goes NEUTRAL on large sync pull requests and blocks them forever, so re-adding it would have restored that trap. The list matches the 26 contexts published on pull request #199, obtained by diffing the ruleset against gh pr checks rather than by reading the workflows, which is the same method that found the gap."
     }
   ],
   "defaults": {
@@ -87,14 +91,32 @@
       "reviewerTeam": "devops",
       "filePatterns": ["**"],
       "statusChecks": [
-        "plan-dev / plan-",
-        "Checkov",
-        "tflint / tflint-",
+        "checkov-live/dev",
+        "checkov-live/prod",
+        "checkov-modules/agent-service",
+        "checkov-modules/dynamodb-idempotency",
+        "checkov-modules/ecr",
+        "checkov-modules/endpoints",
+        "checkov-modules/eventbridge-bus",
+        "checkov-modules/frontend-hosting",
+        "checkov-modules/kms",
+        "checkov-modules/networking",
+        "checkov-modules/notifications",
+        "checkov-modules/oidc-frontend",
+        "checkov-modules/oidc-github",
+        "checkov-modules/rds-postgres",
+        "checkov-modules/secrets-bootstrap",
+        "checkov-modules/security-groups",
+        "checkov-modules/ssm-bootstrap",
+        "checkov-modules/storage-sam-artifacts",
         "gitleaks / gitleaks-",
+        "lint-commits / commitlint",
+        "lint-pr-title",
+        "plan-dev / plan-",
+        "quality / bats",
         "sonar-terraform / sonar-terraform-dev",
         "terraform-validate / terraform-validate-",
-        "quality / bats",
-        "lint-commits / commitlint"
+        "tflint / tflint-"
       ]
     },
     "spark-match-00-knowledge-base": {
