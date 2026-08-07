@@ -517,7 +517,7 @@ jobs:
 
       - name: terraform-apply-destroy
         id: apply
-        if: steps.plan.outputs.had-changes == 'true' && inputs.dry-run != 'true'
+        if: steps.plan.outputs.had-changes == 'true' && !inputs.dry-run
         run: |
           set +e
           terraform apply -input=false tfplan-destroy
@@ -571,7 +571,7 @@ jobs:
         # `destroy-success == 'false'` (no `!= 'true'`): si el step `apply` se salta,
         # el output queda vacio y `!= 'true'` daba true. Con `== 'false'` solo entra
         # si el destroy corrio y fallo de verdad.
-        if: failure() && steps.apply.outputs.destroy-success == 'false' && inputs.dry-run != 'true' && steps.plan.outputs.had-changes == 'true'
+        if: failure() && steps.apply.outputs.destroy-success == 'false' && !inputs.dry-run && steps.plan.outputs.had-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-destroy-failed-${{ steps.env.outputs.environment }}
@@ -605,7 +605,7 @@ jobs:
     # on already-clean state is a no-op.
     name: cleanup-residuals-${{ inputs.environment-name || inputs.environment || inputs.working-directory }}
     needs: destroy
-    if: always() && inputs.enable-cleanup == 'true' && needs.destroy.result == 'success'
+    if: always() && inputs.enable-cleanup && needs.destroy.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.gh-environment || inputs.environment-name || inputs.environment }}
