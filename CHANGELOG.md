@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.5.1](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.0...v1.5.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **governance:** alinear el manifiesto de infra con el ruleset que corre ([1c3d4c3](https://github.com/spark-match/spark-match-01-devops/commit/1c3d4c3ce833b7d8e606d3d1f84bb7371beae35a))
+
 ## [1.5.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.4.0...v1.5.0) (2026-08-07)
 
 
