@@ -346,7 +346,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: sticky-coverage-pr-comment
-        if: ${{ always() && inputs.permissions-write == 'true' && contains(inputs.commands, 'coverage:upload') }}
+        if: ${{ always() && inputs.permissions-write && contains(inputs.commands, 'coverage:upload') }}
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: python-ci-coverage-${{ inputs.environment-name }}

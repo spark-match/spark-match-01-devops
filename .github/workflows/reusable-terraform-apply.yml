@@ -348,7 +348,7 @@ jobs:
           STEPS_ENV_OUTPUTS_ENVIRONMENT: ${{ steps.env.outputs.environment }}
       - name: terraform-apply
         id: apply
-        if: steps.plan.outputs.has-changes == 'true' && inputs.drift-only != 'true'
+        if: steps.plan.outputs.has-changes == 'true' && !inputs.drift-only
         run: |
           set +e
           terraform apply -input=false tfplan
@@ -407,7 +407,7 @@ jobs:
         # `apply-success == 'false'` (no `!= 'true'`): cuando el step `apply` se
         # salta por no haber cambios, el output queda vacio y `!= 'true'` daba
         # true. Con `== 'false'` solo entra si el apply corrio y fallo de verdad.
-        if: failure() && steps.apply.outputs.apply-success == 'false' && inputs.drift-only != 'true'
+        if: failure() && steps.apply.outputs.apply-success == 'false' && !inputs.drift-only
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-apply-failed-${{ steps.env.outputs.environment }}
@@ -427,7 +427,7 @@ jobs:
             3. Decide whether to manually fix or re-run this workflow
 
       - name: notify-on-drift-detected
-        if: always() && inputs.drift-only == 'true' && steps.plan.outputs.has-changes == 'true'
+        if: always() && inputs.drift-only && steps.plan.outputs.has-changes == 'true'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: terraform-drift-${{ steps.env.outputs.environment }}
