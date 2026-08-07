@@ -68,6 +68,17 @@ setup() {
 @test "codeql-config: AGENTS.md §5.1 still forbids SHA-pinning (reverse policy)" {
   # Sanity check: if someone reverts the policy in AGENTS.md, this file's
   # exclusions become wrong. Catch the regression alongside no-sha-pinning.
-  run grep -E 'NO por SHA' "${REPO_ROOT}/AGENTS.md"
+  #
+  # Language-agnostic on purpose. This used to grep the Spanish 'NO por SHA',
+  # so translating AGENTS.md to English on 2026-08-07 broke it -- a guard
+  # coupled to wording rather than to meaning, which is the same failure the
+  # CODEOWNERS self-approve assertion hit the same day.
+  #
+  # Note the asymmetry with no-sha-pinning.bats: that one asserts a NEGATIVE
+  # (the phrase "Pin by SHA" must be absent) and survived the translation
+  # untouched, because an absent phrase stays absent in any language. A
+  # positive assertion over prose does not have that property, so it needs
+  # both forms while the organization is mid-migration.
+  run grep -E 'NOT by SHA|NO por SHA' "${REPO_ROOT}/AGENTS.md"
   [ "$status" -eq 0 ]
 }
