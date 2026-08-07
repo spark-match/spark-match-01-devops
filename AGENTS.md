@@ -377,12 +377,12 @@ repositories. To add one:
 7. **Bats tests**: add them to `tests/bats/reusable-ci-workflows.bats`, or a new
    file per domain. Cover:
    - `workflow_call` declared.
-   - Cada input tiene `type` explícito.
-   - Cada action pinneada al major (`@vN`, NO SHA).
-   - Caller interno consume el reusable.
-   - Caller interno NO duplica steps del reusable.
-   - Reusable NO define `concurrency`.
-   - Caller interno SÍ define `concurrency`.
+   - Every input has an explicit `type`.
+   - Every action pinned to its major (`@vN`, never a SHA).
+   - The internal caller consumes the reusable.
+   - The internal caller does NOT duplicate the reusable's steps.
+   - The reusable does NOT define `concurrency`.
+   - The internal caller DOES define `concurrency`.
    - For reusables taking secrets: the caller forwards them via a `secrets:`
      block, and the reusable consumes them via `${{ secrets.<name> }}`.
 8. **Cross-repo pin**: `uses: spark-match/spark-match-01-devops/.github/workflows/reusable-<name>.yml@main`,
@@ -547,133 +547,179 @@ a GitHub release. The current version lives in `.release-please-manifest.json`.
 
 ## 9. Common troubleshooting
 
-### `gitleaks` no instalado localmente
-El pre-commit hook `.githooks/pre-commit` skipea con warning. **CI sigue catching secrets** vía el job `gitleaks`. No bloquea el pull request.
+### `gitleaks` not installed locally
+The `.githooks/pre-commit` hook skips with a warning. **CI still catches secrets** through the `gitleaks` job, so this never blocks a pull request.
 
-### PowerShell vs bash
-Este dev environment corre PowerShell 5.1 pero los comandos Git + bash funcionan transparentemente. **Para invocar `gh api` con URLs que contienen `?`**, usar variable:
+### PowerShell versus bash
+This dev environment runs PowerShell 5.1, but Git and bash commands work transparently. **To call `gh api` with a URL containing `?`**, use a variable:
 ```powershell
 $url = "/repos/owner/repo/contents?ref=main"
-gh api "$url"   # no: gh api "/repos/owner/repo/contents?ref=main"
+gh api "$url"   # not: gh api "/repos/owner/repo/contents?ref=main"
 ```
-### `gh pr checks` no muestra checks
 
-Si el pull request está recién creado, esperar 15-30s y reintentar. Para ver runs:
+### `gh pr checks` shows no checks
+If the pull request was just created, wait 15-30s and retry. To see the runs:
 ```bash
 gh api "/repos/spark-match/spark-match-01-devops/actions/runs?event=pull_request&per_page=10"
 ```
 
-### `--admin` rechazado en `gh pr merge`
-Verificar:
-1. `gh auth status` muestra scope `admin:org` o `repo` + cuenta `ahincho` activa.
-2. CI está realmente verde (todos los 9 checks `pass`, ninguno `pending`).
+### `--admin` rejected by `gh pr merge`
+Check that:
+1. `gh auth status` shows the `admin:org` or `repo` scope, with the `ahincho` account active.
+2. CI is genuinely green — every check `pass`, none `pending`.
 
-## 10. Lo que NO debes hacer
+### A required check that never reports
+The pull request sits forever on "Expected — waiting for status to be reported",
+and the only way out is `--admin`. Three causes, all seen in this organization:
 
-- Crear rama `dev` o feature branch de larga duración.
-- Commits con mensajes vagos (`update`, `fix stuff`, `wip`).
-- `--force` push a `main`.
-- `git push --force` a cualquier rama compartida.
-- Editar `.github/CODEOWNERS` sin agregar la entrada correspondiente en el mismo pull request.
-- Saltarse checks rojos con `--admin` para aprobar un pull request con CI fallando.
-- Agregar dependencias nuevas (`pip install`, `npm install`) sin justificación.
-- Revertir el pin de las third-party actions a SHA de 40 chars. §5.1 introdujo `@vN`, `@N.N.N` o `@main` (PR #210); este bullet se mantiene solo si esa policy se revierte explícitamente.
-- Mover reusables a subcarpetas de `.github/workflows/` (rompe `uses:`).
+- **The job name carries an expression**, so the published context differs on every run (§ 5.3).
+- **A `paths:` filter can skip the workflow.** A check that does not run does not report, and a required context that never arrives blocks the merge permanently. Filter *inside* the job instead: a first step that decides whether there is work and exits green when there is none.
+- **The context is required but the workflow was renamed or deleted.** `configure-repo-rulesets.sh --check` will not catch this; compare the ruleset against `gh pr checks <n>` on a real pull request.
 
-## 11. Estado actual del catalog (referencia rápida)
+## 10. What you must NOT do
 
-21 reusables distribuidos así (post-cleanup #201/#202/#203 + #207 rename + Tier 3 #254/#255/#256):
+- Create a `dev` branch or a long-lived feature branch.
+- Write vague commit messages (`update`, `fix stuff`, `wip`).
+- `--force` push to `main`, or to any shared branch.
+- Edit `.github/CODEOWNERS` without adding the matching entry in the same pull request.
+- Use `--admin` to get past red checks and merge with CI failing.
+- Add new dependencies (`pip install`, `npm install`) without justification.
+- Revert third-party action pins to 40-character SHAs. § 5.1 established `@vN`, `@N.N.N` or `@main` (PR #210).
+- Move reusables into subfolders of `.github/workflows/` — it breaks `uses:`.
+- **Silence a check instead of fixing what it found.** `--soft-fail`, `|| true`, `continue-on-error` and a bare skip all turn a gate into decoration, and the green they produce is indistinguishable from a real one. If a finding is genuinely acceptable, suppress that specific finding with the reason written next to the code.
+- **Quote a count in prose.** Numbers of tests, workflows or compliant repositories have to be hand-synced with a tree that changes weekly, and they fail silently when they fall behind. Point at the command that computes them.
 
-| Capa | Cantidad | Reusables |
-|---|---:|---|
-| Ecosystem | 9 | `actionlint`, `codeql`, `gitleaks`, `quality`, `terraform-validate`, `tflint`, `sonar-terraform`, `sonar-typescript`, `yamllint` |
-| Node | 4 | `eslint`, `node-build`, `node-test`, `node-typecheck` |
-| Deploy | 4 | `migrations-dry-run`, `terraform-apply`, `terraform-destroy` (emergency), `terraform-plan` |
-| Article | 2 | `latex-build`, `latex-release` |
-| **CI/CD shared** | **2** | **`reusable-commitlint`, `reusable-release-please`** |
+## 11. Current catalog
 
-5 workflows internos (no consumibles — son CI/CD de este repo): `ci`, `codeql-actions`, `commitlint`, `release-please`, `sbom`.
-
-4 composite actions (en `.github/actions/`): `bats-runner`, `codeql-fail-on-alerts`, `setup-actionlint`, `validate-workflow-inputs`.
-
-Consumidores activos (verificado en `main` + `dev` de cada repo):
-- `spark-match-02-infrastructure`: terraform-{plan,apply}, tflint, gitleaks, sonar-terraform, terraform-validate, **commitlint, release-please (Tier 3, post-#104/#105)**, v1.0.0 publicado
-- `spark-match-03-backend`: sonar-typescript, migrations-dry-run, codeql
-- `spark-match-04-frontend` (dev): actionlint, gitleaks, eslint, node-{test,typecheck,build}, sonar-typescript, yamllint
-- `spark-match-07-article`: latex-{build,release}
-
-22 bats tests en `tests/bats/`, 331/331 verde en último CI run.
-
-**Secrets cross-repo (org-level, visibility=all)**: `RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY`, `GITLEAKS_LICENSE`, `SONAR_TOKEN` viven a nivel organización para evitar duplicación por consumer. Los nuevos repos que añadan reusables de 01-devops solo necesitan instalar la GitHub App `spark-match-bot` (no bootstrap manual de secrets).
-
-**CodeQL exclusion**: `.github/codeql/codeql-config.yml` excluye `js/actions/unpinned-3rd-party-action` (legacy) y `actions/unpinned-tag` (activa en `actions` mode). Ambas reglas alientan SHA-pinning que el repo prohíbe deliberadamente (ver §5.1). El guard `tests/bats/codeql-config.bats` previene regresión.
-
-Nota: los counts se desactualizan rápido. Para inventario en tiempo real:
+Do not transcribe an inventory here. The tree is the catalog:
 
 ```bash
-ls .github/workflows/reusable-*.yml | wc -l
+ls .github/workflows/reusable-*.yml   # consumable recipes
+ls .github/actions/                   # composite actions
+```
+
+`README.md` carries the documented catalog with a description per recipe, and
+`tests/bats/readme-fidelity.bats` enforces the correspondence in both
+directions — every reusable on disk is documented, and nothing documented is a
+ghost.
+
+A table used to sit here claiming "21 reusables", broken down by layer. There
+were 27 on disk by the time anyone checked, and the list of active consumers
+below it named branches that no longer existed. Neither error broke anything;
+both misled whoever read the section to find out what was available.
+
+**Cross-repo secrets** (organization level, `visibility=all`): `RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY`, `GITLEAKS_LICENSE` and `SONAR_TOKEN` live at the organization level to avoid duplicating them per consumer. A new repository adopting 01-devops reusables only needs the `spark-match-bot` GitHub App installed — no manual secret bootstrap.
+
+**CodeQL exclusion**: `.github/codeql/codeql-config.yml` excludes `js/actions/unpinned-3rd-party-action` (legacy) and `actions/unpinned-tag` (active in `actions` mode). Both rules push toward the SHA-pinning this repo deliberately forbids (§ 5.1). `tests/bats/codeql-config.bats` guards against regression.
+
+For a live inventory:
+
+```bash
+ls .github/workflows/reusable-*.yml
 ls .github/actions/*/action.yml
 ls scripts/*.sh
 ls tests/bats/*.bats
 ```
 
-## 12. Referencias operativas
+## 12. Operational references
 
-- [`README.md`](README.md) — overview + tabla de workflows
-- [`docs/VERSIONING.md`](docs/VERSIONING.md) — pin-by-environment + per-repo consumer mapping
-- [`docs/GOVERNANCE-STANDARD.md`](docs/GOVERNANCE-STANDARD.md) — ruleset + CODEOWNERS rationale
-- [`docs/CACHE.md`](docs/CACHE.md) — convención de cache key v4
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — local setup detallado
-- [`SECURITY.md`](SECURITY.md) — disclosure process + SLA
-- [`scripts/README.md`](scripts/README.md) — flags de cada script
+- [`README.md`](README.md) — overview plus the workflow catalog
+- [`docs/VERSIONING.md`](docs/VERSIONING.md) — branch model plus per-repo consumer mapping
+- [`docs/GOVERNANCE-STANDARD.md`](docs/GOVERNANCE-STANDARD.md) — ruleset and CODEOWNERS rationale
+- [`docs/CACHE.md`](docs/CACHE.md) — the v4 cache-key convention
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — detailed local setup
+- [`SECURITY.md`](SECURITY.md) — disclosure process and SLA
+- [`scripts/README.md`](scripts/README.md) — flags for each script
 
 ---
 
 ## 13. Lessons learned (2026-08-04)
 
-**Cosmético NO requiere rewrite.** La defensa real es el checklist de §4.5 (enviar `commit_title` y `commit_message` por separado); el required check de PR #276 nunca llegó a funcionar, ver §4.4. Lo que sigue es la bitácora del rewrite de 2026-08-04 (one-off, no repetir) y las lecciones reutilizables que dejó.
+**Cosmetic problems do not justify a history rewrite.** The real defence is the
+§ 4.5 checklist — send `commit_title` and `commit_message` separately. The
+required check added in PR #276 never worked at all; see § 4.4. What follows is
+the log of the 2026-08-04 rewrite, a one-off not to be repeated, and the lessons
+worth keeping from it.
 
-### 13.1 Bitácora del rewrite
+### 13.1 Log of the rewrite
 
-La rama `main` fue reescrita con `git rebase -i aa52bf7` + 5 amend manuales + force-push para limpiar 4 commits históricos con `commitlint` violatorio (3 con body >100 chars, 1 con `statusChecks` camelCase). Política AGENTS.md §10 fue ignorada por decisión explícita del org owner. Consecuencias:
+`main` was rewritten with `git rebase -i aa52bf7`, five manual amends and a
+force-push, to clean up four historical commits that violated `commitlint`
+(three with a body over 100 chars, one with `statusChecks` in camelCase). The
+§ 10 policy was overridden by explicit decision of the org owner. The
+consequences:
 
-- **Tags `v1.0.0`, `v1.0.1`, `v1.0.2`** re-creados en los SHAs post-rewrite. Las releases de GitHub correspondientes también se re-crearon con SBOM. Las versiones anteriores apuntaban a commits eliminados.
-- **Archive branch `archive/pre-rewrite-2026-08-04`** preserva el estado pre-rewrite en origin, accesible vía `git checkout archive/pre-rewrite-2026-08-04`.
-- **Ruleset fue deshabilitado temporalmente** durante el force-push (`enforcement: disabled`), re-aplicado con `--apply` post-push. Todo el flujo quedó in-sync (1-devops + 2-infra).
-- **PR #279** (`release 2.0.0`) auto-generado por release-please al ver el force-push como "nuevos commits" — cerrado como duplicado (manifest sigue en 1.0.2, contenido sin cambios).
-- **PR #281** (`release 1.0.3`) auto-generado por release-please tras el primer push legítimo post-rewrite — mergado legitimamente con SBOM.
-- **CHANGELOG.md** todavía referencia SHAs antiguos tipo `b1bbd59`, `20d4582`, etc. — no regenerado en este ciclo. Pendiente de un PR de cleanup.
+- **Tags `v1.0.0`, `v1.0.1`, `v1.0.2`** re-created on the post-rewrite SHAs, and their GitHub releases re-created with SBOMs. The previous versions pointed at commits that no longer existed.
+- **Archive branch `archive/pre-rewrite-2026-08-04`** preserves the pre-rewrite state on origin.
+- **The ruleset was temporarily disabled** during the force-push (`enforcement: disabled`) and re-applied with `--apply` afterwards.
+- **PR #279** (`release 2.0.0`), auto-generated by release-please, which read the force-push as new commits — closed as a duplicate.
+- **PR #281** (`release 1.0.3`), auto-generated after the first legitimate post-rewrite push — merged normally with an SBOM.
+- **`CHANGELOG.md`** still references old SHAs like `b1bbd59` and `20d4582`. Not regenerated in that cycle; still pending a cleanup pull request.
 
-**No repetir sin aprobación explícita del org owner.** El rewrite costó múltiples pasos manuales (rebase interactivo, amend por commit, force-push, re-tag, re-crear releases con SBOM, re-aplicar ruleset). El valor pragmático (cosmético en UI) no justifica el esfuerzo recurrente.
+**Do not repeat this without explicit approval from the org owner.** The rewrite
+cost an interactive rebase, an amend per commit, a force-push, re-tagging,
+re-creating releases with SBOMs and re-applying the ruleset. A cosmetic
+improvement in the UI does not justify that recurring effort.
 
-### 13.2 Lecciones reutilizables (lo que SÍ vale la pena recordar)
+### 13.2 The reusable lessons — what is actually worth remembering
 
-**1. Status check name mismatch** (causante original de las PRs #273, #274): el manifest tenía nombres que no correspondían a los que los workflows reportan. Antes de mergear un cambio al manifest, validar contra `gh api /repos/$REPO/actions/runs?per_page=10` + `/jobs`. Los 8 bats tests en `reconciler-status-checks.bats` lockean los nombres reales para que el próximo agente no pueda sobrescribirlos con placeholders.
+**1. Status check name mismatch** (the original cause of PRs #273 and #274): the
+manifest carried names that did not match what the workflows report. Before
+merging a manifest change, validate against a real pull request with
+`gh pr checks <n>` — not by reading the workflow files. `reconciler-status-checks.bats`
+locks the real names so the next agent cannot overwrite them with placeholders.
 
-**2. REST API merge pitfall** (causante del cosmético): documentado en §4.4 + §4.5. SIEMPRE enviar `commit_title` + `commit_message` separados en `PUT /pulls/N/merge`. Si solo envías `commit_message`, GitHub usa el PR title como commit subject y hereda cualquier `camelCase`. PR #276 intentó hacerlo fail-closed con un required check, pero no era alcanzable por esa vía (§4.4): el checklist es la defensa.
+**2. The REST API merge pitfall**: documented in § 4.4 and § 4.5. ALWAYS send
+`commit_title` and `commit_message` separately in `PUT /pulls/N/merge`. Send only
+`commit_message` and GitHub uses the pull request title as the commit subject,
+inheriting any `camelCase`. PR #276 tried to make this fail-closed with a
+required check, but it was unreachable that way (§ 4.4): the checklist is the
+defence.
 
-**3. Pre-commit hook vs CI commitlint**: el pre-commit es un proxy aproximado. Documentado en §5.7. Si pre-commit rechaza por **bang `!`** o **`(#NN)`**: `--no-verify` es seguro. Cualquier otra razón: NO usar `--no-verify`, el commit es genuinamente inválido.
+**3. Pre-commit hook versus CI commitlint**: the hook is an approximate proxy.
+Documented in § 5.7. If it rejects on the **bang `!`** or **`(#NN)`**,
+`--no-verify` is safe. Any other reason: do not use it, the commit is genuinely
+invalid.
 
-**4. Release-please después de rebase**: tras un force-push, release-please ve las nuevas SHAs como "commits nuevos" y puede auto-cutear un PR de release incorrecto (PR #279 ejemplo). El diff entre el último tag y HEAD está vacío pero release-please usa `git log` que incluye todas las SHAs. Mitigación: mantener el manifest actualizado ANTES del rewrite, o cerrar el PR auto-cut inmediatamente.
+**4. Release-please after a rebase**: following a force-push, release-please
+reads the new SHAs as new commits and can auto-cut an incorrect release pull
+request — PR #279 is the example. The diff between the last tag and HEAD is
+empty, but release-please uses `git log`, which sees every SHA. Mitigation: keep
+the manifest current BEFORE the rewrite, or close the auto-cut pull request
+immediately.
 
-**5. CHANGELOG.md post-rewrite queda con SHAs muertos**: los links de CHANGELOG.md (`https://github.com/.../commit/<SHA>`) siguen apuntando a SHAs que ya no existen en historia. Trabajo de cleanup pendiente: regenerar CHANGELOG.md o aceptar los links rotos.
+**5. A post-rewrite CHANGELOG keeps dead SHAs**: the `https://github.com/.../commit/<SHA>`
+links point at commits that no longer exist. Pending cleanup: regenerate the
+CHANGELOG, or accept the broken links.
 
-### 13.3 Defense in depth ya implementada
+**6. A green check is not evidence until you know what it measures.** Four cases
+in this organization, all found on 2026-08-07, all fail-open:
 
-| Defensa | Origen | Bloquea |
+- checkov ran with `--soft-fail`, `|| true` and `continue-on-error` — 262 of 262 green across twenty pull requests, and its green meant "the job finished", not "no findings";
+- `paths:` filters meant 57 of 161 files triggered none of the 20 required contexts;
+- the guard forbidding a CODEOWNERS catch-all matched `^[[:space:]]+\*` and could never fire on a real one;
+- a CloudFront `minimum_protocol_version` that AWS silently ignores, so the config claimed TLS 1.2 while the distribution accepted TLSv1.
+
+The shared shape: the signal was looking somewhere other than where the risk
+was. When adding a check, break the thing it watches on purpose and confirm it
+goes red.
+
+### 13.3 Defence in depth already implemented
+
+| Defence | Origin | What it blocks |
 |---|---|---|
-| checklist de merge por REST API (§4.5) | PR #276 (el required check que añadió se retiró el 2026-08-06) | squash merge con subject malo en push a main |
-| 8 bats tests en `reconciler-status-checks.bats` | PR #274 | regresión de governance (manifest con placeholder names) |
-| §4.4 doc del REST API pitfall | PR #278 | próximo agente sabe el pitfall |
-| §4.5 checklist pre-merge | PR #282 | script de validación antes del PUT |
-| §5.7 tabla pre-commit vs CI | PR #282 | tentación de `--no-verify` mal usada |
-| §13 este archivo | PR #282 | ciclar a través de los mismos errores |
+| REST API merge checklist (§ 4.5) | PR #276 — the required check it added was withdrawn on 2026-08-06 | a squash merge landing a bad subject on main |
+| `reconciler-status-checks.bats` | PR #274 | governance regression: a manifest with placeholder names |
+| § 4.4, the REST API pitfall | PR #278 | the next agent not knowing about it |
+| § 5.7, pre-commit versus CI table | PR #282 | `--no-verify` used where it should not be |
+| § 13, this section | PR #282 | cycling through the same mistakes |
+| `readme-fidelity.bats` | 2026-08-07 | the catalog drifting from the tree |
 
-**Defense adicional recomendada** (no implementada, baja prioridad):
+**Further defences worth having** (not implemented, low priority):
 
-- Pre-commit hook local podría validar `commit_title` antes de push de un PR (no solo el commit msg local).
-- `release-please.yml` podría tener `release-type: simple` para evitar bumps incorrectos en force-push scenarios.
+- The local pre-commit hook could validate `commit_title` before a pull request is pushed, not just the local commit message.
+- `release-please.yml` could use `release-type: simple` to avoid incorrect bumps in force-push scenarios.
 
 ---
 
-**Mantenido por**: opencode + el org owner de `spark-match`. Última revisión: 2026-08-04.
+**Maintained by**: opencode and the `spark-match` org owner. Last reviewed: 2026-08-07.
