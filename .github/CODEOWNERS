@@ -1,39 +1,53 @@
 # CODEOWNERS - Spark Match DevOps (01)
 #
-# Politica de aprobacion (configurada via ruleset):
+# Approval policy (configured via the ruleset):
 #   - dev:  required_approving_review_count: 1
-#            require_code_owner_review: true
+#           require_code_owner_review: true
 #   - main: required_approving_review_count: 1
-#            require_code_owner_review: true
+#           require_code_owner_review: true
 #
-# CODE OWNERS del repo:
-#   @spark-match/devops        Miembros: dbarretol, ahincho
-#   @spark-match/product-owners Miembros: dbarretol, FabiTaparaQuispe, ahincho
+# Code owners for this repo:
+#   @spark-match/devops         Members: dbarretol, ahincho
+#   @spark-match/product-owners Members: dbarretol, FabiTaparaQuispe, ahincho
 #
-# Convencion:
-#   - NO usamos catch-all (*) porque GitHub ACUMULA los code owners de
-#     TODAS las reglas que matchean. Si tenemos `* @devops` y ademas
-#     `README.md @product-owners`, entonces README.md requiere aprobacion
-#     de ambos equipos.
-#   - Cada path del repo debe estar listado explicitamente.
-#   - Si se crea un path nuevo, agregar una linea aqui antes de mergearlo.
+# Convention (see docs/GOVERNANCE-STANDARD.md § 3):
+#   - A catch-all `*` comes FIRST, as a floor. It exists so that a path nobody
+#     remembered to list is never left without an owner.
+#   - Every path that deserves a named owner still gets its own line, AFTER the
+#     catch-all.
+#   - If you create a new path, add a line here -- the catch-all is a safety
+#     net, not a substitute for deciding.
 #
-# Nota: el autor del PR no puede aprobar su propio PR, ni siquiera siendo
-# CODE OWNER (regla de GitHub). Por ejemplo, un PR abierto por ahincho
-# necesita la aprobacion de cualquier otro miembro del team.
+# On precedence: for any given file, the LAST matching pattern wins, and it
+# wins outright. GitHub does NOT accumulate owners across patterns.
 #
-# Ultima auditoria: 2026-07-26 (PR #12). PRs recientes que anadieron paths
-#   - PR #122: .github/, .yamllint.yml (ya estaban)
-#   - PR #125: tests/ + .shellcheckrc (nuevos, agregados aqui)
-#   - PR #126: README.md (ya estaba)
-#   - PR #129: SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md (nuevos)
+# This header used to claim the opposite -- that GitHub accumulates, and that a
+# catch-all would therefore drag @devops onto every product-owners path. It
+# does not, and that false claim was the whole argument for having no catch-all.
+# Corrected 2026-08-07, along with the standard itself.
+#
+# Note: the author of a pull request cannot approve their own, not even as a
+# code owner (a GitHub rule). A pull request opened by ahincho needs approval
+# from any other member of the team.
+#
+# Last audit: 2026-08-07. Recent pull requests that added paths:
+#   - PR #122: .github/, .yamllint.yml (already present)
+#   - PR #125: tests/ + .shellcheckrc (new)
+#   - PR #126: README.md (already present)
+#   - PR #129: SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md (new)
 #   - PR #131: .github/release-please-config.json, .github/workflows/release-please.yml,
-#              .release-please-manifest.json, CHANGELOG.md (nuevos)
-#   - PR #132: LICENSE (ya estaba)
-#   - PR #204: examples/ removed (was added in #133)
+#              .release-please-manifest.json, CHANGELOG.md (new)
+#   - PR #132: LICENSE (already present)
+#   - PR #204: examples/ removed (had been added in #133)
 
 # =============================================================================
-# Documentos de governance en raiz
+# Floor: nothing in this repository is ownerless
+# =============================================================================
+# Every line below overrides this one for the paths it names.
+*                                            @spark-match/devops
+
+# =============================================================================
+# Governance documents at the root
 # =============================================================================
 # README.md es la cara visible del repo. Cambios afectan como el equipo
 # entiende el repo, asi que ambos equipos aprueban.
