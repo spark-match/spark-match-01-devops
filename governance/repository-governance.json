@@ -45,6 +45,10 @@
     {
       "date": "2026-08-07",
       "change": "Reconciled spark-match-02-infrastructure statusChecks against the live ruleset: 8 declared against 21 actually required, and the only repository of the ten reporting drift. The gap was not cosmetic. This manifest is what configure-repo-rulesets.sh writes, so running --apply on that repository would have replaced 21 gates with 8 and silently dropped every checkov-* matrix context - the governance tool weakening a repository by being used exactly as designed. The 14 checkov contexts were added to the ruleset by hand on 2026-08-01 and never came back here. Worse, four modules were not required at all: agent-service, ecr, frontend-hosting and oidc-frontend, which carry the ECS service, the container registry and the public CloudFront distribution, so the newest and least reviewed modules were also the least gated. lint-pr-title joins the list because with squash-only merges the pull request title becomes the commit subject and it is the only check that lints it. Checkov - the aggregate context Code Scanning derives from the SARIF - is deliberately NOT here: it was removed as required on 2026-08-04 because it goes NEUTRAL on large sync pull requests and blocks them forever, so re-adding it would have restored that trap. The list matches the 26 contexts published on pull request #199, obtained by diffing the ruleset against gh pr checks rather than by reading the workflows, which is the same method that found the gap."
+    },
+    {
+      "date": "2026-08-07",
+      "change": "Declared 13 required contexts for spark-match-03-backend, which had none. Its ruleset 18893017 carried no required_status_checks RULE at all - not an empty list, the rule was absent - so the fourteen checks running on every pull request gated nothing and one with all of them red was mergeable on a single approval. That is why pull request #200 read as BLOCKED for a missing reviewer while its red SonarCloud check was irrelevant to the merge. Five of the seven repositories with CI are in this state (00-knowledge-base, 03-backend, 04-frontend, 05-data-pipeline, 08-deep-agent); only 01-devops and 02-infrastructure gate on anything, and the live rulesets match this manifest exactly, so the reconciler is correct and the declaration was the gap. Backend goes first alone rather than all five at once, because declaring contexts in a repository whose workflows can be skipped hangs every pull request that skips them. That risk was real here: ci.yml had a nine-pattern paths-ignore covering 45 of 190 files including all 17 ADRs, removed in backend pull request #201 BEFORE this declaration, in that order on purpose. All four of its workflows were then checked for path filters and none has any; deploy.yml and release-please.yml publish no pull request contexts (workflow_dispatch and push-to-main respectively) and are correctly absent. CodeQL - the bare aggregate Code Scanning context - is deliberately NOT here, same reasoning as Checkov in the entry above: aggregate contexts go NEUTRAL on large diffs and block sync pull requests forever. The three codeql-analyze / * job contexts are required instead. The list is the 14 contexts published on pull request #201 minus that aggregate."
     }
   ],
   "defaults": {
@@ -129,7 +133,21 @@
       "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
       "reviewerTeam": "backend-devs",
       "filePatterns": ["**"],
-      "statusChecks": []
+      "statusChecks": [
+        "actionlint / actionlint-ci",
+        "codeql-analyze / analyze-actions",
+        "codeql-analyze / analyze-javascript",
+        "codeql-analyze / setup-parse-languages",
+        "commitlint / commitlint",
+        "eslint / eslint-ci",
+        "gitleaks / gitleaks-ci",
+        "migrations-dry-run / migrations-dry-run-ci",
+        "node-test / unit-tests-ci",
+        "node-typecheck-ci",
+        "sam-validate-ci",
+        "sonar / sonar-typescript-ci",
+        "yamllint / yamllint-ci"
+      ]
     },
     "spark-match-04-frontend": {
       "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
