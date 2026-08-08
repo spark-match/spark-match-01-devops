@@ -46,13 +46,50 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      # Skipped on a force-push, and that is not a loophole -- see below.
+      # Detects a history rewrite by ASKING GIT, not by trusting the payload.
       #
-      # A force-push rewrites history, so `github.event.before` points at a
-      # commit the branch no longer descends from. The range before..after then
-      # spans unrelated history, and `commitDepth` does not save you: the
-      # action takes commits from the START of that range, so the deeper the
-      # rewrite the older the commits it lints.
+      # The first attempt at this used `github.event.forced`, on the reasoning
+      # that a force-push is what breaks the range. It skipped nothing:
+      # re-running the affected job on 2026-08-07 showed the step still
+      # executing, so that field did not arrive truthy in this context. The
+      # condition below tests the thing that actually breaks -- whether the
+      # previous tip is still an ancestor of the new one -- and it can be
+      # verified locally with the same two commands, which is why it replaced a
+      # flag that could only be tested in production.
+      #
+      # Verified against the real pair: `3c1e8ff` (dev's old tip) is NOT an
+      # ancestor of `f5df60f` (the promoted commit), while `de05faf` IS an
+      # ancestor of `3c1e8ff`. Rewrite and ordinary push, told apart correctly.
+      - name: detect-history-rewrite
+        id: rewrite
+        if: ${{ github.event_name == 'push' }}
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # A branch that was just created has no meaningful `before`, and a
+          # missing object means the old tip is not even reachable any more --
+          # which is itself proof of a rewrite. Both fall to the same answer.
+          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            echo "rewritten=true" >> "$GITHUB_OUTPUT"
+            echo "No usable before ref: treating as a rewrite."
+            exit 0
+          fi
+          if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null \
+            && git merge-base --is-ancestor "${BEFORE}" HEAD; then
+            echo "rewritten=false" >> "$GITHUB_OUTPUT"
+            echo "${BEFORE} is an ancestor of HEAD: ordinary push, linting the range."
+          else
+            echo "rewritten=true" >> "$GITHUB_OUTPUT"
+            echo "${BEFORE} is not an ancestor of HEAD: history was rewritten, skipping."
+          fi
+
+      # Skipped on a history rewrite, and that is not a loophole -- see below.
+      #
+      # When history is rewritten, `github.event.before` points at a commit the
+      # branch no longer descends from. The range before..after then spans
+      # unrelated history, and `commitDepth` does not save you: the action
+      # takes commits from the START of that range, so the deeper the rewrite
+      # the older the commits it lints.
       #
       # Measured on spark-match-03-backend, 2026-08-07. The `dev` fast-forward
       # onto `main` produced a range covering main's whole promotion history,
@@ -76,7 +113,7 @@ jobs:
       # A red signal nobody can act on is one nobody reads.
       - name: run-commitlint
         if: ${{
-            !(github.event_name == 'push' && github.event.forced)
+            steps.rewrite.outputs.rewritten != 'true'
             && !(inputs.skip-release-please
               && (
                 (github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'release-please--'))
