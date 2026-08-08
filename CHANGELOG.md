@@ -20,6 +20,14 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.5.3](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.2...v1.5.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* **governance:** mensaje honesto en la quality gate y checks del backend ([#337](https://github.com/spark-match/spark-match-01-devops/issues/337)) ([f2ec207](https://github.com/spark-match/spark-match-01-devops/commit/f2ec2070356bbf1e6a23260fc86842ff31a47e96))
+* **workflows:** no lintear commits ajenos cuando el push reescribe historia ([#339](https://github.com/spark-match/spark-match-01-devops/issues/339)) ([09fc682](https://github.com/spark-match/spark-match-01-devops/commit/09fc68241007bb51f803864440c66216c13ed9a8))
+
 ## [1.5.2](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.1...v1.5.2) (2026-08-07)
 
 
