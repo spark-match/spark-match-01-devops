@@ -46,9 +46,38 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Skipped on a force-push, and that is not a loophole -- see below.
+      #
+      # A force-push rewrites history, so `github.event.before` points at a
+      # commit the branch no longer descends from. The range before..after then
+      # spans unrelated history, and `commitDepth` does not save you: the
+      # action takes commits from the START of that range, so the deeper the
+      # rewrite the older the commits it lints.
+      #
+      # Measured on spark-match-03-backend, 2026-08-07. The `dev` fast-forward
+      # onto `main` produced a range covering main's whole promotion history,
+      # and with commitDepth 2 the job linted the two OLDEST commits in it:
+      # `chore(codeowners): migrate spark-match-03-backend to explicit paths`
+      # and `chore(sync): dev -> main with hardening cycle (#29)`. The first
+      # failed on scope-enum because `codeowners` is not in the allowlist --
+      # true today, and irrelevant: that commit landed weeks ago, was valid
+      # under the rules of its time, and has been sitting on `main` ever since.
+      # The same thing happened on spark-match-02-infrastructure's first
+      # fast-forward, with two commits from 13 July.
+      #
+      # Nothing goes unchecked. Every commit a force-push moves has already
+      # been linted on the pull request that introduced it; this event is the
+      # promotion, not the authoring. And on these repositories a force-push to
+      # a protected branch only happens through the ruleset window that the
+      # fast-forward procedure opens and closes deliberately.
+      #
+      # The alternative was leaving `dev` permanently red after every promotion
+      # cycle, with a failure that says nothing about the code being promoted.
+      # A red signal nobody can act on is one nobody reads.
       - name: run-commitlint
         if: ${{
-            !(inputs.skip-release-please
+            !(github.event_name == 'push' && github.event.forced)
+            && !(inputs.skip-release-please
               && (
                 (github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'release-please--'))
                 || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release '))
