@@ -103,8 +103,14 @@ WORKFLOW="$BATS_TEST_DIRNAME/../../.github/workflows/reusable-sonar-python.yml"
 }
 
 @test "reusable-sonar-python: quality gate enforcement step present" {
-  run grep -E -A8 "^[[:space:]]+- name: enforce-quality-gate" "$WORKFLOW"
+  # Extracts the whole step instead of a fixed `grep -A8` window. The old
+  # version broke on 2026-08-07 for a change that added a comment above the
+  # `if`, which pushed the assertion target past line 8 -- the guard measured
+  # distance from the step name, not the step's content. Nothing about the
+  # enforcement had regressed.
+  run awk '/^[[:space:]]+- name: enforce-quality-gate/{f=1;next} f&&/^[[:space:]]+- name: /{exit} f' "$WORKFLOW"
   [ "$status" -eq 0 ]
+  [ -n "$output" ]
   [[ "$output" == *"Quality Gate FAILED"* ]]
   [[ "$output" == *"fail-on-quality-gate"* ]]
 }
