@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.5.4](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.3...v1.5.4) (2026-08-08)
+
+
+### Bug Fixes
+
+* **workflows:** detectar la reescritura de historia preguntando a git ([#340](https://github.com/spark-match/spark-match-01-devops/issues/340)) ([266cd25](https://github.com/spark-match/spark-match-01-devops/commit/266cd253cbac3e7c7519a9a23af5ef0fb38d8b69))
+
 ## [1.5.3](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.2...v1.5.3) (2026-08-08)
 
 
