@@ -197,9 +197,15 @@ jobs:
         env:
           STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS: ${{ steps.qg.outputs.quality-gate-status }}
         run: |
-          if [ -z "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
-            echo "::error::sonar-cloud Quality Gate polling timed out (>300s). sonar-cloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
-          else
+          # Three outcomes, not two. See the long note in
+          # reusable-sonar-typescript.yml: an empty status is not proof of a
+          # timeout, it is what you get after ANY upstream failure, and
+          # `report-task.txt` is what tells the two apart.
+          if [ -n "${STEPS_QG_OUTPUTS_QUALITY_GATE_STATUS}" ]; then
             echo "::error::Quality Gate FAILED and fail-on-quality-gate=true"
+          elif [ ! -f .scannerwork/report-task.txt ]; then
+            echo "::error::The sonar-cloud scan failed: .scannerwork/report-task.txt was never written, so the Quality Gate was never evaluated. The real error is in the sonar-cloud-scan step above. Re-running will not fix it."
+          else
+            echo "::error::sonar-cloud Quality Gate polling timed out (>300s). sonar-cloud may be under maintenance (https://status.sonarcloud.io). Re-run when service is healthy."
           fi
           exit 1
