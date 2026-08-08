@@ -87,6 +87,22 @@ INTERNAL_RELEASE_PLEASE="$BATS_TEST_DIRNAME/../../.github/workflows/release-plea
   [[ "$output" != *"contents: write"* ]]
 }
 
+@test "reusable-ci-workflows: reusable-commitlint.yml skips force-pushes" {
+  # A force-push rewrites history, so github.event.before points at a commit
+  # the branch no longer descends from and the before..after range covers
+  # unrelated history. commitDepth does not help: the action counts from the
+  # START of the range, so it lints the OLDEST commits in it.
+  #
+  # Measured twice, on the first fast-forward of 02-infrastructure and of
+  # 03-backend. Both left the promoted branch red over commits that had been
+  # sitting on main for weeks and were valid under the rules of their time.
+  #
+  # Without this guard the next repository to run the promotion cycle
+  # rediscovers it. Four are still pending.
+  run grep -E "github\.event_name == 'push' && github\.event\.forced" "$REUSABLE_COMMITLINT"
+  [ "$status" -eq 0 ]
+}
+
 # ---------------------------------------------------------------------------
 # reusable-release-please.yml shape
 # ---------------------------------------------------------------------------
