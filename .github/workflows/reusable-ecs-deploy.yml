@@ -20,10 +20,35 @@
 # service is running today keeps every field Terraform set (execution role,
 # ARM64 runtime platform, env vars, log config) and changes only the image.
 #
+# Por que la espera de estabilidad NO la hace `amazon-ecs-deploy-task-definition`
+# y por que hay una puerta de ECR antes de rotar: los dos salen del mismo run
+# fallido (spark-match-08-deep-agent, run 31338575798, 2026-08-09), donde el
+# deploy alcanzo steady state 38 segundos DESPUES de que el job se marcara en
+# rojo. Dos defectos distintos que se sumaron —
+#
+#   1. ECR no resuelve el digest recien subido de inmediato. El push termino a
+#      las 22:09:24Z y ECR seguia contestando `not found` a ese mismo digest a
+#      las 22:12:09Z. ECS lo descubre como `CannotPullContainerError` y lo
+#      reintenta solo (tardo tres intentos), pero cada reintento se come el
+#      presupuesto de espera de este job. La puerta pregunta por la imagen
+#      ANTES de crear el deployment: si ECR no nos la resuelve a nosotros,
+#      tampoco se la va a resolver a Fargate, asi que esperar aqui sale gratis
+#      y esperar alli cuesta minutos de rollout.
+#
+#   2. El waiter de la action no respeta `wait-for-minutes`. Con 10 minutos
+#      configurados —y confirmado en el log del run: `wait-for-minutes: 10`
+#      llega a la action— se rindio a los 318s tras 7 sondeos con
+#      `{"state":"TIMEOUT","reason":"Waiter has timed out"}`. Poco mas de la
+#      mitad del presupuesto pedido. Un waiter que se rinde antes de tiempo
+#      convierte deploys sanos en rojos y, peor, enseña a leer los rojos como
+#      ruido. La espera de aqui abajo usa un deadline de verdad y ademas corta
+#      en seco cuando el circuit breaker ya dijo que no, en vez de agotar el
+#      reloj sabiendo el resultado.
+#
 # The OIDC role needs: ecs:DescribeServices, ecs:DescribeTaskDefinition,
 # ecs:RegisterTaskDefinition, ecs:UpdateService, ecs:DescribeTasks,
-# ecs:ListTasks, ecs:TagResource, iam:PassRole (execution + task role) and
-# sts:GetCallerIdentity. Those statements live in
+# ecs:ListTasks, ecs:TagResource, ecr:BatchGetImage, iam:PassRole (execution +
+# task role) and sts:GetCallerIdentity. Those statements live in
 # `modules/oidc-github/policies/{env}/spark-match-bedrock-agentcore-deploy.json`.
 #
 # Caller permissions: `id-token: write` and `contents: read` are mandatory.
@@ -75,10 +100,15 @@ on:
         required: false
         default: true
       wait-for-minutes:
-        description: 'How long to wait for stability before failing. 10 minutes covers a Fargate rolling deploy with a 60s health check grace period.'
+        description: 'How long to wait for stability before failing. 10 minutes covers a Fargate rolling deploy with a 60s health check grace period. This budget is honoured literally by the step below; it is NOT handed to the action waiter, which was measured giving up at ~53% of it.'
         type: number
         required: false
         default: 10
+      image-readiness-timeout-seconds:
+        description: 'How long to wait for ECR to resolve `image-uri` before rolling the service. A freshly pushed digest is not readable immediately, and discovering that from Fargate costs minutes of rollout instead of seconds here. Set 0 to skip the gate (e.g. redeploying an image that has been in ECR for a while).'
+        type: number
+        required: false
+        default: 180
       force-new-deployment:
         description: 'Pass `--force-new-deployment` semantics so ECS replaces tasks even when the rendered task definition is byte-identical. Useful to restart the service without changing the image.'
         type: boolean
@@ -157,6 +187,77 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query 'Account' --output text)"
           echo "Authenticated as AWS account: ${ACCOUNT} (region: ${INPUTS_AWS_REGION})"
 
+      - name: wait-for-image-to-resolve-in-ecr
+        if: ${{ inputs.image-readiness-timeout-seconds > 0 }}
+        env:
+          INPUTS_IMAGE_URI: ${{ inputs.image-uri }}
+          INPUTS_IMAGE_READINESS_TIMEOUT_SECONDS: ${{ inputs.image-readiness-timeout-seconds }}
+        run: |
+          set -euo pipefail
+
+          REF="${INPUTS_IMAGE_URI}"
+          REGISTRY="${REF%%/*}"
+          REMAINDER="${REF#*/}"
+
+          # Solo ECR privado. Una imagen de Docker Hub o de ECR Public no se
+          # consulta con `aws ecr` y no tiene por que bloquear el deploy.
+          case "${REGISTRY}" in
+            *.dkr.ecr.*.amazonaws.com) ;;
+            *)
+              echo "La imagen no esta en un ECR privado (${REGISTRY}); se salta la puerta."
+              exit 0
+              ;;
+          esac
+
+          # El nombre del repositorio puede llevar barras, pero ni ':' ni '@',
+          # asi que una vez fuera el registry estos recortes no se confunden.
+          REGISTRY_ID="${REGISTRY%%.*}"
+          case "${REMAINDER}" in
+            *@*) REPOSITORY="${REMAINDER%@*}"; IMAGE_ID="imageDigest=${REMAINDER#*@}" ;;
+            *:*) REPOSITORY="${REMAINDER%:*}"; IMAGE_ID="imageTag=${REMAINDER##*:}" ;;
+            *)   REPOSITORY="${REMAINDER}";    IMAGE_ID="imageTag=latest" ;;
+          esac
+
+          echo "Esperando a que ECR resuelva ${IMAGE_ID} en ${REPOSITORY}."
+
+          DELAY=10
+          ATTEMPT=0
+          DEADLINE=$(( $(date +%s) + INPUTS_IMAGE_READINESS_TIMEOUT_SECONDS ))
+
+          while :; do
+            ATTEMPT=$(( ATTEMPT + 1 ))
+
+            # Se pide el manifiesto, no solo los metadatos: es el mismo camino
+            # de lectura que recorre containerd al tirar de la imagen, y es el
+            # que devolvia `not found`. Los media types incluyen los de indice
+            # porque el push va con provenance y SBOM, asi que lo que apunta el
+            # digest es un OCI image index, no un manifiesto suelto.
+            MANIFEST="$(aws ecr batch-get-image \
+              --registry-id "${REGISTRY_ID}" \
+              --repository-name "${REPOSITORY}" \
+              --image-ids "${IMAGE_ID}" \
+              --accepted-media-types \
+                "application/vnd.oci.image.index.v1+json" \
+                "application/vnd.oci.image.manifest.v1+json" \
+                "application/vnd.docker.distribution.manifest.list.v2+json" \
+                "application/vnd.docker.distribution.manifest.v2+json" \
+              --query 'images[0].imageManifest' \
+              --output text 2>/dev/null || true)"
+
+            if [ -n "${MANIFEST}" ] && [ "${MANIFEST}" != "None" ]; then
+              echo "ECR resolvio la imagen en el intento ${ATTEMPT}."
+              break
+            fi
+
+            if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+              echo "::error::ECR sigue sin resolver ${IMAGE_ID} en ${REPOSITORY} tras ${INPUTS_IMAGE_READINESS_TIMEOUT_SECONDS}s. Rotar el servicio ahora solo mudaria este fallo a Fargate como CannotPullContainerError."
+              exit 1
+            fi
+
+            echo "Todavia no (intento ${ATTEMPT}); se reintenta en ${DELAY}s."
+            sleep "${DELAY}"
+          done
+
       - name: resolve-current-task-definition
         id: resolve
         env:
@@ -215,8 +316,75 @@ jobs:
           cluster: ${{ inputs.cluster-name }}
           service: ${{ inputs.service-name }}
           force-new-deployment: ${{ inputs.force-new-deployment }}
-          wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
-          wait-for-minutes: ${{ inputs.wait-for-minutes }}
+          # Siempre false, aunque el caller pida esperar: la espera la hace el
+          # step siguiente. El waiter de la action no respeta el presupuesto
+          # que se le pasa — ver la cabecera del fichero.
+          wait-for-service-stability: false
+
+      - name: wait-for-service-stability
+        if: ${{ inputs.wait-for-service-stability }}
+        env:
+          INPUTS_CLUSTER_NAME: ${{ inputs.cluster-name }}
+          INPUTS_SERVICE_NAME: ${{ inputs.service-name }}
+          INPUTS_WAIT_FOR_MINUTES: ${{ inputs.wait-for-minutes }}
+        run: |
+          set -euo pipefail
+
+          DELAY=15
+          DEADLINE=$(( $(date +%s) + INPUTS_WAIT_FOR_MINUTES * 60 ))
+
+          # Un fallo aqui se diagnostica con los eventos del servicio, que es
+          # donde ECS explica por que no arranca. Sin volcarlos, el log solo
+          # dice «no llego a estable» y hay que entrar a la consola.
+          volcar_eventos() {
+            echo "::group::Ultimos eventos del servicio"
+            aws ecs describe-services \
+              --cluster "${INPUTS_CLUSTER_NAME}" \
+              --services "${INPUTS_SERVICE_NAME}" \
+              --query 'services[0].events[0:12].[createdAt,message]' \
+              --output text || true
+            echo "::endgroup::"
+          }
+
+          while :; do
+            # Un fallo puntual de la API no es motivo para tumbar un deploy que
+            # va bien, asi que se reintenta dentro del mismo deadline.
+            ESTADO="$(aws ecs describe-services \
+              --cluster "${INPUTS_CLUSTER_NAME}" \
+              --services "${INPUTS_SERVICE_NAME}" \
+              --query 'services[0].[length(deployments),runningCount,desiredCount,deployments[0].rolloutState]' \
+              --output text 2>/dev/null || true)"
+
+            if [ -n "${ESTADO}" ]; then
+              read -r DEPLOYMENTS RUNNING DESIRED ROLLOUT <<< "${ESTADO}"
+              echo "deployments=${DEPLOYMENTS} running=${RUNNING}/${DESIRED} rollout=${ROLLOUT}"
+
+              # La definicion de estable es la de ECS: una sola deployment viva
+              # y la cuenta de tareas en su sitio.
+              if [ "${DEPLOYMENTS}" = "1" ] && [ "${RUNNING}" = "${DESIRED}" ]; then
+                echo "El servicio alcanzo steady state."
+                break
+              fi
+
+              # El circuit breaker ya decidio, y ya revirtio. Agotar los minutos
+              # que queden no cambia el resultado, solo retrasa el rojo.
+              if [ "${ROLLOUT}" = "FAILED" ]; then
+                echo "::error::ECS marco el rollout como FAILED (deployment circuit breaker) y revirtio a la revision anterior."
+                volcar_eventos
+                exit 1
+              fi
+            else
+              echo "describe-services no devolvio nada; se reintenta."
+            fi
+
+            if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+              echo "::error::El servicio no alcanzo steady state en ${INPUTS_WAIT_FOR_MINUTES} minutos."
+              volcar_eventos
+              exit 1
+            fi
+
+            sleep "${DELAY}"
+          done
 
       - name: summary
         if: always()
@@ -229,6 +397,7 @@ jobs:
           INPUTS_IMAGE_URI: ${{ inputs.image-uri }}
           INPUTS_WAIT_FOR_STABILITY: ${{ inputs.wait-for-service-stability }}
           INPUTS_WAIT_FOR_MINUTES: ${{ inputs.wait-for-minutes }}
+          INPUTS_IMAGE_READINESS_TIMEOUT_SECONDS: ${{ inputs.image-readiness-timeout-seconds }}
           INPUTS_FORCE_NEW_DEPLOYMENT: ${{ inputs.force-new-deployment }}
           STEPS_RESOLVE_OUTPUTS_FAMILY: ${{ steps.resolve.outputs.family }}
           STEPS_RESOLVE_OUTPUTS_SERVICE_URL: ${{ steps.resolve.outputs.service-url }}
@@ -249,6 +418,7 @@ jobs:
             echo "| Image | \`${INPUTS_IMAGE_URI}\` |"
             echo "| Task definition family | \`${STEPS_RESOLVE_OUTPUTS_FAMILY}\` |"
             echo "| Registered revision | \`${STEPS_DEPLOY_OUTPUTS_TASK_DEFINITION_ARN}\` |"
+            echo "| ECR readiness gate | \`${INPUTS_IMAGE_READINESS_TIMEOUT_SECONDS}s\` |"
             echo "| Waited for stability | \`${INPUTS_WAIT_FOR_STABILITY}\` (${INPUTS_WAIT_FOR_MINUTES} min) |"
             echo "| Forced new deployment | \`${INPUTS_FORCE_NEW_DEPLOYMENT}\` |"
             echo ""
