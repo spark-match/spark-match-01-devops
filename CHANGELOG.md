@@ -20,6 +20,13 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.5.5](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.4...v1.5.5) (2026-08-10)
+
+
+### Bug Fixes
+
+* **workflows:** que el deploy a ecs espere a ecr y respete su presupuesto ([#342](https://github.com/spark-match/spark-match-01-devops/issues/342)) ([5919d1e](https://github.com/spark-match/spark-match-01-devops/commit/5919d1ed017832859e9aa125eab0563381de1ce0))
+
 ## [1.5.4](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.3...v1.5.4) (2026-08-08)
 
 
