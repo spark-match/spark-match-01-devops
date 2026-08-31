@@ -42,7 +42,7 @@
 #
 # El alcance ampliado no es teorico. La primera version de esta deteccion solo
 # miraba default_branch y con ese alcance no habria encontrado la capa clasica
-# de la rama dev de spark-match-07-article, la que hubo que retirar a mano. El
+# de la rama dev de spark-match-06-article, la que hubo que retirar a mano. El
 # barrido completo sobre la organizacion devolvio 9 ramas protegidas en 5
 # repos, de las cuales 4 estaban en dev y ninguna la declaraba el manifiesto.
 #
@@ -267,7 +267,7 @@ fetch_current_ruleset() {
 # Por que TODAS las ramas y no solo la de por defecto: la primera version de
 # esta funcion solo miraba default_branch, y con ese alcance no habria
 # encontrado la proteccion clasica que bloqueaba la rama dev de
-# spark-match-07-article, la que hubo que retirar a mano el 2026-08-06. Un
+# spark-match-06-article, la que hubo que retirar a mano el 2026-08-06. Un
 # barrido sobre la organizacion confirmo que no era un caso aislado: cuatro
 # repos mas llevaban una capa clasica en dev que nadie declaraba.
 #

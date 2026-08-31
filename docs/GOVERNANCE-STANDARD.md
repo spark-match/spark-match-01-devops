@@ -100,7 +100,7 @@ debt to remove. That is precisely why `--check` treats it as drift.
 
 The first version of this detection only looked at `default_branch`. With that
 scope it would not have found the classic protection on the `dev` branch of
-`spark-match-07-article`, which had to be removed by hand that same day.
+`spark-match-06-article`, which had to be removed by hand that same day.
 
 The full sweep across the organization on 2026-08-06 returned this:
 
@@ -254,9 +254,8 @@ The header comment in the file lists the PRs that introduced each new path so fu
 | `spark-match-03-backend` | `@spark-match/backend-devs` | ahincho, BriyitHT | Backend API |
 | `spark-match-04-frontend` | `@spark-match/frontend-devs` | ahincho, BriyitHT | Frontend |
 | `spark-match-05-data-pipeline` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Data |
-| `spark-match-06-model-training` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | ML |
-| `spark-match-07-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | LaTeX |
-| `spark-match-08-deep-agent` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Agents |
+| `spark-match-06-article` | `@spark-match/article-authors` | dbarretol, FabiTaparaQuispe, ahincho, BriyitHT, nikolaiasencios | LaTeX |
+| `spark-match-07-deep-agent` | `@spark-match/ai-devs` | FabiTaparaQuispe, ahincho, nikolaiasencios | Agents |
 
 Every team has at least two members, which guarantees the author of any PR has a potential reviewer who is not themselves.
 

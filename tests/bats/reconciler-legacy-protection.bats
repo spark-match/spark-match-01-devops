@@ -29,7 +29,7 @@ setup() {
   echo '[]' > fixtures/rulesets-list.json
 }
 
-# Payload recortado de la respuesta real de la API para spark-match-07-article.
+# Payload recortado de la respuesta real de la API para spark-match-06-article.
 write_legacy_protection() {
   cat > fixtures/legacy-protection.json <<'EOF'
 {
@@ -162,7 +162,7 @@ EOF
 # -----------------------------------------------------------------------------
 # La primera version de esta deteccion solo consultaba default_branch. Con ese
 # alcance no habria encontrado la capa clasica de la rama dev de
-# spark-match-07-article, la que hubo que retirar a mano el 2026-08-06.
+# spark-match-06-article, la que hubo que retirar a mano el 2026-08-06.
 #
 # El barrido completo sobre la organizacion devolvio 9 ramas protegidas en 5
 # repos y 4 de ellas estaban en dev, asi que el alcance corto se dejaba fuera

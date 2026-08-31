@@ -101,7 +101,7 @@ Environment gate** — the caller must have an environment with that name and th
    pull request against `main`. Canonical mapping, all callers on `@main`:
    - `reusable-eslint.yml`, `reusable-node-test.yml`: `spark-match-04-frontend`
    - `reusable-terraform-plan.yml`, `reusable-terraform-apply.yml`, and the Terraform ecosystem recipes (`reusable-terraform-validate.yml`, `reusable-tflint.yml`): `spark-match-02-infrastructure`
-   - `reusable-latex-build.yml`, `reusable-latex-release.yml`: `spark-match-07-article`
+   - `reusable-latex-build.yml`, `reusable-latex-release.yml`: `spark-match-06-article`
    - `reusable-actionlint.yml`, `reusable-gitleaks.yml`, `reusable-yamllint.yml`: the local `ci.yml` (see point 1)
 3. If the pull request changes an input or adds a step to a recipe, the reviewer
    demands an explicit smoke test of the corresponding caller before approving
