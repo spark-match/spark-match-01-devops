@@ -22,7 +22,7 @@
 #
 # Por que la espera de estabilidad NO la hace `amazon-ecs-deploy-task-definition`
 # y por que hay una puerta de ECR antes de rotar: los dos salen del mismo run
-# fallido (spark-match-08-deep-agent, run 31338575798, 2026-08-09), donde el
+# fallido (spark-match-07-deep-agent, run 31338575798, 2026-08-09), donde el
 # deploy alcanzo steady state 38 segundos DESPUES de que el job se marcara en
 # rojo. Dos defectos distintos que se sumaron —
 #

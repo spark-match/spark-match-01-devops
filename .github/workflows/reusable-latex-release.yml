@@ -81,7 +81,7 @@ jobs:
           # --abbrev=0`. describe returns the nearest tag reachable from HEAD
           # and, when several tags sit on one commit, it does not return the
           # highest one. Two tags landed on the same commit in
-          # spark-match-07-article, describe kept answering the lower of the
+          # spark-match-06-article, describe kept answering the lower of the
           # two, and every later merge recomputed a version that was already
           # taken. sort -V over the full tag list cannot collide that way:
           # max + 1 is free by construction.

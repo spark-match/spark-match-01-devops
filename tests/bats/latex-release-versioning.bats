@@ -2,7 +2,7 @@
 #
 # Regression guard for reusable-latex-release.yml.
 #
-# Background: spark-match-07-article ended up with v0.0.6 and v0.0.7 on the
+# Background: spark-match-06-article ended up with v0.0.6 and v0.0.7 on the
 # same commit. The workflow read the previous version with
 # `git describe --tags --abbrev=0`, which answered v0.0.6, so every merge
 # after that recomputed v0.0.7 -- a version that already existed.

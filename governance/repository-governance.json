@@ -84,7 +84,7 @@
         "lint-commits / commitlint"
       ]
     },
-    "spark-match-07-article": {
+    "spark-match-06-article": {
       "refs": ["~DEFAULT_BRANCH"],
       "reviewerTeam": "article-authors",
       "filePatterns": ["**"],
@@ -161,13 +161,7 @@
       "filePatterns": ["**"],
       "statusChecks": []
     },
-    "spark-match-06-model-training": {
-      "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
-      "reviewerTeam": "ai-devs",
-      "filePatterns": ["**"],
-      "statusChecks": []
-    },
-    "spark-match-08-deep-agent": {
+    "spark-match-07-deep-agent": {
       "refs": ["~DEFAULT_BRANCH", "refs/heads/dev"],
       "reviewerTeam": "ai-devs",
       "filePatterns": ["**"],

@@ -65,7 +65,7 @@ jobs:
   # repositorio llevan prefijo `v`. Estuvo roto desde el primer dia y nadie se
   # entero, porque no tenia ni un consumidor en toda la organizacion: cero runs
   # historicos. Lo destapo el primer repo que intento usarla
-  # (spark-match-08-deep-agent, PR #65).
+  # (spark-match-07-deep-agent, PR #65).
   #
   # El README dice que ci.yml existe para que "una receta rota se detecte aqui
   # antes de que rompa a los consumidores". Eso solo funciona con las recetas
