@@ -596,7 +596,7 @@ dependency management and `ruff` + `mypy` + `pytest` for the QA matrix.
 Cobertura-style `coverage.xml` is the canonical artifact (consumed by
 `reusable-sonar-python.yml`).
 
-Designed for the first Python consumer in the org, `spark-match-08-deep-agent`,
+Designed for the first Python consumer in the org, `spark-match-07-deep-agent`,
 which has a multi-stage ARM64 Dockerfile on port 8080 (non-root). Pre-deletion
 context: PRs #202 / #203 (2026-08-02) removed the original Python reusables
 (`python-ci.yml`, `sonar-python.yml`, `trivy.yml`, `container-deploy-ecr.yml`)
@@ -1042,7 +1042,7 @@ These workflows are **not** part of the consumer-facing catalog; they only run o
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
 
-The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`, `reusable-sonar-python.yml`), which target the sonar-cloud org's Terraform/TypeScript/Python projects; to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR; and to `reusable-container-deploy-ecr.yml` + `reusable-ecs-deploy.yml`, which together cover the build/push and the rollout half of the ARM64 container deploy path (currently `spark-match-08-deep-agent`).
+The latex reusables (`reusable-latex-build.yml`, `reusable-latex-release.yml`) ARE catalog recipes but belong to the `07-article` repository's toolchain; they are not part of the spark-match catalog's core stack. Same applies to the sonar-cloud wrappers (`reusable-sonar-terraform.yml`, `reusable-sonar-typescript.yml`, `reusable-sonar-python.yml`), which target the sonar-cloud org's Terraform/TypeScript/Python projects; to `reusable-migrations-dry-run.yml`, which validates `spark-match-03-backend`'s SQL migrations against an ephemeral Postgres on every PR; and to `reusable-container-deploy-ecr.yml` + `reusable-ecs-deploy.yml`, which together cover the build/push and the rollout half of the ARM64 container deploy path (currently `spark-match-07-deep-agent`).
 
 ## Versioning
 

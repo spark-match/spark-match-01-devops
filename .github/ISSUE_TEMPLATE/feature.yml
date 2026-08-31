@@ -73,7 +73,7 @@ body:
       description: Which `spark-match/*` repos will adopt this? Helps estimate blast radius.
       placeholder: |
         - spark-match-02-infrastructure (Terraform modules with Dockerfiles)
-        - spark-match-08-deep-agent (Python service with Dockerfile)
+        - spark-match-07-deep-agent (Python service with Dockerfile)
     validations:
       required: false
 
