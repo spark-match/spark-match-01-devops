@@ -106,7 +106,7 @@ spark-match-01-devops/
 │       ├── reusable-ecs-deploy.yml         register task definition revision + roll the ECS
 │       │                                   service onto an image already in ECR
 │       │
-│       │ ─── catalog: article (latex, kept for 07-article's toolchain) ────
+│       │ ─── catalog: article (latex, kept for 06-article's toolchain) ────
 │       ├── reusable-latex-build.yml         compile latex -> PDF artifact
 │       └── reusable-latex-release.yml       bump patch + GitHub Release
 │
@@ -431,7 +431,7 @@ are stable per caller and usable as required checks — this repo passes
 
 Lints the PR's commit messages against Conventional Commits 1.0.0 using the
 caller's `.commitlintrc.json`. Consumed by `01-devops`, `02-infrastructure`,
-`03-backend` and `08-deep-agent`.
+`03-backend` and `07-deep-agent`.
 
 | Input | Type | Default | Notes |
 |---|---|---|---|
@@ -1157,7 +1157,7 @@ that one still needs a human.
 ./scripts/configure-repo-rulesets.sh --apply --repos spark-match-01-devops
 
 # Dry-run across the whole org:
-for r in spark-match-{00-knowledge-base,01-devops,02-infrastructure,03-backend,04-frontend,05-data-pipeline,06-model-training,07-article,08-deep-agent}; do
+for r in spark-match-{00-knowledge-base,01-devops,02-infrastructure,03-backend,04-frontend,05-data-pipeline,06-article,07-deep-agent}; do
   ./scripts/configure-repo-rulesets.sh --dry-run --repos "$r"
 done
 ```
