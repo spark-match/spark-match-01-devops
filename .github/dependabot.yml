@@ -170,7 +170,12 @@ updates:
 #       time: "06:00"
 #       timezone: "UTC"
 #     commit-message:
-#       prefix: "ci(deps)"
+#       # El prefijo NO debe llevar scope si se usa `include: "scope"`:
+#       # Dependabot anade `(deps)` por su cuenta y saldria el malformado
+#       # `ci(deps)(deps):`, que commitlint rechaza. Ver el bloque activo
+#       # de arriba y spark-match-02-infrastructure PR #230.
+#       prefix: "ci"
+#       include: "scope"
 #     labels: ["dependencies"]
 #     assignees: ["ahincho"]
 #     reviewers: ["spark-match/devops"]
