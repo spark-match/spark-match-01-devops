@@ -183,6 +183,51 @@ validate_manifest "$MANIFEST"
 # --- Helpers ----------------------------------------------------------------
 log_info() { echo "[INFO] $*" >&2; }
 log_err()  { echo "[ERR ] $*" >&2; }
+
+# Llama a la API y distingue "aqui no hay nada" de "no pude leer".
+#
+# Todas las lecturas de este fichero usaban la forma
+# `gh api ... 2>/dev/null || echo <valor benigno>`. Ese patron convierte un
+# fallo de lectura en una respuesta que parece normal, y cada valor elegido
+# resultaba ser el mas enganoso posible:
+#
+#   `|| echo ""`   al resolver un equipo   -> el id pasaba a ser el CUERPO del
+#                                             404: `gh api --jq` escribe el error
+#                                             por stdout, y el `|| echo ""` no
+#                                             descarta lo que ya se capturo, asi
+#                                             que el guard de "id vacio" no
+#                                             saltaba.
+#   `|| echo "[]"` al listar rulesets      -> "este repositorio no tiene
+#                                             ninguno", con lo que --apply
+#                                             CREARIA uno encima del que si
+#                                             existe.
+#   `|| echo "{}"` al leer el detalle      -> estado actual vacio, que
+#                                             canonical_diff presenta como drift
+#                                             del payload entero.
+#
+# Los tres se vieron en produccion el 2026-09-07, en la primera ejecucion de
+# governance-drift.yml: la GitHub App no tenia permiso de lectura sobre
+# `administration` ni sobre `members`, y el reconciliador reporto "drift en los
+# nueve repositorios" cuando lo que ocurria era que no podia leer ninguno.
+#
+# Un reconciliador que no distingue esas dos cosas es peor que uno que falla:
+# con --apply, "no pude leer" se convierte en "reescribelo entero".
+api_get() {
+  local salida codigo err
+  err=$(mktemp)
+  set +e
+  salida=$(gh api "$@" 2>"$err")
+  codigo=$?
+  set -e
+  if [[ $codigo -ne 0 ]]; then
+    log_err "GET ${1}: la API fallo (exit ${codigo}): $(tr '
+' ' ' <"$err" | cut -c1-300)"
+    rm -f "$err"
+    return 1
+  fi
+  rm -f "$err"
+  printf '%s' "$salida"
+}
 # log_warn escalates a [ERR ] + ANY_FAIL cuando --strict esta activo.
 # Asi --strict convierte cualquier warning en un fallo real (exit 1 al final).
 log_warn() {
@@ -203,9 +248,15 @@ resolve_team_id() {
     echo "${TEAM_ID_CACHE[$slug]}"
     return 0
   fi
-  local id
-  id=$(gh api "orgs/$ORG/teams/$slug" --jq '.id' 2>/dev/null || echo "")
+  local id respuesta
+  # Sin `--jq`: se pide el JSON crudo y se filtra despues. Con `--jq`, gh emite
+  # el cuerpo del error por stdout y el id acaba siendo `{"message":"Not Found"}`.
+  if ! respuesta=$(api_get "orgs/$ORG/teams/$slug"); then
+    return 1
+  fi
+  id=$(printf '%s' "$respuesta" | jq -r '.id // empty')
   if [[ -z "$id" || "$id" == "null" ]]; then
+    log_err "team '$slug': la respuesta de la API no trae .id"
     return 1
   fi
   TEAM_ID_CACHE[$slug]="$id"
@@ -232,7 +283,10 @@ fetch_current_ruleset() {
   local list_json id ruleset_name unexpected_count unexpected_ids detail
 
   ruleset_name=$(jq -r '.defaults.rulesetName' "$MANIFEST")
-  list_json=$(gh api "repos/$full/rulesets" 2>/dev/null || echo "[]")
+  if ! list_json=$(api_get "repos/$full/rulesets"); then
+    log_err "$repo: no se pudo listar los rulesets"
+    return 1
+  fi
 
   # Foreign rulesets: target=branch pero name distinto al administrado.
   # Se detectan SIEMPRE (exista o no el administrado) — antes solian
@@ -254,7 +308,10 @@ fetch_current_ruleset() {
     return 0
   fi
 
-  detail=$(gh api "repos/$full/rulesets/$id" 2>/dev/null || echo "{}")
+  if ! detail=$(api_get "repos/$full/rulesets/$id"); then
+    log_err "$repo: el ruleset $id aparece en la lista pero no se pudo leer su detalle"
+    return 1
+  fi
   jq -n --argjson exists true --argjson id "$id" --argjson payload "$detail" \
     --argjson unexpected "${unexpected_count:-0}" \
     --arg unexpected_ids "${unexpected_ids:-}" \
@@ -295,7 +352,12 @@ fetch_legacy_protection() {
   local repo="$1"
   local default_branch candidates manifest_refs detail found
 
-  default_branch=$(gh api "repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
+  local repo_json
+  if ! repo_json=$(api_get "repos/$ORG/$repo"); then
+    log_err "$repo: no se pudo leer el repositorio para resolver su rama por defecto"
+    return 1
+  fi
+  default_branch=$(printf '%s' "$repo_json" | jq -r '.default_branch // empty')
 
   # Refs declaradas en el manifiesto, traducidas a nombre de rama.
   # ~DEFAULT_BRANCH se resuelve a la rama por defecto real.
@@ -579,7 +641,12 @@ while IFS=$'\n\r' read -r repo; do
   # Proteccion clasica: se DETECTA siempre, se borra solo con flag explicito.
   # Mismo criterio que --prune-unexpected: el reconciliador no destruye reglas
   # que no creo sin que alguien lo pida en la linea de comandos.
-  legacy_json=$(fetch_legacy_protection "$repo")
+  if ! legacy_json=$(fetch_legacy_protection "$repo"); then
+    log_err "$repo: no se pudo comprobar la proteccion clasica; se aborta este repositorio"
+    RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"read-failed-legacy\"}")
+    ANY_FAIL=true
+    continue
+  fi
   legacy_count=$(echo "$legacy_json" | jq -r '.count')
   if [[ "$legacy_count" -gt 0 ]]; then
     # Una rama puede fallar el DELETE sin que las demas lo hagan, asi que cada
@@ -621,7 +688,14 @@ while IFS=$'\n\r' read -r repo; do
     done <<< "$(echo "$legacy_json" | jq -r '.branches[] | [.branch, (.enforce_admins|tostring), (.is_default|tostring)] | @tsv')"
   fi
 
-  current_json=$(fetch_current_ruleset "$repo")
+  # Una lectura fallida NO es drift, y confundirlas es lo que convirtio un
+  # permiso ausente de la GitHub App en "drift en los nueve repositorios".
+  if ! current_json=$(fetch_current_ruleset "$repo"); then
+    log_err "$repo: no se pudo leer el estado actual; se aborta este repositorio"
+    RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"read-failed\"}")
+    ANY_FAIL=true
+    continue
+  fi
   exists=$(echo "$current_json" | jq -r '.exists')
   rs_id=$(echo "$current_json" | jq -r '.id // empty')
   unexpected=$(echo "$current_json" | jq -r '.unexpected_count')
@@ -647,7 +721,12 @@ while IFS=$'\n\r' read -r repo; do
       RESULTS+=("{\"repo\":\"$repo\",\"state\":\"pruned\",\"unexpected_pruned\":$pruned}")
       # Despues de podar, refrescar la lista para que el resto del flujo
       # opere contra el estado real (puede que ya no haya ruleset administrado).
-      current_json=$(fetch_current_ruleset "$repo")
+      if ! current_json=$(fetch_current_ruleset "$repo"); then
+        log_err "$repo: no se pudo releer el estado tras podar; se aborta este repositorio"
+        RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"read-failed-after-prune\"}")
+        ANY_FAIL=true
+        continue
+      fi
       exists=$(echo "$current_json" | jq -r '.exists')
       rs_id=$(echo "$current_json" | jq -r '.id // empty')
       current_payload=$(echo "$current_json" | jq -c '.payload // {}')
