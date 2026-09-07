@@ -151,3 +151,51 @@ publicar_ruleset_vivo() {
   [[ "$err" == *"required_approving_review_count"* ]]
   [[ "$err" == *"spark-match-foo"* ]]
 }
+
+@test "--json: el diff no contamina el bloque JSON de salida" {
+  # Guard de la regresion que introdujo la primera version de este cambio. El
+  # diff sale por stderr, pero bats mezcla stdout y stderr en $output y con
+  # --json la salida es un `jq -s` indentado. La primera version indentaba las
+  # lineas del diff sin prefijo, se colaban dentro del JSON y lo volvian
+  # improsable: reventaron dos tests de reconciler-apply.bats que no tenian
+  # nada que ver con este cambio.
+  #
+  # Por eso CADA linea del diff lleva [DIFF], igual que [INFO]/[WARN]/[ERR]:
+  # es lo que permite a json_output() filtrarlas por linea.
+  publicar_ruleset_vivo '
+    .rules |= map(
+      if .type == "pull_request"
+      then .parameters.require_extra_approval_for_unattributed_changes = true
+      else . end
+    )'
+
+  run bash "$SCRIPT" --check --json     --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json"     --repos spark-match-foo
+
+  # El diff esta en la salida combinada...
+  [[ "$output" == *"require_extra_approval_for_unattributed_changes"* ]]
+
+  # ...y aun asi el JSON se parsea y dice lo que tiene que decir.
+  local json
+  json=$(json_output)
+  echo "$json" | jq -e '.[] | select(.repo == "spark-match-foo") | .state == "drift"' >/dev/null
+}
+
+@test "--json: toda linea del diff lleva el prefijo [DIFF]" {
+  # El filtro de json_output() es por prefijo de linea. Si una sola linea del
+  # diff saliera sin el, se colaria en el JSON. Esto lo comprueba directamente
+  # sobre stderr, sin depender de que el parseo de arriba falle por casualidad.
+  fn_body=$(sed -n '/^canonical_diff()/,/^}$/p' "$SCRIPT")
+  eval "$fn_body"
+
+  local base='{"bypass_actors":[],"conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"pull_request","parameters":{"required_approving_review_count":1}}]}'
+  local otro='{"bypass_actors":[],"conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"pull_request","parameters":{"required_approving_review_count":2}}]}'
+
+  local err
+  err=$(canonical_diff "$base" "$otro" "spark-match-foo" 2>&1 >/dev/null)
+
+  [ -n "$err" ]
+  while IFS= read -r linea; do
+    [[ -z "$linea" ]] && continue
+    [[ "$linea" == "[DIFF]"* ]]
+  done <<<"$err"
+}

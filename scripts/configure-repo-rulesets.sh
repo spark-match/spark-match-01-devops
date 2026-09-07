@@ -449,11 +449,17 @@ canonical_diff() {
   # nueve `drift` identicos, y el unico camino que la herramienta ofrecia para
   # resolverlos era justamente el --apply que causaba el dano.
   #
-  # Va a stderr para no tocar el contrato de la funcion (ver cabecera).
+  # Va a stderr para no tocar el contrato de la funcion (ver cabecera), y
+  # CADA linea lleva el prefijo [DIFF], igual que [INFO]/[WARN]/[ERR]. No es
+  # estetica: con --json el bloque de salida es un `jq -s` indentado, y bats
+  # mezcla stdout y stderr en $output. Un diff indentado sin prefijo se cuela
+  # dentro de ese JSON y lo vuelve improsable -- que es justo lo que rompio
+  # dos tests de reconciler-apply.bats en el primer intento de este cambio.
+  # El prefijo hace que helpers/reconciler.bash lo pueda filtrar por linea.
   {
     echo "[DIFF] ${repo}: '<' vive hoy en GitHub, '>' lo quiere el manifiesto"
     diff <(printf '%s\n' "$cur_norm") <(printf '%s\n' "$des_norm") \
-      | sed 's/^/       /' || true
+      | sed 's/^/[DIFF]   /' || true
   } >&2
 
   echo "drift"
