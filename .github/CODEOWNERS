@@ -112,6 +112,10 @@
 /.yamllint.yml                               @spark-match/devops
 /.gitignore                                  @spark-match/devops
 
+# Normalizacion de line endings. Cambiarlo altera como se materializa TODO
+# el arbol de trabajo en cada checkout. Tecnico y sensible.
+/.gitattributes                              @spark-match/devops
+
 # shellcheck config (lint de bash scripts en scripts/ + .github/actions/).
 /.shellcheckrc                               @spark-match/devops
 
