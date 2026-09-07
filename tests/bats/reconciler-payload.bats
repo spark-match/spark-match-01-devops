@@ -67,18 +67,38 @@ teardown() {
   [[ "$(echo "$pr" | jq -c '.parameters.allowed_merge_methods')" == '["squash"]' ]]
 }
 
-@test "payload: required_reviewers is omitted (intentional; see PR #200)" {
-  # As of PR #200 (commit 1f1a03c), the required_reviewers field is intentionally
-  # OMITTED from build_desired_payload. Reasons:
-  #   - GitHub Free plan rejects non-empty values with 422.
-  #   - GitHub API PUT does field-level merge (omitting leaves stale values
-  #     in live rulesets, which canonical_diff strips before comparison).
-  #   - Team-based review is enforced via CODEOWNERS + require_code_owner_review.
-  # See the comment block in build_desired_payload() in
-  # scripts/configure-repo-rulesets.sh for the full rationale.
+@test "payload: required_reviewers se emite, y hoy va vacio" {
+  # Desde el PR #200 este campo se OMITIA, y el test de aqui exigia justamente
+  # eso. Se emite de nuevo, vacio, porque omitirlo obligaba a canonical_diff a
+  # borrarlo de los dos lados antes de comparar -- y eso dejaba al
+  # reconciliador ciego a un campo que si gestiona: un revisor anadido a mano
+  # por la interfaz de GitHub no salia como drift.
+  #
+  # El array vacio es el estado real de los diez rulesets hoy. Poblarlo es la
+  # fase 1 de la migracion de CODEOWNERS.
   payload=$(build_desired_payload "spark-match-foo" "12345")
-  reviewer_id=$(echo "$payload" | jq -r '.rules[0].parameters.required_reviewers[0].reviewer_id // "absent"')
-  [[ "$reviewer_id" == "absent" ]]
+  [[ "$(echo "$payload" | jq -r '.rules[0].parameters | has("required_reviewers")')" == "true" ]]
+  [[ "$(echo "$payload" | jq -c '.rules[0].parameters.required_reviewers')" == "[]" ]]
+}
+
+@test "payload: el motivo por el que el PR #200 lo retiro era falso" {
+  # El PR #200 lo atribuyo al plan: "GitHub Free plan rejects non-empty values
+  # with 422". Medido contra la API el 2026-09-07 sobre un ruleset desechable
+  # en este mismo repositorio, con plan free y enforcement active: lo que da
+  # 422 es la FORMA plana {reviewer_id, reviewer_type}. La forma anidada se
+  # acepta, se guarda y se lee de vuelta.
+  #
+  # Este test no llama a la API -- fija la correccion donde se lee, para que
+  # nadie vuelva a retirar el campo citando el motivo equivocado.
+  #
+  # Se afirma la presencia de la correccion, no la ausencia de la frase falsa:
+  # la frase falsa aparece a proposito, citada dentro de su propio desmentido,
+  # y un guard que exigiera su ausencia obligaria a borrar la cita y con ella
+  # el contexto de por que estaba mal.
+  local fuente="${REPO_ROOT}/scripts/configure-repo-rulesets.sh"
+  grep -q 'QUE ERA FALSO' "$fuente"
+  grep -q 'file_patterns' "$fuente"
+  grep -q 'minimum_approvals' "$fuente"
 }
 
 # -----------------------------------------------------------------------------

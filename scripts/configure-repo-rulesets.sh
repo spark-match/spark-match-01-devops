@@ -15,10 +15,20 @@
 #     contra el estado deseado.
 #
 # Que cubre el ruleset (v2 - cubre TODO lo de branch protection):
-#   - pull_request rule: 1 aprobacion, code owner review OFF (reemplazado por
-#                        required_reviewers), dismiss stale, conversation
-#                        resolution, required_reviewers (team), allowed
-#                        merge methods = [squash].
+#   - pull_request rule: 1 aprobacion, code owner review ON, dismiss stale,
+#                        conversation resolution, required_reviewers VACIO,
+#                        allowed merge methods = [squash].
+#
+#     Quien revisa que lo decide CODEOWNERS, no este ruleset. El ruleset dice
+#     "tiene que aprobar un code owner"; CODEOWNERS es lo unico que dice quien
+#     es un code owner. Sin ese fichero la condicion no casa con nada y deja de
+#     exigir EN SILENCIO, con el ruleset marcando true igualmente.
+#
+#     Estas cuatro lineas decian lo contrario hasta 2026-09-07 -- "code owner
+#     review OFF (reemplazado por required_reviewers)" -- y las dos mitades
+#     eran falsas: require_code_owner_review esta en true en los diez rulesets
+#     y required_reviewers esta vacio en los diez. No es una errata inocua: es
+#     la afirmacion que lleva a concluir que CODEOWNERS se puede retirar hoy.
 #   - required_status_checks (per-repo via manifest)
 #   - non_fast_forward (block force push)
 #   - required_linear_history
@@ -364,13 +374,31 @@ build_desired_payload() {
               dismiss_stale_reviews_on_push: $d.dismissStaleReviews,
               require_last_push_approval: $d.requireLastPushApproval,
               required_review_thread_resolution: $d.requireConversationResolution,
-              # required_reviewers field is OMITTED entirely because:
-              #   - GitHub Free plan rejects non-empty values with 422.
-              #   - GitHub API PUT does field-level merge (omitting leaves stale values).
-              #   - canonical_diff() strips required_reviewers from current state before comparison,
-              #     so reconcile reports in-sync despite stale empty arrays in live.
-              # Team-based review is enforced via CODEOWNERS + require_code_owner_review=true.
-              # See governance/repository-governance.json _note field for rationale.
+              # `required_reviewers` se emite VACIO, y el array vacio es hoy el
+              # estado real de los diez rulesets. Emitirlo -- en vez de omitirlo,
+              # como se hacia desde el PR #200 -- es lo que permite que
+              # canonical_diff() lo compare de verdad: mientras el payload
+              # deseado no lo llevaba, la unica forma de que --check no marcara
+              # drift eterno era que la comparacion lo borrase de los dos lados,
+              # y eso dejaba al reconciliador ciego a un campo que si gestiona.
+              #
+              # OJO CON EL PORQUE ANTERIOR, QUE ERA FALSO. Este bloque decia
+              # "GitHub Free plan rejects non-empty values with 422". Medido
+              # contra la API el 2026-09-07 sobre un ruleset desechable, en este
+              # mismo repositorio: lo que da 422 es la FORMA plana
+              # {reviewer_id, reviewer_type}. La forma anidada se acepta, se
+              # guarda y se lee de vuelta, en plan Free y con enforcement
+              # active:
+              #
+              #   { "file_patterns": ["**"],
+              #     "minimum_approvals": 1,
+              #     "reviewer": { "id": <team_id>, "type": "Team" } }
+              #
+              # Es decir: la revision por equipo desde el ruleset SI esta
+              # disponible. El PR #200 la retiro por un diagnostico equivocado.
+              # Conectarla es la fase 1; esto es solo dejar de mentir sobre el
+              # campo mientras tanto.
+              required_reviewers: [],
               allowed_merge_methods: $d.allowedMergeMethods
             }
           }
@@ -405,8 +433,13 @@ canonical_diff() {
   local repo="${3:-?}"
 
   # Canonicalizacion: orden estable, ignorar campos meta.
-  # Tambien ignoramos `required_reviewers` (stale empty array que la API no deja limpiar,
-  # ver comment en build_desired_payload).
+  #
+  # `required_reviewers` YA NO se ignora. Se borraba de los dos lados porque el
+  # payload deseado no lo emitia y el vivo lo tenia en `[]`; sin ese borrado,
+  # los diez repositorios habrian salido en drift permanente. El precio era que
+  # el reconciliador no podia ver un cambio en los revisores requeridos: si
+  # alguien anadia uno por la interfaz de GitHub, --check decia in-sync.
+  # Ahora build_desired_payload lo emite y la comparacion es honesta.
   local cur_norm des_norm
   cur_norm=$(echo "$current" | jq -S '
     del(.id, .node_id, .created_at, .updated_at, ._links, .source, .source_type, .url, .current_user_can_bypass) |
@@ -415,8 +448,7 @@ canonical_diff() {
     .conditions.ref_name.exclude |= sort |
     .rules |= sort_by(.type) |
     .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
-    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end) |
-    .rules |= map(if has("parameters") and (.parameters | has("required_reviewers")) then .parameters |= del(.required_reviewers) else . end)
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
   ')
   des_norm=$(echo "$desired" | jq -S '
     .bypass_actors |= map(del(.actor_id)) |
@@ -424,8 +456,7 @@ canonical_diff() {
     .conditions.ref_name.exclude |= sort |
     .rules |= sort_by(.type) |
     .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
-    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end) |
-    .rules |= map(if has("parameters") and (.parameters | has("required_reviewers")) then .parameters |= del(.required_reviewers) else . end)
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
   ')
 
   if [[ "$cur_norm" == "$des_norm" ]]; then
