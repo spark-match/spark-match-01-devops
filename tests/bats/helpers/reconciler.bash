@@ -84,6 +84,7 @@ json_output() {
     | grep -v '^\[INFO\]' \
     | grep -v '^\[WARN\]' \
     | grep -v '^\[ERR' \
+    | grep -v '^\[DIFF\]' \
     | sed '1{/^$/d}'
 }
 export -f json_output

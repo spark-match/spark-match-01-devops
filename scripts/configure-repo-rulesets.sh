@@ -395,10 +395,14 @@ build_desired_payload() {
 }
 
 # Compara dos payloads (current vs desired) canonizados.
-# Imprime "in-sync" si coinciden o el diff resumido.
+#
+# Por stdout emite EXACTAMENTE `in-sync` o `drift`: el caller compara contra
+# esas dos cadenas y no debe recibir nada mas. Cuando hay drift, ademas escribe
+# el diff por stderr, junto al resto del log.
 canonical_diff() {
   local current="$1"
   local desired="$2"
+  local repo="${3:-?}"
 
   # Canonicalizacion: orden estable, ignorar campos meta.
   # Tambien ignoramos `required_reviewers` (stale empty array que la API no deja limpiar,
@@ -426,9 +430,39 @@ canonical_diff() {
 
   if [[ "$cur_norm" == "$des_norm" ]]; then
     echo "in-sync"
-  else
-    echo "drift"
+    return 0
   fi
+
+  # Hasta 2026-09-06 la funcion se paraba aqui y emitia la palabra `drift`, y
+  # nada mas. El diff ya estaba calculado -- son las dos variables de arriba --
+  # y se tiraba.
+  #
+  # No era un detalle cosmetico. Ese dia --check daba `drift` en los 9
+  # repositorios de la organizacion, y la unica diferencia era un campo que
+  # GitHub habia anadido por su lado y que el payload deseado no construye:
+  #
+  #     "require_extra_approval_for_unattributed_changes": true
+  #
+  # El PUT de rulesets reemplaza las reglas enteras, asi que un --apply lo
+  # habria devuelto a su default y habria APAGADO esa proteccion en los 9
+  # repositorios a la vez. Con la salida anterior no habia forma de verlo:
+  # nueve `drift` identicos, y el unico camino que la herramienta ofrecia para
+  # resolverlos era justamente el --apply que causaba el dano.
+  #
+  # Va a stderr para no tocar el contrato de la funcion (ver cabecera), y
+  # CADA linea lleva el prefijo [DIFF], igual que [INFO]/[WARN]/[ERR]. No es
+  # estetica: con --json el bloque de salida es un `jq -s` indentado, y bats
+  # mezcla stdout y stderr en $output. Un diff indentado sin prefijo se cuela
+  # dentro de ese JSON y lo vuelve improsable -- que es justo lo que rompio
+  # dos tests de reconciler-apply.bats en el primer intento de este cambio.
+  # El prefijo hace que helpers/reconciler.bash lo pueda filtrar por linea.
+  {
+    echo "[DIFF] ${repo}: '<' vive hoy en GitHub, '>' lo quiere el manifiesto"
+    diff <(printf '%s\n' "$cur_norm") <(printf '%s\n' "$des_norm") \
+      | sed 's/^/[DIFF]   /' || true
+  } >&2
+
+  echo "drift"
 }
 
 # Backup del ruleset actual (full GET) a BACKUP_DIR/<repo>-<id>.json.
@@ -595,7 +629,7 @@ while IFS=$'\n\r' read -r repo; do
   fi
 
   if [[ "$exists" == "true" ]]; then
-    diff=$(canonical_diff "$current_payload" "$desired_payload")
+    diff=$(canonical_diff "$current_payload" "$desired_payload" "$repo")
     if [[ "$diff" == "in-sync" ]]; then
       RESULTS+=("{\"repo\":\"$repo\",\"state\":\"in-sync\",\"ruleset_id\":$rs_id}")
     elif [[ "$MODE" == "check" ]]; then
