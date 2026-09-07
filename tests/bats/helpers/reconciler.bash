@@ -161,19 +161,39 @@ gh() {
       fi
 
       # GET orgs/<org>/teams/<slug>  (team_id resolution)
+      #
+      # Devuelve el OBJETO, no el id pelado. El script pedia esta ruta con
+      # --jq '.id'; desde que las lecturas pasan por api_get() pide el JSON
+      # crudo y filtra en local, precisamente porque con --jq el cuerpo de un
+      # 404 salia por stdout y acababa propagandose como si fuera el id.
       if [[ "$url" =~ ^orgs/[^/]+/teams/(.+)$ ]]; then
         local slug="${BASH_REMATCH[1]}"
         if [[ -f "$fx/team-$slug" ]]; then
-          jq -r '.id // empty' "$fx/team-$slug"
+          cat "$fx/team-$slug"
           return 0
         fi
-        # Not found: emit empty + non-zero (script falls back to "" or errors).
+        # No encontrado: como la API de verdad. El CUERPO del error va por
+        # stdout y el mensaje humano por stderr -- que el cuerpo salga por
+        # stdout es justo la mitad que hacia que, con `gh api --jq`, el 404
+        # acabara propagandose como si fuera el team id.
+        echo '{"message":"Not Found","status":"404"}'
+        echo "gh: Not Found (HTTP 404)" >&2
         return 1
       fi
 
       # GET repos/<owner>/<repo>/rulesets/<id>  (single ruleset)
+      #
+      # Marker `rule-detail-fail`: el ruleset aparece en la lista pero su
+      # detalle no se puede leer. Es el caso real del 2026-09-07: la GitHub App
+      # podia listar pero no leer, y el estado actual llegaba vacio, que
+      # canonical_diff presentaba como drift del payload entero.
       if [[ "$url" =~ ^repos/[^/]+/[^/]+/rulesets/([^/]+)$ ]]; then
         local id="${BASH_REMATCH[1]}"
+        if [[ -f "$fx/rule-detail-fail" ]]; then
+          echo '{"message":"Resource not accessible by integration","status":"403"}'
+          echo "gh: Resource not accessible by integration (HTTP 403)" >&2
+          return 1
+        fi
         if [[ -f "$fx/backup-fail" ]]; then
           # 1ra llamada = fetch_current_ruleset (debe OK).
           # 2da+        = backup_ruleset        (debe fallar).
@@ -263,19 +283,38 @@ gh() {
       fi
 
       # GET repos/<owner>/<repo>  (resolucion de default_branch).
-      # El script la llama con --jq '.default_branch', y este stub descarta los
-      # flags, asi que hay que emitir ya el valor filtrado, no el objeto.
+      #
+      # Devuelve el OBJETO, no el valor filtrado. El script pedia esta ruta con
+      # --jq '.default_branch' y este stub emitia solo el nombre de la rama;
+      # desde que las lecturas pasan por api_get() se pide el JSON crudo y se
+      # filtra en local, porque con --jq el cuerpo de un error sale por stdout
+      # y acaba colandose como si fuera el dato.
+      #
+      # Marker `repo-read-fail`: la API contesta con error.
       if [[ "$url" =~ ^repos/[^/]+/[^/]+$ ]]; then
-        if [[ -f "$fx/default-branch" ]]; then
-          cat "$fx/default-branch"
-        else
-          echo "main"
+        if [[ -f "$fx/repo-read-fail" ]]; then
+          echo '{"message":"Not Found","status":"404"}'
+          echo "gh: Not Found (HTTP 404)" >&2
+          return 1
         fi
+        local br
+        br=$(cat "$fx/default-branch" 2>/dev/null || echo "main")
+        jq -n --arg b "$br" '{default_branch: $b}'
         return 0
       fi
 
       # GET repos/<owner>/<repo>/rulesets  (list)
+      #
+      # Marker `rulesets-list-fail`: la API contesta con error. Es DISTINTO de
+      # que no haya rulesets: hasta 2026-09-07 el script confundia las dos
+      # cosas y un fallo de lectura se leia como "este repo no tiene ninguno",
+      # con lo que --apply habria creado uno encima del que si existe.
       if [[ "$url" =~ ^repos/[^/]+/[^/]+/rulesets$ ]]; then
+        if [[ -f "$fx/rulesets-list-fail" ]]; then
+          echo '{"message":"Not Found","status":"404"}'
+          echo "gh: Not Found (HTTP 404)" >&2
+          return 1
+        fi
         if [[ -f "$fx/rulesets-list.json" ]]; then
           cat "$fx/rulesets-list.json"
           return 0

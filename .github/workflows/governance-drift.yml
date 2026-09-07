@@ -26,10 +26,21 @@
 #   App de la organizacion, el mismo mecanismo que release-please.yml, con
 #   `owner:` para que el token cubra la organizacion entera y no solo este repo.
 #
-#   La App necesita permiso de lectura sobre `administration` para poder leer
-#   /rulesets. Si el workflow falla con 403 o 404 en el primer repositorio, es
-#   eso: hay que anadirle el permiso en la configuracion de la App, y volver a
-#   aceptar la instalacion.
+#   La App necesita DOS permisos de solo lectura, y los dos hicieron falta:
+#
+#     Administration: Read  (permiso de repositorio)   -> leer /rulesets
+#     Members:        Read  (permiso de organizacion)  -> resolver los equipos
+#
+#   Concederlos son DOS pasos, y el primero solo no hace nada: editar los
+#   permisos de la App los deja como SOLICITUD PENDIENTE, y un owner de la
+#   organizacion tiene que aceptarla en
+#   Settings > Installations > spark-match-bot. Hasta entonces
+#   `GET /orgs/{org}/installations` sigue devolviendo el juego antiguo, que es
+#   la forma de comprobarlo sin adivinar.
+#
+#   Lo aprendimos en la primera ejecucion, el 2026-09-07: con la App editada
+#   pero la instalacion sin actualizar, los nueve repositorios salieron en
+#   `drift` con el payload entero como diff. No habia drift; no se podia leer.
 #
 # EXIT CODES (los del script, se propagan tal cual):
 #   0  todos los repositorios declarados estan in-sync
