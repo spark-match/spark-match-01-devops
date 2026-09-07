@@ -1,0 +1,42 @@
+# .gitattributes - normalizacion de line endings
+#
+# POR QUE ESTE FICHERO. Este repositorio es el unico de la organizacion con
+# scripts shell, hooks de git y una suite de 36 ficheros bats, y era el unico
+# sin .gitattributes. En un checkout de Windows con `core.autocrlf=true` eso
+# deja 116 ficheros con CRLF en el arbol de trabajo, y las tres herramientas
+# que este repo usa para validarse a si mismo dejan de servir en local:
+#
+#   bats tests/bats/    -> codeowners-enforcement da un fallo FALSO: con CRLF
+#                          una linea en blanco no es `-z`, no se salta, y sale
+#                          reportada como "linea sin @spark-match/devops".
+#   shellcheck          -> SC1017 (literal carriage return) en cada linea de
+#                          .shellcheckrc, o sea en la propia configuracion.
+#   yamllint            -> "wrong new line character" en los 30+ YAML del repo.
+#
+# CI nunca lo vio porque el runner es Linux y el blob en el repositorio ya es
+# LF: el dano es exclusivamente local, y consiste en que quien desarrolla no
+# se puede fiar de sus propias comprobaciones antes de abrir un PR.
+#
+# La leccion no es nueva en la organizacion. spark-match-03-backend ya la
+# escribio en su propio .gitattributes ("lets us drop the `new-lines: disable`
+# workaround in .yamllint.yml, which we needed because yamllint's default
+# `new-lines: platform` rule failed differently on Windows vs Linux"). No habia
+# llegado al repositorio que reparte el estandar.
+#
+# POR QUE UN CATCH-ALL Y NO UNA LISTA DE EXTENSIONES. Es la misma eleccion que
+# el catch-all de CODEOWNERS y por el mismo motivo: una lista solo cubre lo que
+# alguien se acordo de anadir. spark-match-02-infrastructure y
+# spark-match-06-article enumeran extensiones, y todo lo que no enumeran
+# (*.json, *.py, CODEOWNERS) sigue saliendo con CRLF. Aqui la regla general
+# cubre todo y las excepciones se declaran explicitamente debajo.
+
+# Regla general: git detecta si el fichero es texto y, si lo es, lo normaliza a
+# LF al hacer commit Y lo materializa con LF en el arbol de trabajo,
+# independientemente de `core.autocrlf`.
+* text=auto eol=lf
+
+# Excepciones: ficheros que SOLO consume Windows y que necesitan CRLF.
+# Hoy no hay ninguno en el repositorio; las reglas quedan por si aparecen.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
