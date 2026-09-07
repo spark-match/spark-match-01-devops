@@ -20,6 +20,33 @@ that:
 
 Merging the release PR creates the git tag + GitHub Release.
 
+## [1.6.0](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.5...v1.6.0) (2026-09-07)
+
+
+### Features
+
+* **ci:** workflow semanal de solo lectura que detecta drift de rulesets ([65fb092](https://github.com/spark-match/spark-match-01-devops/commit/65fb092169fb49899985dbd1eaea4a0f177831b9))
+
+
+### Bug Fixes
+
+* **governance:** --check imprime el diff del ruleset, no solo la palabra drift ([480c7bb](https://github.com/spark-match/spark-match-01-devops/commit/480c7bb38c4fc42f3583e444a750e8ec38496e79))
+* **governance:** comparar sin bypass_actors cuando el token no puede verlo ([24c14e0](https://github.com/spark-match/spark-match-01-devops/commit/24c14e0466cefd5238773d607e0c77c866100769))
+* **governance:** gestionar required_reviewers en vez de esconderlo al comparar ([bc7d017](https://github.com/spark-match/spark-match-01-devops/commit/bc7d017ceb8060fbb2b208f19e57df32e9a7ab90))
+* **governance:** un fallo de lectura ya no se disfraza de drift ni de vacio ([2550eec](https://github.com/spark-match/spark-match-01-devops/commit/2550eec8d5189760266d4cabdff1602e51d426ea))
+
+
+### Documentation
+
+* **readme:** actualizar los nombres de repositorio tras el renumerado ([#347](https://github.com/spark-match/spark-match-01-devops/issues/347)) ([b5f25ca](https://github.com/spark-match/spark-match-01-devops/commit/b5f25caffffc2dd4982d4bc48863ba796b79abd5))
+* **readme:** última referencia al nombre viejo del repo del artículo ([#349](https://github.com/spark-match/spark-match-01-devops/issues/349)) ([829b917](https://github.com/spark-match/spark-match-01-devops/commit/829b917d66c72c01ab668b33f895f9820577ed2f))
+
+
+### CI/CD
+
+* alinear la plantilla de dependabot con el bloque activo ([#350](https://github.com/spark-match/spark-match-01-devops/issues/350)) ([b214451](https://github.com/spark-match/spark-match-01-devops/commit/b2144511fab99b1f2510528cf35cf251379dfeea))
+* **deps:** bump the third-party-actions group across 1 directory with 2 updates ([#345](https://github.com/spark-match/spark-match-01-devops/issues/345)) ([73f0eb9](https://github.com/spark-match/spark-match-01-devops/commit/73f0eb9c872f50ff55f61fc5a7db855ca3173765))
+
 ## [1.5.5](https://github.com/spark-match/spark-match-01-devops/compare/v1.5.4...v1.5.5) (2026-08-10)
 
 
