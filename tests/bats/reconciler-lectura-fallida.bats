@@ -146,3 +146,54 @@ publicar_ruleset_en_sync() {
     [ "$status" -ne 0 ]
   fi
 }
+
+# ---------------------------------------------------------------------------
+# Comparar tampoco es un veredicto si no se pudo hacer
+# ---------------------------------------------------------------------------
+# Segundo disfraz del mismo incidente. Con los permisos ya concedidos, la
+# respuesta de la API seguia sin traer `bypass_actors`: GitHub omite ese campo
+# para un token que no puede gestionar el bypass. La normalizacion hacia
+# `.bypass_actors |= map(...)` sobre null, jq moria con "Cannot iterate over
+# null", el error se iba por stderr y `cur_norm` quedaba VACIO -- con lo que el
+# diff volvia a salir como el payload entero sobre los nueve repositorios.
+# ---------------------------------------------------------------------------
+
+@test "bypass_actors ausente: no revienta ni inventa drift" {
+  # El caso real del token de la GitHub App.
+  publicar_ruleset_en_sync
+  jq 'del(.bypass_actors)' fixtures/rule-99.json > fixtures/tmp.json
+  mv fixtures/tmp.json fixtures/rule-99.json
+
+  run bash "$SCRIPT" --check --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"in-sync"* ]]
+  [[ "$output" != *"[DIFF]"* ]]
+}
+
+@test "bypass_actors ausente: se avisa de que ese campo no se comparo" {
+  # Cobertura parcial dicha en voz alta. Sin este aviso, --check saldria verde
+  # sin que nadie sepa que un cambio en quien puede saltarse el ruleset no se
+  # estaba mirando.
+  publicar_ruleset_en_sync
+  jq 'del(.bypass_actors)' fixtures/rule-99.json > fixtures/tmp.json
+  mv fixtures/tmp.json fixtures/rule-99.json
+
+  run bash "$SCRIPT" --check --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+  [[ "$output" == *"bypass_actors"* ]]
+  [[ "$output" == *"FUERA de la comparacion"* ]]
+}
+
+@test "un payload que no se puede normalizar sale como compare-failed" {
+  # Cualquier otra forma inesperada. Lo que no puede pasar es que una
+  # normalizacion rota se lea como in-sync, que es lo que ocurriria si las dos
+  # cadenas salieran vacias.
+  publicar_ruleset_en_sync
+  echo '{"rules": "esto-no-es-un-array", "conditions": {}}' > fixtures/rule-99.json
+
+  run bash "$SCRIPT" --check --json --manifest "$BATS_TEST_TMPDIR/fixtures/manifest.json" --repos spark-match-foo
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"in-sync"* ]]
+  local json
+  json=$(json_output)
+  echo "$json" | jq -e '.[] | select(.repo == "spark-match-foo") | .reason == "compare-failed"' >/dev/null
+}
