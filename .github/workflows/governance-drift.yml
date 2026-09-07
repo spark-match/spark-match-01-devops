@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Spark Match
+# =============================================================================
+# governance-drift.yml - Detecta drift entre los rulesets vivos y el manifiesto
+# =============================================================================
+# POR QUE EXISTE.
+#   `scripts/configure-repo-rulesets.sh` es el reconciliador declarativo de los
+#   rulesets de la organizacion. Hasta ahora nadie lo ejecutaba: era un script
+#   que alguien corria a mano cuando se acordaba. El coste de eso quedo medido
+#   el 2026-09-06, cuando `--check` salio con drift en los NUEVE repositorios y
+#   resulto que llevaba asi desde que GitHub anadio, por su cuenta, el parametro
+#   `require_extra_approval_for_unattributed_changes` a la regla pull_request.
+#   Nadie lo habia visto porque nadie mira lo que nadie ejecuta.
+#
+#   Este workflow solo LEE. Corre `--check`, que no muta nada: ni PUT, ni POST,
+#   ni DELETE. Reconciliar sigue siendo una decision humana con `--apply`.
+#
+# QUE SALE EN EL JOB SUMMARY.
+#   El log entero, incluidas las lineas [DIFF] que nombran campo por campo lo
+#   que difiere. Sin eso, un fallo en rojo obligaria a abrir los logs para saber
+#   si lo que cambio es cosmetico o es el permiso de merge.
+#
+# EL TOKEN.
+#   `GITHUB_TOKEN` no sirve: esta acotado a este repositorio y el reconciliador
+#   lee los rulesets de los diez. Se usa el token de instalacion de la GitHub
+#   App de la organizacion, el mismo mecanismo que release-please.yml, con
+#   `owner:` para que el token cubra la organizacion entera y no solo este repo.
+#
+#   La App necesita permiso de lectura sobre `administration` para poder leer
+#   /rulesets. Si el workflow falla con 403 o 404 en el primer repositorio, es
+#   eso: hay que anadirle el permiso en la configuracion de la App, y volver a
+#   aceptar la instalacion.
+#
+# EXIT CODES (los del script, se propagan tal cual):
+#   0  todos los repositorios declarados estan in-sync
+#   1  hay drift en al menos uno
+#   2  error de prerequisitos o manifiesto invalido
+# =============================================================================
+
+name: governance-drift
+
+on:
+  schedule:
+    # Lunes 06:00 UTC (01:00 en Peru). Semanal es suficiente: el drift que
+    # importa lo introduce GitHub por su lado, no un commit.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: governance-drift
+  # Dos lecturas simultaneas no se corrompen, pero tampoco aportan.
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: governance-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout-manifest
+        uses: actions/checkout@v7
+
+      - name: generate-app-installation-token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          # Sin `owner`, el token queda acotado al repositorio que lo pide.
+          owner: ${{ github.repository_owner }}
+
+      - name: run-drift-check
+        env:
+          # Via `env:` y no interpolado dentro del `run:`, que es lo que exige
+          # tests/bats/workflow-env-isolation.bats.
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          LOG: ${{ runner.temp }}/governance-drift.log
+        run: |
+          set -uo pipefail
+
+          # El script sale 1 con drift, que es informacion, no un fallo del
+          # runner. Se captura y se decide al final, tras escribir el resumen.
+          code=0
+          bash scripts/configure-repo-rulesets.sh --check >"${LOG}" 2>&1 || code=$?
+
+          cat "${LOG}"
+
+          {
+            echo "## governance drift"
+            echo ""
+            case "${code}" in
+              0) echo "Todos los repositorios declarados estan **in-sync**." ;;
+              1) echo "**Hay drift.** Detalle tal cual lo reporta el reconciliador:" ;;
+              2) echo "**Error de prerequisitos o manifiesto invalido.**" ;;
+              *) echo "**Codigo de salida inesperado: \`${code}\`.**" ;;
+            esac
+            echo ""
+            echo '```'
+            cat "${LOG}"
+            echo '```'
+            echo ""
+            echo "Reconciliar es una decision humana:"
+            echo ""
+            echo '```bash'
+            echo "./scripts/configure-repo-rulesets.sh --check          # leer el diff"
+            echo "./scripts/configure-repo-rulesets.sh --dry-run --apply # ver que se tocaria"
+            echo "./scripts/configure-repo-rulesets.sh --apply           # reconciliar"
+            echo '```'
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+          exit "${code}"

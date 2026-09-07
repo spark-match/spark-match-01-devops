@@ -68,6 +68,7 @@ spark-match-01-devops/
 │       ├── release-please.yml               release-please automation (cuts release PRs)
 │       ├── commitlint.yml                   commitlint check on every PR + push
 │       ├── sbom.yml                         cyclonedx sbom attached to GH Release
+│       ├── governance-drift.yml            weekly read-only ruleset drift check (--check)
 │       │
 │       │ ─── catalog recipes (reusables, called via uses: from consumer repos) ──
 │       │ ─── prefix `reusable-` flags the workflow_call entrypoint ─────────────
@@ -1039,6 +1040,7 @@ These workflows are **not** part of the consumer-facing catalog; they only run o
 - `commitlint.yml` — this repo's caller for `reusable-commitlint.yml`. Runs on every PR + push to `main`. Validates Conventional Commits 1.0.0 against `.commitlintrc.json`.
 - `release-please.yml` — this repo's caller for `reusable-release-please.yml`. Cuts a "release PR" on every push to `main`; merging the release PR creates the git tag + GitHub Release. Configured via `.github/release-please-config.json` + `.release-please-manifest.json`.
 - `sbom.yml` — cyclonedx sbom attached to GitHub Release. Runs on `release: { types: [published] }`.
+- `governance-drift.yml` — weekly **read-only** drift check of the organization's rulesets against `governance/repository-governance.json`. Runs `configure-repo-rulesets.sh --check`, which issues no PUT, POST or DELETE; the log, including the per-field `[DIFF]` lines, lands in the Job Summary. Reconciling stays a human decision (`--apply`). Uses the organization GitHub App token, same mechanism as `release-please.yml`, because `GITHUB_TOKEN` is scoped to this repository and the reconciler reads all ten. `tests/bats/governance-drift-workflow.bats` guards that it never gains `--apply` or a prune flag.
 
 All catalog recipes in this folder carry the `reusable-` prefix (e.g. `reusable-terraform-plan.yml`). Anything without the prefix is internal CI/CD for this repo only and is NOT safe to call from a consumer repo. See [`docs/VERSIONING.md`](docs/VERSIONING.md) for the per-environment pinning rules.
 
