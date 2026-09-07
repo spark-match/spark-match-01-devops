@@ -489,10 +489,43 @@ build_desired_payload() {
 # Por stdout emite EXACTAMENTE `in-sync` o `drift`: el caller compara contra
 # esas dos cadenas y no debe recibir nada mas. Cuando hay drift, ademas escribe
 # el diff por stderr, junto al resto del log.
+#
+# Devuelve NO-CERO si no puede normalizar alguno de los dos lados. El caller
+# tiene que tratarlo como fallo, no como veredicto: una comparacion que no se
+# pudo hacer no es un resultado.
 canonical_diff() {
   local current="$1"
   local desired="$2"
   local repo="${3:-?}"
+
+  # `bypass_actors` puede sencillamente NO venir en la respuesta. GitHub lo
+  # omite para un token que no puede gestionar el bypass. Verificado el
+  # 2026-09-07 contra la API con el token de instalacion de la GitHub App: la
+  # respuesta trae `rules` y `conditions`, y `bypass_actors` no esta entre las
+  # trece claves de nivel superior.
+  #
+  # Eso reventaba la normalizacion -- `.bypass_actors |= map(...)` sobre null
+  # es "Cannot iterate over null" -- y como el error de jq se va por stderr,
+  # `cur_norm` quedaba VACIO y el diff salia como el payload entero. Fue el
+  # segundo disfraz del mismo incidente del 2026-09-07: primero los permisos
+  # que faltaban, y luego, ya concedidos, este campo invisible.
+  #
+  # Cuando no viene, se excluye de la comparacion EN LOS DOS LADOS y se avisa.
+  # Es cobertura parcial dicha en voz alta, que es preferible a un falso
+  # positivo sobre los nueve repositorios -- pero es cobertura parcial: un
+  # cambio en quien puede saltarse el ruleset NO se detecta con este token.
+  local sin_bypass=false
+  if [[ "$(printf '%s' "$current" | jq -r 'has("bypass_actors") // false' 2>/dev/null)" != "true" ]]; then
+    sin_bypass=true
+    log_warn "$repo: la respuesta de la API no trae bypass_actors (el token no puede verlo); ese campo queda FUERA de la comparacion"
+  fi
+
+  local filtro_bypass
+  if [[ "$sin_bypass" == true ]]; then
+    filtro_bypass='del(.bypass_actors)'
+  else
+    filtro_bypass='.bypass_actors |= map(del(.actor_id))'
+  fi
 
   # Canonicalizacion: orden estable, ignorar campos meta.
   #
@@ -502,24 +535,48 @@ canonical_diff() {
   # el reconciliador no podia ver un cambio en los revisores requeridos: si
   # alguien anadia uno por la interfaz de GitHub, --check decia in-sync.
   # Ahora build_desired_payload lo emite y la comparacion es honesta.
-  local cur_norm des_norm
-  cur_norm=$(echo "$current" | jq -S '
+  local filtro_comun='
+    .conditions.ref_name.include |= sort |
+    .conditions.ref_name.exclude |= sort |
+    .rules |= sort_by(.type) |
+    .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
+    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
+  '
+
+  # El stderr de jq se captura y se re-emite con prefijo [ERR], en vez de
+  # dejarlo salir crudo. No es estetica: bats mezcla stdout y stderr, y con
+  # --json un `jq: error ...` sin prefijo cae dentro del bloque JSON y lo
+  # vuelve improsable -- el mismo problema que ya obligo a prefijar las lineas
+  # del diff con [DIFF].
+  local cur_norm des_norm jq_err
+  jq_err=$(mktemp)
+
+  if ! cur_norm=$(printf '%s' "$current" | jq -S "
     del(.id, .node_id, .created_at, .updated_at, ._links, .source, .source_type, .url, .current_user_can_bypass) |
-    .bypass_actors |= map(del(.actor_id)) |
-    .conditions.ref_name.include |= sort |
-    .conditions.ref_name.exclude |= sort |
-    .rules |= sort_by(.type) |
-    .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
-    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
-  ')
-  des_norm=$(echo "$desired" | jq -S '
-    .bypass_actors |= map(del(.actor_id)) |
-    .conditions.ref_name.include |= sort |
-    .conditions.ref_name.exclude |= sort |
-    .rules |= sort_by(.type) |
-    .rules |= map(if .parameters.dismissal_restriction then del(.parameters.dismissal_restriction) else . end) |
-    .rules |= map(if .parameters.do_not_enforce_on_create == false then del(.parameters.do_not_enforce_on_create) else . end)
-  ')
+    ${filtro_bypass} |
+    ${filtro_comun}" 2>"$jq_err"); then
+    log_err "$repo: no se pudo normalizar el estado ACTUAL: $(tr '
+' ' ' <"$jq_err" | cut -c1-200)"
+    rm -f "$jq_err"
+    return 1
+  fi
+  if ! des_norm=$(printf '%s' "$desired" | jq -S "
+    ${filtro_bypass} |
+    ${filtro_comun}" 2>"$jq_err"); then
+    log_err "$repo: no se pudo normalizar el estado DESEADO: $(tr '
+' ' ' <"$jq_err" | cut -c1-200)"
+    rm -f "$jq_err"
+    return 1
+  fi
+  rm -f "$jq_err"
+
+  # Una normalizacion vacia no es una comparacion valida. Sin esta guarda, un
+  # jq que falle en silencio deja las dos cadenas vacias y el resultado seria
+  # `in-sync` -- el peor de los desenlaces, porque calla.
+  if [[ -z "$cur_norm" || -z "$des_norm" ]]; then
+    log_err "$repo: la normalizacion salio vacia; no se puede comparar"
+    return 1
+  fi
 
   if [[ "$cur_norm" == "$des_norm" ]]; then
     echo "in-sync"
@@ -739,7 +796,12 @@ while IFS=$'\n\r' read -r repo; do
   fi
 
   if [[ "$exists" == "true" ]]; then
-    diff=$(canonical_diff "$current_payload" "$desired_payload" "$repo")
+    if ! diff=$(canonical_diff "$current_payload" "$desired_payload" "$repo"); then
+      log_err "$repo: no se pudo comparar el estado actual con el deseado; se aborta este repositorio"
+      RESULTS+=("{\"repo\":\"$repo\",\"state\":\"failed\",\"reason\":\"compare-failed\",\"ruleset_id\":$rs_id}")
+      ANY_FAIL=true
+      continue
+    fi
     if [[ "$diff" == "in-sync" ]]; then
       RESULTS+=("{\"repo\":\"$repo\",\"state\":\"in-sync\",\"ruleset_id\":$rs_id}")
     elif [[ "$MODE" == "check" ]]; then
